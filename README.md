@@ -3,6 +3,20 @@
 Contains scripts and code to benchmark SODA tools in different scenarios.
 
 
+# How to use?
+
+We depend on docker and pre-generated [docker image](.devcontainer/Dockerfile#1)
+to run the benchmarks. We recomend using vscode devcontainers to orchestrate the
+benchmarks.
+
+To use devcontainers, follow the steps below:
+
+1. Install Visual Studio Code: If you haven't already, download and install Visual Studio Code from here.
+2. Install the Remote - Containers extension: Open Visual Studio Code and install the "Remote - Containers" extension from the Extensions view.
+3. Open the folder in devcontainer: Run the command (Ctrl+Shift+X or Cmd+Shift+X on macOS), search for "Remote - Containers".
+4. Navigate to relevant folder, check README.md for instructions to execute the benchmarks.
+
+
 ## License
 
 This project is made available under the BSD2 License.  See the

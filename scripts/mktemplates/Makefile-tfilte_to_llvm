@@ -1,0 +1,20 @@
+# Compile TFLITE model to LLVM IR
+
+# Copy this Makefile to your project directory and edit the variables below:
+
+MODEL_PATH=<path to tflite model.tflite>
+SCRIPTS_DIR=<path to soda scripts directory>
+# Make sure the output directory is not empty, many files will be generated.
+ODIR=output
+
+# Edit to change the target
+# TARGET=$(ODIR)/01_tosa.mlir
+# TARGET=$(ODIR)/02_linalg.mlir
+# TARGET=$(ODIR)/03_llvm.mlir
+TARGET=$(ODIR)/04_llvm.ll
+
+all: $(TARGET)
+
+# Include the rules to generate llvm from a TFLite model
+include $(SCRIPTS_DIR)/mkinc/tflite_to_tosa.mk
+include $(SCRIPTS_DIR)/mkinc/tosa_to_llvm.mk
