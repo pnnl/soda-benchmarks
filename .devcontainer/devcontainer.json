@@ -1,0 +1,57 @@
+{
+    "name": "mlir-tools",
+    "build": {
+        "dockerfile": "Dockerfile",
+        "target": "devcontainer",
+        "context": "."
+        // ,"args": {
+        //     "VARIANT": "buster"
+        // }
+    },
+    "runArgs": [
+        "--rm"
+    ],
+    "remoteEnv": {
+        "PYTHONPATH": "${containerEnv:PYTHONPATH}:/usr/local/lib/python3.11/site-packages:/opt/llvm-project/python_packages/mlir_core",
+        "LLVM_SYMBOLIZER_PATH": "/opt/llvm-project/bin/llvm-symbolizer"
+    },
+    // Allow container to stop. See: https://github.com/microsoft/vscode-remote-release/issues/3512#issuecomment-1267053890
+    // "overrideCommand": false,
+    // "postCreateCommand": "pip install -r requirements.txt",
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "ms-azuretools.vscode-docker",
+                "ms-python.python",
+                "ms-python.vscode-pylance",
+                "ms-python.pylint",
+                "ms-python.isort",
+                "ms-toolsai.jupyter",
+                "ms-vscode.cpptools",
+                "ms-vscode.cpptools-extension-pack",
+                "ms-vscode.cmake-tools",
+                "ms-vscode.makefile-tools",
+                "llvm-vs-code-extensions.vscode-mlir",
+                "vadimcn.vscode-lldb",
+                "tintinweb.graphviz-interactive-preview"
+            ]
+        },
+        "settings": {
+            "editor.formatOnSave": true,
+            "files.trimTrailingWhitespace": true,
+            "files.insertFinalNewline": true,
+            "files.trimFinalNewlines": true,
+            "python.formatting.provider": "black",
+            "python.linting.pylintEnabled": true,
+            "python.linting.enabled": true,
+            "C_Cpp.default.cppStandard": "c++17",
+            "C_Cpp.default.includePath": [
+                "${containerWorkspaceFolder}/**",
+                "/opt/llvm-project/include"
+            ],
+            "mlir.server_path": "/opt/llvm-project/bin//mlir-lsp-server",
+            "mlir.tablegen_server_path": "/opt/llvm-project/bin/tblgen-lsp-server",
+            "mlir.pdll_server_path": "/opt/llvm-project/bin/pdll-lsp-server"
+        }
+    }
+}
