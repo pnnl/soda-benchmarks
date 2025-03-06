@@ -1,5 +1,3 @@
-# NOTE: 3.13 does not work. Some packages depend on distutils, which is only
-# provided on 3.12 through setuptools.
 FROM --platform=linux/amd64 agostini01/mlir-tools-bookworm:latest as base
 ARG DEBIAN_FRONTEND=noninteractive
 
