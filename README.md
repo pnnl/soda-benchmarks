@@ -22,9 +22,10 @@ To use devcontainers, follow the steps below:
 This project is made available under the BSD2 License.  See the
 [LICENSE](LICENSE) file for more details.
 
-### Software from third parties included in the SODA-OPT Project
 
-The SODA-OPT Project contains third party software which is under different
+### Software from third parties included in the soda-benchmarks project
+
+The soda-benchmarks project contains third party software which is under different
 license terms. All such code will be identified clearly using at least one of
 two mechanisms:
 1) It will be in a separate directory tree with its own `LICENSE.txt` or
