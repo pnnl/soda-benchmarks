@@ -1,0 +1,12 @@
+# AutoEncoder for EELS data
+
+Model architecture extracted from the following repository:
+
+- https://github.com/hollejd1/logicalEELS/tree/dev
+
+
+# License
+
+The model architecture was developed under the following licence:
+
+- https://github.com/hollejd1/logicalEELS/blob/main/LICENSE also included in this folder as [LICENSE](./LICENSE)
