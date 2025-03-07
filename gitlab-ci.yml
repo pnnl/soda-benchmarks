@@ -1,0 +1,18 @@
+stages:
+  - test
+
+default:               # Add a default section to define the `image` keyword's default value
+  image: agostini01/mlir-tools-bookworm:latest
+
+.standard-rules:       # Make a hidden job to hold the common rules
+  rules:
+    - if: $CI_PIPELINE_SOURCE == 'merge_request_event'
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
+tflite-test:
+  stage: test
+  extends:
+    - .standard-rules  # Reuse the configuration in `.standard-rules` here
+  dependencies: []
+  script:
+    - sh tests/tflite_tests.sh
