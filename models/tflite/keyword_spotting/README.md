@@ -1,0 +1,1 @@
+See this model specification's on Github: https://github.com/SiliconLabs/mltk/blob/d2c54cd046b5e0db2be82d6432ba0af1b125c6f3/mltk/models/tinyml/keyword_spotting.py#L62
