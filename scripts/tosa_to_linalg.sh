@@ -33,6 +33,7 @@ mlir-opt \
   -empty-tensor-to-alloc-tensor \
   -eliminate-empty-tensors \
   -one-shot-bufferize="bufferize-function-boundaries allow-return-allocs-from-loops" \
+  -func-bufferize \
   -buffer-deallocation-simplification \
   -bufferization-lower-deallocations \
   --buffer-results-to-out-params \
@@ -50,8 +51,8 @@ mlir-opt \
 ##   -empty-tensor-to-alloc-tensor \
 ##   -eliminate-empty-tensors \
 ##   -one-shot-bufferize="bufferize-function-boundaries allow-return-allocs-from-loops" \
-##   -func-bufferize \
-##   -finalizing-bufferize -buffer-deallocation \
+##   -func-bufferize \ <------- potentially unneccessary
+##   -finalizing-bufferize -buffer-deallocation \ <------- passes that break the flow
 ##   -buffer-deallocation-simplification \
 ##   -bufferization-lower-deallocations \
 ##   --buffer-results-to-out-params \
