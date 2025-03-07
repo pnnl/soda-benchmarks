@@ -3,7 +3,7 @@
 set -e
 
 echo "Testing tflite flow\n"
-
+$pwd
 cd ../models/tflite
 
 for d in */ ; do
