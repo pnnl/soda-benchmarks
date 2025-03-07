@@ -23,22 +23,42 @@ mlir-opt \
   -pass-pipeline="builtin.module(func.func(tosa-to-arith, tosa-to-tensor, tosa-to-linalg-named, tosa-to-linalg))" \
   $1 \
   -o $OUTPUT_DIR/02_linalg_on_tensors.mlir
-  
+
+### NOTE: Max's passes ###
 $DOCKER_RUN \
 mlir-opt \
-  -tosa-to-arith="include-apply-rescale=true" \
+  --tosa-to-arith="include-apply-rescale=true" \
+  --canonicalize \
   -convert-tensor-to-linalg \
-  -eliminate-empty-tensors \
   -empty-tensor-to-alloc-tensor \
+  -eliminate-empty-tensors \
   -one-shot-bufferize="bufferize-function-boundaries allow-return-allocs-from-loops" \
   -func-bufferize \
-  -finalizing-bufferize -buffer-deallocation \
   -buffer-deallocation-simplification \
   -bufferization-lower-deallocations \
   --buffer-results-to-out-params \
   --canonicalize -cse \
   $OUTPUT_DIR/02_linalg_on_tensors.mlir \
   -o $OUTPUT_PATH
+
+### Original passes ### 
+
+## $DOCKER_RUN \
+## mlir-opt \
+##   --canonicalize \
+##   -tosa-to-arith="include-apply-rescale=true" \
+##   -convert-tensor-to-linalg \
+##   -empty-tensor-to-alloc-tensor \
+##   -eliminate-empty-tensors \
+##   -one-shot-bufferize="bufferize-function-boundaries allow-return-allocs-from-loops" \
+##   -func-bufferize \ <------- potentially unneccessary
+##   -finalizing-bufferize -buffer-deallocation \ <------- passes that break the flow
+##   -buffer-deallocation-simplification \
+##   -bufferization-lower-deallocations \
+##   --buffer-results-to-out-params \
+##   --canonicalize -cse \
+##   $OUTPUT_DIR/02_linalg_on_tensors.mlir \
+##   -o $OUTPUT_PATH
 
 # $DOCKER_RUN \
 # soda-opt \
