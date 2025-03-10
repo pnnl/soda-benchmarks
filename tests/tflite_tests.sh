@@ -4,7 +4,7 @@ set -e
 
 echo "Testing tflite flow\n"
 pwd
-cd models/tflite
+cd ../models/tflite
 
 for d in */ ; do
     echo "Testing--$d"
