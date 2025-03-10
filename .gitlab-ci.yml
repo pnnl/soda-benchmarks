@@ -11,8 +11,10 @@ default:               # Add a default section to define the `image` keyword's d
 
 tflite-test:
   stage: test
+  image: agostini01/mlir-tools-bookworm:latest
   extends:
     - .standard-rules  # Reuse the configuration in `.standard-rules` here
   dependencies: []
   script:
-    - sh tests/tflite_tests.sh
+    - cd tests
+    - sh tflite_tests.sh
