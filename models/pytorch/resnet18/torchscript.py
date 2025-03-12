@@ -19,7 +19,7 @@ def main():
     args = parse_args()
 
     # Create a model (downloaded resnet18 from torchvision)
-    model = models.resnet18(pretrained=True)
+    model = models.resnet18(weights=models.resnet.ResNet18_Weights.DEFAULT)
     model.train(False)
     print(model)
 
