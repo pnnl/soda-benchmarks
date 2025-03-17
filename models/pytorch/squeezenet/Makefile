@@ -7,7 +7,8 @@ SCRIPTS_DIR=../../../scripts
 ODIR=output
 
 # Edit to change the target
-TARGET=$(ODIR)/04_llvm.ll
+# TARGET=$(ODIR)/04_llvm.ll
+TARGET=$(ODIR)/graphs/01_tosa.dot
 
 all: $(TARGET)
 
@@ -20,3 +21,6 @@ $(ODIR)/01_tosa.mlir: $(FILE_PATH)
 
 # Include the rules to generate linalg from a torch model translated to linalg
 include $(SCRIPTS_DIR)/mkinc/tosa_to_llvm.mk
+
+# Include the rules to generate graph from a mlir file
+include $(SCRIPTS_DIR)/mkinc/mlir_to_graph.mk
