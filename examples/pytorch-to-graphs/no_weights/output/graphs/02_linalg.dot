@@ -1,0 +1,130 @@
+digraph G {
+  compound = true;
+  subgraph cluster_1 {
+    v2 [label = " ", shape = plain];
+    label = "builtin.module : ()\n\ntorch.debug_module_name: \"SimpleMLP\"";
+    subgraph cluster_3 {
+      v4 [label = " ", shape = plain];
+      label = "";
+      subgraph cluster_5 {
+        v6 [label = " ", shape = plain];
+        label = "func.func : ()\n\nfunction_type: (memref<1x8x16x...\nsym_name: \"forward\"";
+        subgraph cluster_7 {
+          v8 [label = " ", shape = plain];
+          label = "";
+          v9 [label = "arg0", shape = ellipse];
+          v10 [label = "arg1", shape = ellipse];
+          v11 [label = "arg2", shape = ellipse];
+          v12 [fillcolor = "0.000000 1.0 1.0", label = "arith.constant : (f32)\n\nvalue: 3.40282347E+38 ...", shape = ellipse, style = filled];
+          v13 [fillcolor = "0.000000 1.0 1.0", label = "arith.constant : (f32)\n\nvalue: -3.40282347E+38...", shape = ellipse, style = filled];
+          v14 [fillcolor = "0.000000 1.0 1.0", label = "arith.constant : (f32)\n\nvalue: 0.000000e+00 : ...", shape = ellipse, style = filled];
+          v15 [fillcolor = "0.058824 1.0 1.0", label = "memref.alloc : (memref<1x8x12xf...)\n\nalignment: 64 : i64\noperandSegmentSizes: array<i32: 0, 0...", shape = ellipse, style = filled];
+          subgraph cluster_16 {
+            v17 [label = " ", shape = plain];
+            label = "linalg.fill : ()\n\noperandSegmentSizes: array<i32: 1, 1...";
+            subgraph cluster_18 {
+              v19 [label = " ", shape = plain];
+              label = "";
+              v20 [label = "arg0", shape = ellipse];
+              v21 [label = "arg1", shape = ellipse];
+              v22 [fillcolor = "0.117647 1.0 1.0", label = "linalg.yield : ()\n", shape = ellipse, style = filled];
+            }
+          }
+          subgraph cluster_23 {
+            v24 [label = " ", shape = plain];
+            label = "linalg.batch_matmul : ()\n\nlinalg.memoized_indexing_maps: [affine_map<(d0...\noperandSegmentSizes: array<i32: 2, 1...";
+            subgraph cluster_25 {
+              v26 [label = " ", shape = plain];
+              label = "";
+              v27 [label = "arg0", shape = ellipse];
+              v28 [label = "arg1", shape = ellipse];
+              v29 [label = "arg2", shape = ellipse];
+              v30 [fillcolor = "0.235294 1.0 1.0", label = "arith.mulf : (f32)\n\nfastmath: #arith.fastmath...", shape = ellipse, style = filled];
+              v31 [fillcolor = "0.294118 1.0 1.0", label = "arith.addf : (f32)\n\nfastmath: #arith.fastmath...", shape = ellipse, style = filled];
+              v32 [fillcolor = "0.117647 1.0 1.0", label = "linalg.yield : ()\n", shape = ellipse, style = filled];
+            }
+          }
+          v33 [fillcolor = "0.411765 1.0 1.0", label = "memref.expand_shape : (memref<1x8x12x1...)\n\nreassociation: [[0], [1], [2, ...\nstatic_output_shape: array<i64: 1, 8...", shape = ellipse, style = filled];
+          v34 [fillcolor = "0.058824 1.0 1.0", label = "memref.alloc : (memref<1x4x6x1x...)\n\nalignment: 64 : i64\noperandSegmentSizes: array<i32: 0, 0...", shape = ellipse, style = filled];
+          subgraph cluster_35 {
+            v36 [label = " ", shape = plain];
+            label = "linalg.fill : ()\n\noperandSegmentSizes: array<i32: 1, 1...";
+            subgraph cluster_37 {
+              v38 [label = " ", shape = plain];
+              label = "";
+              v39 [label = "arg0", shape = ellipse];
+              v40 [label = "arg1", shape = ellipse];
+              v41 [fillcolor = "0.117647 1.0 1.0", label = "linalg.yield : ()\n", shape = ellipse, style = filled];
+            }
+          }
+          v42 [fillcolor = "0.058824 1.0 1.0", label = "memref.alloc : (memref<2x2xf32>)\n\nalignment: 64 : i64\noperandSegmentSizes: array<i32: 0, 0...", shape = ellipse, style = filled];
+          subgraph cluster_43 {
+            v44 [label = " ", shape = plain];
+            label = "linalg.pooling_nhwc_max : ()\n\ndilations: dense<1> : vector<2xi64>\nlinalg.memoized_indexing_maps: [affine_map<(d0...\noperandSegmentSizes: array<i32: 2, 1...\nstrides: dense<2> : vector<2xi64>";
+            subgraph cluster_45 {
+              v46 [label = " ", shape = plain];
+              label = "";
+              v47 [label = "arg0", shape = ellipse];
+              v48 [label = "arg1", shape = ellipse];
+              v49 [label = "arg2", shape = ellipse];
+              v50 [fillcolor = "0.470588 1.0 1.0", label = "arith.maximumf : (f32)\n\nfastmath: #arith.fastmath...", shape = ellipse, style = filled];
+              v51 [fillcolor = "0.117647 1.0 1.0", label = "linalg.yield : ()\n", shape = ellipse, style = filled];
+            }
+          }
+          v52 [fillcolor = "0.588235 1.0 1.0", label = "memref.collapse_shape : (memref<1x4x6xf3...)\n\nreassociation: [[0], [1], [2, ...", shape = ellipse, style = filled];
+          v53 [fillcolor = "0.411765 1.0 1.0", label = "memref.expand_shape : (memref<1x1x4x6x...)\n\nreassociation: [[0, 1], [2], [...\nstatic_output_shape: array<i64: 1, 1...", shape = ellipse, style = filled];
+          v54 [fillcolor = "0.058824 1.0 1.0", label = "memref.alloc : (memref<1x1x4x6x...)\n\nalignment: 64 : i64\noperandSegmentSizes: array<i32: 0, 0...", shape = ellipse, style = filled];
+          subgraph cluster_55 {
+            v56 [label = " ", shape = plain];
+            label = "linalg.generic : ()\n\nindexing_maps: [affine_map<(d0...\niterator_types: [#linalg.iterat...\noperandSegmentSizes: array<i32: 1, 1...";
+            subgraph cluster_57 {
+              v58 [label = " ", shape = plain];
+              label = "";
+              v59 [label = "arg0", shape = ellipse];
+              v60 [label = "arg1", shape = ellipse];
+              v61 [fillcolor = "0.647059 1.0 1.0", label = "arith.minimumf : (f32)\n\nfastmath: #arith.fastmath...", shape = ellipse, style = filled];
+              v62 [fillcolor = "0.470588 1.0 1.0", label = "arith.maximumf : (f32)\n\nfastmath: #arith.fastmath...", shape = ellipse, style = filled];
+              v63 [fillcolor = "0.117647 1.0 1.0", label = "linalg.yield : ()\n", shape = ellipse, style = filled];
+            }
+          }
+          v64 [fillcolor = "0.588235 1.0 1.0", label = "memref.collapse_shape : (memref<1x4x6xf3...)\n\nreassociation: [[0, 1], [2], [...", shape = ellipse, style = filled];
+          v65 [fillcolor = "0.764706 1.0 1.0", label = "memref.copy : ()\n", shape = ellipse, style = filled];
+          v66 [fillcolor = "0.823529 1.0 1.0", label = "func.return : ()\n", shape = ellipse, style = filled];
+        }
+      }
+    }
+  }
+  v20 -> v22 [label = "", style = solid];
+  v14 -> v17 [lhead = cluster_16, style = solid];
+  v15 -> v17 [lhead = cluster_16, style = solid];
+  v27 -> v30 [label = "0", style = solid];
+  v28 -> v30 [label = "1", style = solid];
+  v29 -> v31 [label = "0", style = solid];
+  v30 -> v31 [label = "1", style = solid];
+  v31 -> v32 [label = "", style = solid];
+  v9 -> v24 [lhead = cluster_23, style = solid];
+  v10 -> v24 [lhead = cluster_23, style = solid];
+  v15 -> v24 [lhead = cluster_23, style = solid];
+  v15 -> v33 [label = "", style = solid];
+  v39 -> v41 [label = "", style = solid];
+  v13 -> v36 [lhead = cluster_35, style = solid];
+  v34 -> v36 [lhead = cluster_35, style = solid];
+  v49 -> v50 [label = "0", style = solid];
+  v47 -> v50 [label = "1", style = solid];
+  v50 -> v51 [label = "", style = solid];
+  v33 -> v44 [lhead = cluster_43, style = solid];
+  v42 -> v44 [lhead = cluster_43, style = solid];
+  v34 -> v44 [lhead = cluster_43, style = solid];
+  v34 -> v52 [label = "", style = solid];
+  v52 -> v53 [label = "", style = solid];
+  v59 -> v61 [label = "0", style = solid];
+  v12 -> v61 [label = "1", style = solid];
+  v61 -> v62 [label = "0", style = solid];
+  v14 -> v62 [label = "1", style = solid];
+  v62 -> v63 [label = "", style = solid];
+  v53 -> v56 [lhead = cluster_55, style = solid];
+  v54 -> v56 [lhead = cluster_55, style = solid];
+  v54 -> v64 [label = "", style = solid];
+  v64 -> v65 [label = "0", style = solid];
+  v11 -> v65 [label = "1", style = solid];
+}
