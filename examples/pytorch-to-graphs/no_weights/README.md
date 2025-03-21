@@ -28,6 +28,7 @@ in the future we can also include a costs attribute that will follow the format 
 
 ```
 costs = "{swCost = 0.0, hwCost = 0.0"}"
+```
 
 ## Instructions for docker users
 
