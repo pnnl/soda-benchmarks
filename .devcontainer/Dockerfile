@@ -1,4 +1,4 @@
-FROM --platform=linux/amd64 agostini01/mlir-tools-bookworm:latest as base
+FROM --platform=linux/amd64 agostini01/soda-bookworm:latest as base
 ARG DEBIAN_FRONTEND=noninteractive
 
 FROM base as build-base

@@ -1,5 +1,5 @@
 {
-    "name": "mlir-tools",
+    "name": "soda-tools",
     "build": {
         "dockerfile": "Dockerfile",
         "target": "devcontainer",
