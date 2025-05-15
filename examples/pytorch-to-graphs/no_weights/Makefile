@@ -8,7 +8,7 @@ ODIR=output
 
 # Edit to change the target
 # TARGET=$(ODIR)/04_llvm.ll
-TARGET=$(ODIR)/graphs/01_tosa.dot
+TARGET=$(ODIR)/graphs/01_tosa.dot $(ODIR)/graphs/02_linalg.dot
 
 all: $(TARGET)
 

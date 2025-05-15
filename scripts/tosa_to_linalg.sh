@@ -32,7 +32,7 @@ mlir-opt \
   -convert-tensor-to-linalg \
   -empty-tensor-to-alloc-tensor \
   -eliminate-empty-tensors \
-  -one-shot-bufferize="bufferize-function-boundaries allow-return-allocs-from-loops" \
+  -one-shot-bufferize="function-boundary-type-conversion=identity-layout-map bufferize-function-boundaries allow-return-allocs-from-loops unknown-type-conversion=identity-layout-map" \
   -func-bufferize \
   -buffer-deallocation-simplification \
   -bufferization-lower-deallocations \
