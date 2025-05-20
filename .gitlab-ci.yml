@@ -2,7 +2,7 @@ stages:
   - test
 
 default:               # Add a default section to define the `image` keyword's default value
-  image: agostini01/soda-bookworm:v19.00
+  image: agostini01/soda-bookworm:v19.01
 
 .standard-rules:       # Make a hidden job to hold the common rules
   rules:
@@ -11,7 +11,7 @@ default:               # Add a default section to define the `image` keyword's d
 
 tflite-test:
   stage: test
-  image: agostini01/soda-bookworm:v19.00
+  image: agostini01/soda-bookworm:v19.01
   extends:
     - .standard-rules  # Reuse the configuration in `.standard-rules` here
   dependencies: []
