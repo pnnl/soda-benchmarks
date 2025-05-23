@@ -29,8 +29,8 @@ Typically, the lowering scripts will generate the following files:
 
 ## Using the templates
 
-The folder [mktemplates](mktemplates) contains Makefile templates to translate the model and convert it to LLVM IR. To use the templates, copy the correct template to the root of the project and rename it to `Makefile`. Adjust the variables in the template to match your project.
+The folder [templates/make/](templates/make/) contains Makefile templates to translate the model and convert it to LLVM IR. To use the templates, copy the correct template to the root of the project and rename it to `Makefile`. Adjust the variables in the template to match your project.
 Then, run `make` to translate the model and lower to LLVM IR.
 
-Similarly, the folder [bashtemplates](bashtemplates) contains bash scripts to translate the model and convert it to LLVM IR. To use the templates, copy the correct template to the root of the project and rename it to `compile.sh`. Adjust the variables in the template to match your project.
+Similarly, the folder [templates/bash/](templates/bash/) contains bash scripts to translate the model and convert it to LLVM IR. To use the templates, copy the correct template to the root of the project and rename it to `compile.sh`. Adjust the variables in the template to match your project.
 Then, run `./compile.sh` to translate the model and lower to LLVM IR.
