@@ -31,7 +31,9 @@ include $(SCRIPTS_DIR)/mkinc/tosa_to_llvm.mk
 # Include the rules to generate soda LLVM IR
 include $(SCRIPTS_DIR)/mkinc/soda_to_llvm.mk
 
-# include rules to generate verilog and simulate with Bambu
+# Include rules to generate verilog and simulate with Bambu
+#  Select the target Bambu device and clock period below, if not specified
+#  default values are used.
 BAMBU_DEVICE=asap7-BC
 # BAMBU_DEVICE=nangate45
 BAMBU_CLOCK_PERIOD=5
