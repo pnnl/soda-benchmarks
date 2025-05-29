@@ -1,23 +1,36 @@
-# PyTorch to LLVM IR Lowering Example
+# PyTorch to Verilog Generation Example
 
 In this example, we will show how to lower a simple PyTorch model to Verilog
-using scripts from the MLIR Tools used by SODA [docker image](https://hub.docker.com/r/agostini01/mlir-tools-bookworm).
+using scripts and binaries from the MLIR Tools used by SODA 
+[docker image](https://hub.docker.com/r/agostini01/soda).
 
 
 ## Instructions for docker users
 
-This will mount the current folder into the docker container. Once inside the container, you can run `make` to compile the tutorial.
+1. Install docker and vscode.
+2. Open the the `soda-benchmarks` project in a vscode development container. 
+`cmd+shift+p` and select : `Dev Containers: Reopen in Container` this will download the
+docker image and start the container. 
+3. Once you container, you can enter this folder and run `make` to compile the tutorial.
+
+
+## Selecting an optimization strategy
+
+Change the `TARGET=` Variable in the [`Makefile`](Makefile) to select the
+optimization strategy.
 
 
 ## Artifacts
 
+The `<strategy>` can be either `baseline` or `optimized` and is governed by the
+optimization pipeline in `soda-opt`.
+
 ```
-docker-version/
 └── output
     ├── 01_tosa.mlir
-    ├── 02_linalg.mlir
     ├── 02_linalg_on_tensors.mlir
-    ├── 03_llvm.mlir
-    ├── 04_llvm.ll
-    └── bambu/05_verilog.v
+    ├── 02_linalg.mlir // with buffers
+    ├── 04_llvm_<strategy>.mlir
+    ├── 05_llvm_<strategy>.ll // LLVM IR file
+    └── bambu/<strategy>/06_verilog.v
 ```
