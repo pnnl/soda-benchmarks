@@ -20,7 +20,7 @@ OUTPUT_PATH=$OUTPUT_DIR/$OUTPUT_NAME
 
 $DOCKER_RUN \
 soda-opt \
-  --convert-all-to-soda \
+  -convert-operation-to-soda="anchor-op=linalg.batch_matmul" \
   -soda-outline-bambu-code \
   -soda-extract-arguments-to-c-testbench=using-bare-ptr \
   -soda-generate-bambu-accelcode=no-aa \
