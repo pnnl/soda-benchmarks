@@ -14,7 +14,6 @@ $(ODIR)/05_llvm_baseline.ll: $(ODIR)/04_llvm_baseline.mlir
 # Rules specific to soda-opt optimized
 $(ODIR)/04_llvm_optimized.mlir: $(ODIR)/02_linalg.mlir $(SCRIPTS_DIR)/soda_to_llvm_optimized.sh
 	$(SCRIPTS_DIR)/soda_to_llvm_optimized.sh $< $@
-	soda-opt $< -o $@ -soda-opt-pipeline-for-bambu=use-bare-ptr-memref-call-conv
 	mv forward_kernel_testbench.c $(ODIR)/forward_kernel_testbench.c
 
 $(ODIR)/05_llvm_optimized.ll: $(ODIR)/04_llvm_optimized.mlir
