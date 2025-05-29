@@ -1,7 +1,7 @@
 # PyTorch to LLVM IR Lowering Example
 
 In this example, we will show how to lower a simple PyTorch model to LLVM IR
-using scripts from the MLIR Tools used by SODA [docker image](https://hub.docker.com/r/agostini01/mlir-tools-bookworm).
+using scripts from the MLIR Tools used by SODA [docker image](https://hub.docker.com/r/agostini01/soda).
 
 ## Approach
 
