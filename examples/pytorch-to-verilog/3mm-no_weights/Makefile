@@ -8,15 +8,20 @@ ODIR=output
 
 # Edit to change the target
 # TARGET=$(ODIR)/04_llvm.ll
-# TARGET=$(ODIR)/bambu/baseline/06_verilog.v $(ODIR)/bambu/baseline/results.txt
-TARGET=$(ODIR)/bambu/optimized/06_verilog.v $(ODIR)/bambu/optimized/results.txt
+
+# TARGET=$(ODIR)/bambu/baseline/06_verilog.v
+# TARGET=$(ODIR)/bambu/baseline/07_results.txt # For simulation results
+
+# TARGET=$(ODIR)/bambu/optimized/06_verilog.v
+TARGET=$(ODIR)/bambu/optimized/07_results.txt # For simulation results
+
+# TARGET=$(ODIR)/bambu/transformed/06_verilog.v
+# TARGET=$(ODIR)/bambu/transformed/07_results.txt # For simulation results
+
 
 all: $(TARGET)
 
-# MLIR file is generated with the torch_mlir python libraries. The file can be
-# generated at the tosa dialect level. However, empirical observations show that
-# generating the model at the linalg dialect level yields less instructions in
-# the final LLVM IR.  
+# Generate MLIR from Torch model
 $(ODIR)/01_tosa.mlir: $(FILE_PATH) 
 	python $(FILE_PATH) $@ --dialect=tosa
 
@@ -26,51 +31,8 @@ include $(SCRIPTS_DIR)/mkinc/tosa_to_llvm.mk
 # Include the rules to generate soda LLVM IR
 include $(SCRIPTS_DIR)/mkinc/soda_to_llvm.mk
 
-$(ODIR)/bambu/baseline/06_verilog.v $(ODIR)/bambu/baseline/results.txt: $(ODIR)/05_llvm_baseline.ll
-	mkdir -p $(ODIR)/bambu/baseline
-	# TODO: test opt optimizations
-	# opt -O2 -S -o $(ODIR)/bambu/baseline/input.ll $< --disable-loop-unrolling
-	cp $< $(ODIR)/bambu/baseline/input.ll
-
-	cd $(ODIR)/bambu/baseline && \
-	bambu -v3 --print-dot \
-		-lm --soft-float \
-		--compiler=I386_CLANG16  \
-		--device=asap7-BC \
-		--clock-period=5 \
-		--experimental-setup=BAMBU-BALANCED-MP \
-		--channels-number=2 \
-		--memory-allocation-policy=ALL_BRAM \
-		--disable-function-proxy \
-		--generate-tb=../../forward_kernel_testbench.c \
-		--simulate --simulator=VERILATOR \
-		--verilator-parallel \
-		--top-fname=forward_kernel \
-		input.ll 2>&1 | tee bambu-log
-
-	cp $(ODIR)/bambu/baseline/forward_kernel.v $(ODIR)/bambu/baseline/06_verilog.v
-
-
-$(ODIR)/bambu/optimized/06_verilog.v $(ODIR)/bambu/optimized/results.txt: $(ODIR)/05_llvm_optimized.ll
-	mkdir -p $(ODIR)/bambu/optimized
-	# TODO: test opt optimizations
-	# opt -O2 -S -o $(ODIR)/bambu/optimized/input.ll $< --disable-loop-unrolling
-	cp $< $(ODIR)/bambu/optimized/input.ll
-
-	cd $(ODIR)/bambu/optimized && \
-	bambu -v3 --print-dot \
-		-lm --soft-float \
-		--compiler=I386_CLANG16  \
-		--device=asap7-BC \
-		--clock-period=5 \
-		--experimental-setup=BAMBU-BALANCED-MP \
-		--channels-number=2 \
-		--memory-allocation-policy=ALL_BRAM \
-		--disable-function-proxy \
-		--generate-tb=../../forward_kernel_testbench.c \
-		--simulate --simulator=VERILATOR \
-		--verilator-parallel \
-		--top-fname=forward_kernel \
-		input.ll 2>&1 | tee bambu-log
-
-	cp $(ODIR)/bambu/optimized/forward_kernel.v $(ODIR)/bambu/optimized/06_verilog.v
+# include rules to generate verilog and simulate with Bambu
+BAMBU_DEVICE=asap7-BC
+# BAMBU_DEVICE=nangate45
+BAMBU_CLOCK_PERIOD=5
+include $(SCRIPTS_DIR)/mkinc/llvm_to_verilog.mk
