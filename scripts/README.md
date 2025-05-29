@@ -14,7 +14,7 @@ to TOSA MLIR.
 
 ## Lowering
 
-The following scripts should be used in the given order to lower the TOSA MLIR to LLVM ir.
+The following scripts should be used in the given order to lower the TOSA MLIR to LLVM IR.
 
 1. [tosa_to_linalg.sh](tosa_to_linalg.sh) - Lowers TOSA MLIR to Linalg dialect.
 2. [linalg_to_llvm.sh](linalg_to_llvm.sh) - Lowers Linalg dialect to LLVM dialect.
