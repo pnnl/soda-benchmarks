@@ -1,5 +1,5 @@
 {
-    "name": "soda-tools",
+    "name": "soda-bench-dev",
     "build": {
         "dockerfile": "Dockerfile",
         "target": "devcontainer",
@@ -44,6 +44,7 @@
             "python.formatting.provider": "black",
             "python.linting.pylintEnabled": true,
             "python.linting.enabled": true,
+            "python.defaultInterpreterPath": "/usr/local/bin/python",
             "C_Cpp.default.cppStandard": "c++17",
             "C_Cpp.default.includePath": [
                 "${containerWorkspaceFolder}/**",

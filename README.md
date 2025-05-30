@@ -17,6 +17,20 @@ To use devcontainers, follow the steps below:
 4. Navigate to relevant folder, check README.md for instructions to execute the benchmarks.
 
 
+## Project Structure
+
+```
+├── docs - contains docs
+├── examples - simpler examples on how to use parts of the end-to-end python to verilog/gds flow
+├── LICENSE
+├── models - holds python scripts in subfolders to download or implement ml models, uses python and scripts to transform models/part of models into verilog
+├── README.md
+├── scripts - holds bash and makefile scripts that are used in other folders
+├── tests - to hold all tests (if possible)
+└── tutorials - markdown and jupyter notebooks
+```
+
+
 ## License
 
 This project is made available under the BSD2 License.  See the
