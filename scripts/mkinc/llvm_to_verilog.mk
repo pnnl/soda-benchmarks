@@ -29,3 +29,16 @@ $(ODIR)/bambu/optimized/07_results.txt: $(ODIR)/05_llvm_optimized.ll
 	BAMBU_CLOCK_PERIOD=$(BAMBU_CLOCK_PERIOD) \
 	BAMBU_MEMPOLICY=$(BAMBU_MEMPOLICY) \
 	$(SCRIPTS_DIR)/ll_to_verilog.sh $< $@
+
+# =============================================================================
+# Rules specific to soda-opt transformed
+$(ODIR)/bambu/transformed/06_verilog.v: $(ODIR)/05_llvm_transformed.ll
+	BAMBU_DEVICE=$(BAMBU_DEVICE) \
+	BAMBU_CLOCK_PERIOD=$(BAMBU_CLOCK_PERIOD) \
+	$(SCRIPTS_DIR)/ll_to_verilog.sh $< $@
+	
+$(ODIR)/bambu/transformed/07_results.txt: $(ODIR)/05_llvm_transformed.ll
+	BAMBU_RUN_SIMULATION=true \
+	BAMBU_DEVICE=$(BAMBU_DEVICE) \
+	BAMBU_CLOCK_PERIOD=$(BAMBU_CLOCK_PERIOD) \
+	$(SCRIPTS_DIR)/ll_to_verilog.sh $< $@
