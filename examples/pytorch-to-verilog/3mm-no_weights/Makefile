@@ -13,9 +13,9 @@ ODIR=output
 # TARGET=$(ODIR)/bambu/baseline/07_results.txt # For simulation results
 
 # TARGET=$(ODIR)/bambu/optimized/06_verilog.v
-TARGET=$(ODIR)/bambu/optimized/07_results.txt # For simulation results
+# TARGET=$(ODIR)/bambu/optimized/07_results.txt # For simulation results
 
-# TARGET=$(ODIR)/bambu/transformed/06_verilog.v
+TARGET=$(ODIR)/bambu/transformed/06_verilog.v
 # TARGET=$(ODIR)/bambu/transformed/07_results.txt # For simulation results
 
 
