@@ -21,8 +21,8 @@ $(ODIR)/05_llvm_optimized.ll: $(ODIR)/04_llvm_optimized.mlir
 
 # =============================================================================
 # Rules specific mlir transformed with a transform dialect library
-$(ODIR)/04_llvm_transformed.mlir: $(ODIR)/02_linalg.mlir $(ODIR)/../04_transform_sched.mlir  $(SCRIPTS_DIR)/soda_to_llvm_transformed.sh
-	$(SCRIPTS_DIR)/soda_to_llvm_transformed.sh $< $@ $(ODIR)/../04_transform_sched.mlir
+$(ODIR)/04_llvm_transformed.mlir: $(ODIR)/02_linalg.mlir $(ODIR)/04_transform_sched.mlir  $(SCRIPTS_DIR)/soda_to_llvm_transformed.sh
+	$(SCRIPTS_DIR)/soda_to_llvm_transformed.sh $< $@ $(ODIR)/04_transform_sched.mlir
 	mv forward_kernel_testbench.c $(ODIR)/forward_kernel_testbench.c
 
 $(ODIR)/05_llvm_transformed.ll: $(ODIR)/04_llvm_transformed.mlir

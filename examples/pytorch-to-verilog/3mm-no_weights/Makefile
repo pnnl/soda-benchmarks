@@ -1,6 +1,7 @@
 # Compile Torch model to LLVM
 
 FILE_PATH=torchscript.py
+TRANSFORM_PATH=transform.mlir
 SCRIPTS_DIR=../../../scripts
 # Make sure the output directory is not empty, many files will be generated.
 # ODIR=.
@@ -24,6 +25,10 @@ all: $(TARGET)
 # Generate MLIR from Torch model
 $(ODIR)/01_tosa.mlir: $(FILE_PATH) 
 	python $(FILE_PATH) $@ --dialect=tosa
+
+# Put the transform schedule on the output directory where it is expected
+$(ODIR)/04_transform_sched.mlir: $(TRANSFORM_PATH) 
+	cp $< $@ 
 
 # Include the rules to generate linalg from a torch model translated to linalg
 include $(SCRIPTS_DIR)/mkinc/tosa_to_llvm.mk
