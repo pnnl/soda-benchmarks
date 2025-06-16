@@ -2,6 +2,7 @@ add_mlir_dialect_library(MLIRSODAP
         # SODAPTypes.cpp
         # SODAPDialect.cpp
         # SODAPOps.cpp
+        ViewOpGraph.cpp
         SODAPPasses.cpp
 
         ADDITIONAL_HEADER_DIRS

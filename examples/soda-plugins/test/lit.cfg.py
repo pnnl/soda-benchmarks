@@ -54,9 +54,9 @@ llvm_config.with_environment("PATH", config.llvm_tools_dir, append_path=True)
 tool_dirs = [config.sodap_tools_dir, config.llvm_tools_dir]
 tools = [
     "mlir-opt",
-    "sodap-capi-test",
-    "sodap-opt",
-    "sodap-translate",
+    # "sodap-capi-test",
+    # "sodap-opt",
+    # "sodap-translate",
 ]
 
 llvm_config.add_tool_substitutions(tools, tool_dirs)
