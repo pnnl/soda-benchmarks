@@ -46,9 +46,11 @@ add_definitions(${LLVM_DEFINITIONS})
 
 add_subdirectory(include)
 add_subdirectory(lib)
-if(MLIR_ENABLE_BINDINGS_PYTHON)
-  message(STATUS "Enabling Python API")
-  add_subdirectory(python)
-endif()
+
+# TODO: Python bindings are not yet implemented.
+# if(MLIR_ENABLE_BINDINGS_PYTHON)
+#   message(STATUS "Enabling Python API")
+#   add_subdirectory(python)
+# endif()
 add_subdirectory(test)
-add_subdirectory(soda-plugin)
+add_subdirectory(soda-plugins)

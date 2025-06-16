@@ -11,21 +11,21 @@ configure_lit_site_cfg(
 
 set(SODAPLUGINS_TEST_DEPENDS
         FileCheck count not
-        soda-capi-test
-        soda-opt
-        soda-translate
+        # soda-capi-test
         SODAPlugin
         )
-if(MLIR_ENABLE_BINDINGS_PYTHON)
-  list(APPEND SODAPLUGINS_TEST_DEPENDS SODAPythonModules)
-endif()
 
-add_lit_testsuite(check-soda "Running the soda regression tests"
+# TODO: Keep python bindings disabled for now, as they are not implemented yet.
+# if(MLIR_ENABLE_BINDINGS_PYTHON)
+#   list(APPEND SODAPLUGINS_TEST_DEPENDS SODAPythonModules)
+# endif()
+
+add_lit_testsuite(check-sodap "Running the soda regression tests"
         ${CMAKE_CURRENT_BINARY_DIR}
         DEPENDS ${SODAPLUGINS_TEST_DEPENDS}
         )
-set_target_properties(check-soda PROPERTIES FOLDER "Tests")
+set_target_properties(check-sodap PROPERTIES FOLDER "Tests")
 
 add_lit_testsuites(SODAPLUGINS ${CMAKE_CURRENT_SOURCE_DIR} DEPENDS ${SODAPLUGINS_TEST_DEPENDS})
 
-add_subdirectory(CAPI)
+# add_subdirectory(CAPI)

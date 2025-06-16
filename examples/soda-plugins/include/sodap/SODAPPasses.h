@@ -9,8 +9,8 @@
 #define SODAP_SODAPPASSES_H
 
 #include "mlir/Pass/Pass.h"
-#include "sodap/SODAPDialect.h"
-#include "sodap/SODAPOps.h"
+// #include "sodap/SODAPDialect.h"
+// #include "sodap/SODAPOps.h"
 #include <memory>
 
 namespace mlir {
