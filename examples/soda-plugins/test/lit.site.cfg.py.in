@@ -3,7 +3,7 @@
 config.llvm_tools_dir = lit_config.substitute("@LLVM_TOOLS_DIR@")
 config.mlir_obj_dir = "@MLIR_BINARY_DIR@"
 config.enable_bindings_python = @MLIR_ENABLE_BINDINGS_PYTHON@
-config.soda_obj_root = "@SODAPLUGINS_BINARY_DIR@"
+config.sodap_obj_root = "@SODAPLUGINS_BINARY_DIR@"
 config.llvm_shlib_ext = "@SHLIBEXT@"
 
 import lit.llvm

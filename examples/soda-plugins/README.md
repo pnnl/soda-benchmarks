@@ -18,11 +18,12 @@ To build the plugins, run the following commands:
 ```sh
 mkdir build && cd build
 
-LLVM_BUILD_DIR=/workspaces/soda/builds/llvm-project/build \
-LLVM_INSTALL_DIR=/opt/llvm-project \
-cmake -G Ninja .. -DMLIR_DIR=$LLVM_INSTALL_DIR/lib/cmake/mlir -DLLVM_EXTERNAL_LIT=$LLVM_BUILD_DIR/bin/llvm-lit
 
-cmake --build . --target soda-plugins
+cmake -G Ninja .. \
+  -DMLIR_DIR=/opt/llvm-project/lib/cmake/mlir \
+  -DLLVM_EXTERNAL_LIT=/workspaces/soda/builds/llvm-project/build/bin/llvm-lit
+
+cmake --build . --target check-sodap
 ```
 
 
