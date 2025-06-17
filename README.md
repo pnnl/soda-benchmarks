@@ -33,8 +33,8 @@ To use devcontainers, follow the steps below:
 
 ## License
 
-This project is made available under the BSD2 License.  See the
-[LICENSE](LICENSE) file for more details.
+This project is made available under the Apache License 2.0 with LLVM
+Exceptions. See the [LICENSE](LICENSE) file for more details.
 
 
 ### Software from third parties included in the soda-benchmarks project
