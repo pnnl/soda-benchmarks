@@ -1,33 +1,49 @@
 # SODA-BENCHMARKS
 
-Contains scripts and code to benchmark SODA tools in different scenarios.
+This project contains scripts and code to benchmark SODA tools in different scenarios.
+
+## How to Use?
+
+We depend on Docker and a pre-built [Docker image](.devcontainer/Dockerfile#1)
+which contains the binaries to run the benchmarks. We recommend using VS Code
+Dev Containers to orchestrate the container setup and provide the correct
+environment for running the examples and benchmarks.
+
+To use Dev Containers, follow these steps:
+
+1. Install Visual Studio Code: If you haven't already, download and install Visual Studio Code from [here](https://code.visualstudio.com/download).
+2. Install the Container Tools extension: Open Visual Studio Code and install the "Container Tools" extension from the Extensions view.
+3. Open the folder in a Dev Container: Press `Ctrl+Shift+P` (or `Cmd+Shift+P` on macOS) and select: `Dev Containers: Reopen in Container`.
+4. Navigate to the relevant folder and check its README.md for instructions on executing the examples or benchmarks.
 
 
-# How to use?
+## What Next?
 
-We depend on docker and pre-generated [docker image](.devcontainer/Dockerfile#1)
-to run the benchmarks. We recomend using vscode devcontainers to orchestrate the
-benchmarks.
+Start by navigating to the [examples](examples/README.md) folder. Each example
+includes a README.md with instructions on how to run it and details about the
+generated artifacts.
 
-To use devcontainers, follow the steps below:
+For a step-by-step guide, see the [tutorials](tutorials/README.md) folder. It
+includes Jupyter notebooks that demonstrate the full workflow, from PyTorch
+models to Verilog and GDS generation using SODA and open-source tools.
 
-1. Install Visual Studio Code: If you haven't already, download and install Visual Studio Code from here.
-2. Install the Remote - Containers extension: Open Visual Studio Code and install the "Remote - Containers" extension from the Extensions view.
-3. Open the folder in devcontainer: Run the command (Ctrl+Shift+X or Cmd+Shift+X on macOS), search for "Remote - Containers".
-4. Navigate to relevant folder, check README.md for instructions to execute the benchmarks.
+If you want to create accelerator cores for your own models, check out the
+[models](models/README.md) folder. It contains Python scripts to download or
+implement machine learning models, and scripts to transform these models or
+parts of them into Verilog.
 
 
 ## Project Structure
 
 ```
-├── docs - contains docs
-├── examples - simpler examples on how to use parts of the end-to-end python to verilog/gds flow
+├── docs         # Documentation
+├── examples     # Simple examples demonstrating the end-to-end Python to Verilog/GDS flow
 ├── LICENSE
-├── models - holds python scripts in subfolders to download or implement ml models, uses python and scripts to transform models/part of models into verilog
+├── models       # Python scripts to download or implement ML models, and scripts to transform models into Verilog
 ├── README.md
-├── scripts - holds bash and makefile scripts that are used in other folders
-├── tests - to hold all tests (if possible)
-└── tutorials - markdown and jupyter notebooks
+├── scripts      # Bash and Makefile scripts used in other folders
+├── tests        # All tests (if possible)
+└── tutorials    # Guided tutorials using jupyter notebooks
 ```
 
 
