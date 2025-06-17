@@ -19,16 +19,16 @@ To use Dev Containers, follow these steps:
 
 ## What Next?
 
-Start by navigating to the [examples](examples/README.md) folder. Each example
+Start by navigating to the [examples](examples/) folder. Each example
 includes a README.md with instructions on how to run it and details about the
 generated artifacts.
 
-For a step-by-step guide, see the [tutorials](tutorials/README.md) folder. It
+For a step-by-step guide, see the [tutorials](tutorials/) folder. It
 includes Jupyter notebooks that demonstrate the full workflow, from PyTorch
 models to Verilog and GDS generation using SODA and open-source tools.
 
 If you want to create accelerator cores for your own models, check out the
-[models](models/README.md) folder. It contains Python scripts to download or
+[models](models/) folder. It contains Python scripts to download or
 implement machine learning models, and scripts to transform these models or
 parts of them into Verilog.
 
