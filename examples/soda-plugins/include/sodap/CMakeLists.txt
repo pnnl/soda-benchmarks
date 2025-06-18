@@ -5,3 +5,9 @@
 set(LLVM_TARGET_DEFINITIONS SODAPPasses.td)
 mlir_tablegen(SODAPPasses.h.inc --gen-pass-decls)
 add_public_tablegen_target(MLIRSODAPPassesIncGen)
+
+
+set(LLVM_TARGET_DEFINITIONS MyExtension.td)
+mlir_tablegen(MyExtension.h.inc -gen-op-decls)
+mlir_tablegen(MyExtension.cpp.inc -gen-op-defs)
+add_public_tablegen_target(MyExtensionCh2IncGen)

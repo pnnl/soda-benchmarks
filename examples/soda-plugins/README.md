@@ -38,7 +38,7 @@ cmake --build . --target check-sodap
 
 ##  Running the Plugins
 
-To run the plugins, you can use the `mlir-opt` tool with the `--load-pass-plugin` option to load the plugin library which is compiled in the `build` directory under `lib/SODAPlugin.so`.
+To run the plugins, you can use the `mlir-opt` tool with the `--load-pass-plugin` option to load the pass plugin library or the `--load-dialect-plugin` option to load the dialect plugin libray. We compile both in a single file which is available in the `build` directory under `lib/SODAPlugin.so`.
 
 One of the included passes in the plugin is `soda-view-op-graph`, which generates graphviz output of the operations in the MLIR file. To use this pass, you can run the following command:
 
@@ -46,7 +46,18 @@ One of the included passes in the plugin is `soda-view-op-graph`, which generate
 mlir-opt \
   -allow-unregistered-dialect \
   -mlir-elide-elementsattrs-if-larger=2  \
-  --load-pass-plugin=/workspaces/soda/soda-benchmarks/examples/soda-plugins/build/lib/SODAPlugin.so \
+  --load-pass-plugin=/workspaces/soda-benchmarks/examples/soda-plugins/build/lib/SODAPlugin.so \
   --pass-pipeline="builtin.module(soda-view-op-graph)" \
-  /workspaces/soda/soda-benchmarks/examples/soda-plugins/test/sodap/print-op-graph.mlir
+  /workspaces/soda-benchmarks/examples/soda-plugins/test/sodap/print-op-graph.mlir
+```
+
+
+We also include infrastrucure to add extensions to the transform dialect. In this example we added `transform.my.change_call_target`.
+
+```bash
+mlir-opt \
+  --load-pass-plugin=/workspaces/soda-benchmarks/examples/soda-plugins/build/lib/SODAPlugin.so \
+  --load-dialect-plugin=/workspaces/soda-benchmarks/examples/soda-plugins/build/lib/SODAPlugin.so \
+  --transform-interpreter \
+  /workspaces/soda-benchmarks/examples/soda-plugins/test/sodap/my-extension.mlir 
 ```
