@@ -135,6 +135,10 @@ void mlir::transform::ChangeCallTargetOp::getEffects(
   modifiesPayload(effects);
 }
 
+namespace mlir {
+namespace sodap {
 void registerMyExtension(::mlir::DialectRegistry &registry) {
   registry.addExtensions<MyExtension>();
 }
+} // namespace sodap
+} // namespace mlir
