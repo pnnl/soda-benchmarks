@@ -1,7 +1,5 @@
 add_mlir_dialect_library(MLIRSODAP
-        # SODAPTypes.cpp
-        # SODAPDialect.cpp
-        # SODAPOps.cpp
+        GenerateLinalgSummary.cpp
         MyExtension.cpp
         ViewOpGraph.cpp
         SODAPPasses.cpp
@@ -10,8 +8,7 @@ add_mlir_dialect_library(MLIRSODAP
         ${PROJECT_SOURCE_DIR}/include/sodap
 
         DEPENDS
-        # TODO: Removing custom ops and types for now
-        # MLIRSODAPOpsIncGen
+        SODAPAnalysisPassesIncGen
         MyExtensionCh2IncGen
         MLIRSODAPPassesIncGen
 

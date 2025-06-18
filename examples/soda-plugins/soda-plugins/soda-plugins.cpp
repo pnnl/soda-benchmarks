@@ -11,6 +11,7 @@
 #include "mlir/Tools/Plugins/DialectPlugin.h"
 
 #include "mlir/Tools/Plugins/PassPlugin.h"
+#include "sodap/AnalysisPasses.h"
 #include "sodap/MyExtension.h"
 #include "sodap/SODAPPasses.h"
 #include "llvm/Config/llvm-config.h"
@@ -31,6 +32,8 @@ mlirGetDialectPluginInfo() {
 /// Pass plugin registration mechanism.
 /// Necessary symbol to register the pass plugin.
 extern "C" LLVM_ATTRIBUTE_WEAK PassPluginLibraryInfo mlirGetPassPluginInfo() {
-  return {MLIR_PLUGIN_API_VERSION, "SODAPasses", LLVM_VERSION_STRING,
-          []() { sodap::registerPasses(); }};
+  return {MLIR_PLUGIN_API_VERSION, "SODAPasses", LLVM_VERSION_STRING, []() {
+            sodap::linalg::reports::registerPasses();
+            sodap::registerPasses();
+          }};
 }
