@@ -10,8 +10,8 @@ export SDC_FILE      = ./HLS_output/Synthesis/asap7_constraints.sdc
 # export DIE_AREA="0 0 360 360"
 # export CORE_AREA="10.16 10.16 340 340"
 
-export DIE_AREA="0 0 720 720"
-export CORE_AREA="20.32 20.32 680 680"
+# export DIE_AREA="0 0 720 720"
+# export CORE_AREA="20.32 20.32 680 680"
 
 export ABC_AREA               = 1
 
