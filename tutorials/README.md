@@ -3,8 +3,9 @@
 Variations of the examples in this folder have been used as tutorials for the
 *SODA Synthesizer* in many conferences.
 
-- [Generating accelerators for TensorFlow models](tensorflow)
+<!-- - [Generating accelerators for TensorFlow models](tensorflow) -->
 - [Generating accelerators for Pytorch models](pytorch)
+   - For a pre-executed example see [tutorial-executed](https://github.com/pnnl/soda-opt/blob/main/docs/tutorials/tensorflow/docker-version-executed/tutorial.ipynb)
 
 
 # ISCA-2025 Tutorial

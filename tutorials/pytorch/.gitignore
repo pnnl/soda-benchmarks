@@ -1,0 +1,3 @@
+output/
+*.xml
+*_testbench.c
