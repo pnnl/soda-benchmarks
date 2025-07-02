@@ -43,7 +43,10 @@ parts of them into Verilog.
 ├── README.md
 ├── scripts      # Bash and Makefile scripts used in other folders
 ├── tests        # All tests (if possible)
-└── tutorials    # Guided tutorials using jupyter notebooks
+├── tutorials    # Guided tutorials using jupyter notebooks
+|
+├── external     # Contains source code from third party projects
+└── builds       # Gets created with scritps/external.setup-<projname>.sh scripts
 ```
 
 
