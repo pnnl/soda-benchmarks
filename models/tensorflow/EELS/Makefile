@@ -65,9 +65,9 @@ include $(SCRIPTS_DIR)/mkinc/soda_to_llvm.mk
 # Include rules to generate verilog and simulate with Bambu
 #  Select the target Bambu device and clock period below, if not specified
 #  default values are used.
-BAMBU_DEVICE=xc7z020-1clg484
-BAMBU_MEMPOLICY=ALL_BRAM
-# BAMBU_DEVICE=nangate45
-# BAMBU_MEMPOLICY=NO_BRAM
+# BAMBU_DEVICE=xc7z020-1clg484
+# BAMBU_MEMPOLICY=ALL_BRAM
+BAMBU_DEVICE=nangate45
+BAMBU_MEMPOLICY=NO_BRAM
 BAMBU_CLOCK_PERIOD=10
 include $(SCRIPTS_DIR)/mkinc/llvm_to_verilog.mk
