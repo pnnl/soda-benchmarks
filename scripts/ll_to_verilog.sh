@@ -13,6 +13,7 @@ fi
 
 
 BAMBU_DEVICE="${BAMBU_DEVICE:-asap7-BC}"
+BAMBU_MEMPOLICY="${BAMBU_MEMPOLICY:-ALL_BRAM}"
 BAMBU_CLOCK_PERIOD="${BAMBU_CLOCK_PERIOD:-5}"
 BAMBU_RUN_SIMULATION="${BAMBU_RUN_SIMULATION:-false}"
 
@@ -54,7 +55,7 @@ bambu -v3 --print-dot \
 		--clock-period=$BAMBU_CLOCK_PERIOD \
 		--experimental-setup=BAMBU-BALANCED-MP \
 		--channels-number=2 \
-		--memory-allocation-policy=ALL_BRAM \
+		--memory-allocation-policy=$BAMBU_MEMPOLICY \
 		--disable-function-proxy \
     $SIMULATION_ARGS \
 		--top-fname=forward_kernel \
