@@ -1,6 +1,7 @@
 # Compile TensorFlow encoder model to protobuf and MLIR
 
 FILE_PATH=tfscript.py
+TRANSFORM_PATH=transform.mlir
 SCRIPTS_DIR=../../../scripts
 ODIR=output
 
@@ -13,6 +14,10 @@ TOSA_TARGET=$(ODIR)/01_tosa.mlir
 # TARGET=$(ODIR)/04_llvm.ll
 # TARGET=$(ODIR)/bambu/baseline/06_verilog.v
 TARGET=$(ODIR)/bambu/baseline/07_results.txt # For simulation results
+TARGET=$(ODIR)/bambu/transformed/07_results.txt # For simulation results
+
+baseline: $(ODIR)/bambu/baseline/07_results.txt
+transformed: $(ODIR)/bambu/transformed/07_results.txt
 
 all: $(TARGET)
 
@@ -49,6 +54,10 @@ include $(SCRIPTS_DIR)/mkinc/tosa_to_llvm.mk
 
 # Include the rules to generate graph from a mlir file
 include $(SCRIPTS_DIR)/mkinc/mlir_to_graph.mk
+
+# Put the transform schedule on the output directory where it is expected
+$(ODIR)/04_transform_sched.mlir: $(TRANSFORM_PATH) 
+	cp $< $@ 
 
 # Include the rules to generate soda LLVM IR
 include $(SCRIPTS_DIR)/mkinc/soda_to_llvm.mk
