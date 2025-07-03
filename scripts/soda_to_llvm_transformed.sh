@@ -17,10 +17,6 @@ OUTPUT_NAME=$(basename $2)
 OUTPUT_PATH=$OUTPUT_DIR/$OUTPUT_NAME
 TRANSFORM_SCHED=$(pwd)/$(dirname $3)/$(basename $3)
 
-echo $TRANSFORM_SCHED
-
-cat $TRANSFORM_SCHED
-
 # set -x
 
 $DOCKER_RUN \
