@@ -1,0 +1,1011 @@
+ ==  Bambu executed with: bambu -v3 --print-dot -lm --soft-float --compiler=I386_CLANG16 --device=nangate45 --clock-period=10 --experimental-setup=BAMBU-BALANCED-MP --channels-number=2 --memory-allocation-policy=NO_BRAM --disable-function-proxy --generate-tb=../../forward_kernel_testbench.c --simulate --simulator=VERILATOR --verilator-parallel --top-fname=forward_kernel input.ll 
+
+
+********************************************************************************
+                    ____                  _
+                   | __ )  __ _ _ __ ___ | |_   _   _
+                   |  _ \ / _` | '_ ` _ \| '_ \| | | |
+                   | |_) | (_| | | | | | | |_) | |_| |
+                   |____/ \__,_|_| |_| |_|_.__/ \__,_|
+
+********************************************************************************
+                         High-Level Synthesis Tool
+
+                         Politecnico di Milano - DEIB
+                          System Architectures Group
+********************************************************************************
+                Copyright (C) 2004-2024 Politecnico di Milano
+   Version: PandA 2024.10 - Revision c2ba6936ca2ed63137095fea0b630a1c66e20e63
+
+Parameters parsed in 0.00 seconds
+
+Library Name     : STD_FU
+  Total cells    : 3
+  - combinational: 0
+  - others: 3
+
+Library Name     : STD_FU
+  Total cells    : 10
+  - combinational: 0
+  - others: 10
+
+Library Name     : STD_FU
+  Total cells    : 33
+  - combinational: 0
+  - others: 33
+
+Library Name     : STD_FU
+  Total cells    : 8
+  - combinational: 0
+  - others: 8
+
+Library Name     : STD_FU
+  Total cells    : 56
+  - combinational: 0
+  - others: 56
+
+Library Name     : STD_FU
+  Total cells    : 1
+  - combinational: 0
+  - others: 1
+
+Library Name     : CS_COMPONENT
+  Total cells    : 16
+  - combinational: 0
+  - others: 16
+
+Library Name     : STD_FU
+  Total cells    : 2
+  - combinational: 0
+  - others: 2
+
+Library Name     : STD_FU
+  Total cells    : 0
+  - combinational: 0
+  - others: 0
+
+Library Name     : STD_FU
+  Total cells    : 3
+  - combinational: 0
+  - others: 3
+
+Library Name     : STD_FU
+  Total cells    : 21
+  - combinational: 0
+  - others: 21
+
+Library Name     : STD
+  Total cells    : 20
+  - combinational: 0
+  - others: 20
+
+Library Name     : STD_COMMON
+  Total cells    : 66
+  - combinational: 0
+  - others: 66
+
+Library Name     : STD_FU
+  Total cells    : 10
+  - combinational: 0
+  - others: 10
+
+Library Name     : STD_PC
+  Total cells    : 16
+  - combinational: 0
+  - others: 16
+
+Library Name     : STD_SOFT_FLOAT
+  Total cells    : 2
+  - combinational: 0
+  - others: 2
+
+Library Name     : STD
+  Total cells    : 98
+  - combinational: 0
+  - others: 98
+
+Library Name     : STD_FU
+  Total cells    : 2
+  - combinational: 0
+  - others: 2
+
+Library Name     : STD_FU
+  Total cells    : 9
+  - combinational: 0
+  - others: 9
+
+Library Name     : WBWrapper
+  Total cells    : 12
+  - combinational: 0
+  - others: 12
+
+Library Name     : STD_FU
+  Total cells    : 23
+  - combinational: 0
+  - others: 23
+
+Library Name     : STD_DATAFLOW
+  Total cells    : 1
+  - combinational: 0
+  - others: 1
+
+Available devices:
+ - 5CSEMA5F31C6
+ - 5SGXEA7N2F45C1
+ - EP2C70F896C6
+ - EP2C70F896C6-R
+ - EP4SGX530KH40C2
+ - LFE335EA8FN484C
+ - LFE5U85F8BG756C
+ - LFE5UM85F8BG756C
+ - asap7-BC
+ - asap7-TC
+ - asap7-WC
+ - nangate45
+ - nx1h140tsp
+ - nx1h35S
+ - nx2h540tsc
+ - xc4vlx100-10ff1513
+ - xc5vlx110t-1ff1136
+ - xc5vlx330t-2ff1738
+ - xc5vlx50-3ff1153
+ - xc6vlx240t-1ff1156
+ - xc7a100t-1csg324-VVD
+ - xc7vx330t-1ffg1157
+ - xc7vx485t-2ffg1761-VVD
+ - xc7vx690t-3ffg1930-VVD
+ - xc7z020-1clg484
+ - xc7z020-1clg484-VVD
+ - xc7z020-1clg484-YOSYS-VVD
+ - xc7z045-2ffg900-VVD
+ - xcku060-3ffva1156-VVD
+ - xcu280-2Lfsvh2892-VVD
+ - xcu55c-2Lfsvh2892-VVD
+Library Name     : STD_FU
+  Total cells    : 4335
+  - combinational: 0
+  - others: 4335
+
+warning: overriding the module target triple with i386-unknown-linux-gnu [-Woverride-module]
+1 warning generated.
+warning: overriding the module target triple with i386-unknown-linux-gnu [-Woverride-module]
+1 warning generated.
+Warning: Missing XML module architecture file.
+/opt/clang-16/lib/clang/16/include
+/usr/local/include
+/usr/include/x86_64-linux-gnu
+/usr/include
+
+
+  Analyzing function forward_kernel
+    Parameter @500074 P0
+    Interface specification:
+      Parameter : P0
+      Protocol  : default
+      Direction : IN
+      Bundle    : P0
+      Bitwidth  : 32
+      Alignment : 4
+    Parameter @500075 P1
+    Interface specification:
+      Parameter : P1
+      Protocol  : default
+      Direction : IN
+      Bundle    : P1
+      Bitwidth  : 32
+      Alignment : 4
+  Analyzed function forward_kernel
+Removing2: switch ((unsigned char)  _27127_[319]) <case 1unsigned char: , case 0unsigned char: , default: >
+Before2  : switch ((unsigned char)  _27127_[319]) <case 1unsigned char: , case 0unsigned char: , default: >
+  Bit Value Opt: plus_expr optimized, nbits = 2
+  Bit Value Opt: plus_expr optimized, nbits = 3
+  Bit Value Opt: cond_expr optimized, nbits = 1
+  Bit Value Opt: cond_expr optimized, nbits = 1
+  Bit Value Opt: cond_expr optimized, nbits = 1
+  Bit Value Opt: cond_expr optimized, nbits = 1
+  Bit Value Opt: bit_and_expr optimized, nbits = 1
+  Bit Value Opt: ne_expr optimized, nbits = 1
+  Bit Value Opt: cond_expr optimized, nbits = 1
+  Bit Value Opt: cond_expr optimized, nbits = 1
+  Bit Value Opt: bit_and_expr optimized, nbits = 22
+  Bit Value Opt: ne_expr optimized, nbits = 22
+  Bit Value Opt: bit_and_expr optimized, nbits = 47
+  Bit Value Opt: ne_expr optimized, nbits = 47
+  Bit Value Opt: bit_and_expr optimized, nbits = 9
+  Bit Value Opt: ne_expr optimized, nbits = 9
+  Bit Value Opt: bit_and_expr optimized, nbits = 32
+  Bit Value Opt: ne_expr optimized, nbits = 32
+  Bit Value Opt: cond_expr optimized, nbits = 1
+  Bit Value Opt: cond_expr optimized, nbits = 1
+  Bit Value Opt: cond_expr optimized, nbits = 2
+  Bit Value Opt: plus_expr optimized, nbits = 1
+  Bit Value Opt: cond_expr optimized, nbits = 1
+  Bit Value Opt: cond_expr optimized, nbits = 2
+  Bit Value Opt: cond_expr optimized, nbits = 3
+  Bit Value Opt: cond_expr optimized, nbits = 1
+  Bit Value Opt: cond_expr optimized, nbits = 2
+  Bit Value Opt: cond_expr optimized, nbits = 3
+  Bit Value Opt: cond_expr optimized, nbits = 4
+  Bit Value Opt: cond_expr optimized, nbits = 5
+  Bit Value Opt: bit_and_expr optimized, nbits = 1
+  Bit Value Opt: ne_expr optimized, nbits = 1
+  Bit Value Opt: bit_xor_expr optimized, nbits = 2
+  Bit Value Opt: bit_and_expr optimized, nbits = 2
+  Bit Value Opt: ne_expr optimized, nbits = 2
+  Bit Value Opt: plus_expr optimized, nbits = 2
+  Bit Value Opt: bit_and_expr optimized, nbits = 11
+  Bit Value Opt: eq_expr optimized, nbits = 11
+  Bit Value Opt: bit_and_expr optimized, nbits = 19
+  Bit Value Opt: eq_expr optimized, nbits = 19
+  Bit Value Opt: bit_and_expr optimized, nbits = 23
+  Bit Value Opt: eq_expr optimized, nbits = 23
+  Bit Value Opt: bit_and_expr optimized, nbits = 25
+  Bit Value Opt: eq_expr optimized, nbits = 25
+  Bit Value Opt: bit_and_expr optimized, nbits = 26
+  Bit Value Opt: eq_expr optimized, nbits = 26
+  Bit Value Opt: bit_and_expr optimized, nbits = 26
+  Bit Value Opt: ne_expr optimized, nbits = 26
+  Bit Value Opt: plus_expr optimized, nbits = 4
+  Bit Value Opt: plus_expr optimized, nbits = 5
+  Bit Value Opt: plus_expr optimized, nbits = 1
+  Bit Value Opt: plus_expr optimized, nbits = 4
+  Bit Value Opt: plus_expr optimized, nbits = 6
+  Bit Value Opt: plus_expr optimized, nbits = 2
+  Bit Value Opt: plus_expr optimized, nbits = 4
+  Bit Value Opt: plus_expr optimized, nbits = 5
+  Bit Value Opt: plus_expr optimized, nbits = 1
+  Bit Value Opt: bit_and_expr optimized, nbits = 6
+  Bit Value Opt: bit_and_expr optimized, nbits = 6
+  Bit Value Opt: bit_and_expr optimized, nbits = 6
+  Bit Value Opt: plus_expr optimized, nbits = 4
+  Bit Value Opt: plus_expr optimized, nbits = 1
+  Bit Value Opt: plus_expr optimized, nbits = 2
+  Bit Value Opt: plus_expr optimized, nbits = 1
+  Bit Value Opt: plus_expr optimized, nbits = 1
+  Bit Value Opt: plus_expr optimized, nbits = 1
+  Bit Value Opt: plus_expr optimized, nbits = 2
+  Bit Value Opt: plus_expr optimized, nbits = 1
+  Bit Value Opt: plus_expr optimized, nbits = 1
+  Bit Value Opt: bit_and_expr optimized, nbits = 6
+  Bit Value Opt: bit_and_expr optimized, nbits = 6
+  Bit Value Opt: plus_expr optimized, nbits = 4
+  Bit Value Opt: bit_and_expr optimized, nbits = 6
+  Bit Value Opt: plus_expr optimized, nbits = 9
+  Bit Value Opt: plus_expr optimized, nbits = 4
+  Bit Value Opt: plus_expr optimized, nbits = 5
+  Bit Value Opt: plus_expr optimized, nbits = 6
+  Bit Value Opt: plus_expr optimized, nbits = 5
+  Bit Value Opt: plus_expr optimized, nbits = 7
+  Bit Value Opt: plus_expr optimized, nbits = 5
+  Bit Value Opt: plus_expr optimized, nbits = 6
+  Bit Value Opt: plus_expr optimized, nbits = 5
+  Bit Value Opt: plus_expr optimized, nbits = 8
+  Bit Value Opt: plus_expr optimized, nbits = 5
+  Bit Value Opt: plus_expr optimized, nbits = 6
+  Bit Value Opt: plus_expr optimized, nbits = 5
+  Bit Value Opt: plus_expr optimized, nbits = 7
+  Bit Value Opt: plus_expr optimized, nbits = 5
+  Bit Value Opt: plus_expr optimized, nbits = 6
+  Bit Value Opt: plus_expr optimized, nbits = 5
+  Bit Value Opt: bit_and_expr optimized, nbits = 6
+  Bit Value Opt: bit_and_expr optimized, nbits = 6
+  Bit Value Opt: bit_and_expr optimized, nbits = 6
+  Bit Value Opt: plus_expr optimized, nbits = 1
+  Bit Value Opt: plus_expr optimized, nbits = 4
+  Bit Value Opt: plus_expr optimized, nbits = 5
+  Bit Value Opt: plus_expr optimized, nbits = 5
+  Bit Value Opt: bit_and_expr optimized, nbits = 6
+  Bit Value Opt: plus_expr optimized, nbits = 5
+  Bit Value Opt: bit_and_expr optimized, nbits = 6
+  Bit Value Opt: plus_expr optimized, nbits = 5
+  Bit Value Opt: bit_and_expr optimized, nbits = 6
+  Bit Value Opt: plus_expr optimized, nbits = 5
+  Bit Value Opt: plus_expr optimized, nbits = 5
+  Bit Value Opt: plus_expr optimized, nbits = 1
+  Bit Value Opt: bit_and_expr optimized, nbits = 6
+  Bit Value Opt: plus_expr optimized, nbits = 10
+  Bit Value Opt: plus_expr optimized, nbits = 5
+  Bit Value Opt: plus_expr optimized, nbits = 5
+  Bit Value Opt: plus_expr optimized, nbits = 5
+  Bit Value Opt: plus_expr optimized, nbits = 11
+  Bit Value Opt: plus_expr optimized, nbits = 5
+  Bit Value Opt: plus_expr optimized, nbits = 5
+  Bit Value Opt: plus_expr optimized, nbits = 6
+  Bit Value Opt: bit_and_expr optimized, nbits = 6
+  Bit Value Opt: bit_and_expr optimized, nbits = 6
+  Bit Value Opt: plus_expr optimized, nbits = 6
+  Bit Value Opt: plus_expr optimized, nbits = 5
+  Bit Value Opt: plus_expr optimized, nbits = 1
+  Bit Value Opt: plus_expr optimized, nbits = 5
+  Bit Value Opt: plus_expr optimized, nbits = 5
+  Bit Value Opt: plus_expr optimized, nbits = 5
+  Bit Value Opt: plus_expr optimized, nbits = 5
+  Bit Value Opt: plus_expr optimized, nbits = 6
+  Bit Value Opt: plus_expr optimized, nbits = 6
+  Bit Value Opt: plus_expr optimized, nbits = 5
+  Bit Value Opt: plus_expr optimized, nbits = 6
+  Bit Value Opt: plus_expr optimized, nbits = 5
+  Bit Value Opt: bit_and_expr optimized, nbits = 6
+  Bit Value Opt: plus_expr optimized, nbits = 5
+  Bit Value Opt: bit_and_expr optimized, nbits = 6
+  Bit Value Opt: plus_expr optimized, nbits = 5
+  Bit Value Opt: bit_and_expr optimized, nbits = 6
+  Bit Value Opt: plus_expr optimized, nbits = 6
+  Bit Value Opt: plus_expr optimized, nbits = 5
+  Bit Value Opt: plus_expr optimized, nbits = 1
+  Bit Value Opt: bit_and_expr optimized, nbits = 6
+  Bit Value Opt: plus_expr optimized, nbits = 11
+  Bit Value Opt: plus_expr optimized, nbits = 6
+  Bit Value Opt: plus_expr optimized, nbits = 5
+  Bit Value Opt: plus_expr optimized, nbits = 5
+  Bit Value Opt: plus_expr optimized, nbits = 12
+  Bit Value Opt: plus_expr optimized, nbits = 6
+  Bit Value Opt: plus_expr optimized, nbits = 5
+  Bit Value Opt: plus_expr optimized, nbits = 6
+  Bit Value Opt: bit_and_expr optimized, nbits = 6
+  Bit Value Opt: bit_and_expr optimized, nbits = 6
+  Bit Value Opt: plus_expr optimized, nbits = 6
+  Bit Value Opt: plus_expr optimized, nbits = 5
+  Bit Value Opt: plus_expr optimized, nbits = 1
+  Bit Value Opt: plus_expr optimized, nbits = 6
+  Bit Value Opt: plus_expr optimized, nbits = 5
+  Bit Value Opt: plus_expr optimized, nbits = 5
+  Bit Value Opt: plus_expr optimized, nbits = 5
+  Bit Value Opt: plus_expr optimized, nbits = 6
+  Bit Value Opt: plus_expr optimized, nbits = 6
+  Bit Value Opt: plus_expr optimized, nbits = 5
+  Bit Value Opt: plus_expr optimized, nbits = 6
+  Bit Value Opt: plus_expr optimized, nbits = 6
+  Bit Value Opt: bit_and_expr optimized, nbits = 6
+  Bit Value Opt: plus_expr optimized, nbits = 6
+  Bit Value Opt: bit_and_expr optimized, nbits = 6
+  Bit Value Opt: plus_expr optimized, nbits = 6
+  Bit Value Opt: bit_and_expr optimized, nbits = 6
+  Bit Value Opt: bit_and_expr optimized, nbits = 6
+  Bit Value Opt: plus_expr optimized, nbits = 4
+  Bit Value Opt: bit_and_expr optimized, nbits = 1
+  Bit Value Opt: plus_expr optimized, nbits = 1
+  Bit Value Opt: bit_and_expr optimized, nbits = 5
+  Bit Value Opt: bit_and_expr optimized, nbits = 5
+  Bit Value Opt: bit_and_expr optimized, nbits = 6
+  Bit Value Opt: bit_and_expr optimized, nbits = 6
+
+  Functions to be synthesized:
+    __internal_malloc
+    __internal_free
+    forward_kernel
+    __float_mule8m23b_127nih
+    __float_adde8m23b_127nih
+    __float_gee8m23b_127nih
+
+
+  Memory allocation information:
+  Sparse memory alignment set to 1024 bytes
+    Variable external to the top module: freep - 394369 - freep
+      Id: 394369
+      Base Address: 1073741824
+      Size: 4
+      Used &(object)
+      Number of functions in which is used: 2
+      Maximum number of references per function: 4
+      Maximum number of loads per function: 2
+    Variable external to the top module: base - 394372 - base
+      Id: 394372
+      Base Address: 1073742848
+      Size: 8
+      Used &(object)
+      Number of functions in which is used: 1
+      Maximum number of references per function: 2
+    Variable external to the top module: SAMM_pool - 394377 - SAMM_pool
+      Id: 394377
+      Base Address: 1073743872
+      Size: 393216
+      Used &(object)
+      Number of functions in which is used: 1
+      Maximum number of references per function: 1
+    Variable external to the top module: SAMM_pool_free_pos - 395271 - SAMM_pool_free_pos
+      Id: 395271
+      Base Address: 1074137088
+      Size: 4
+      Used &(object)
+      Number of functions in which is used: 1
+      Maximum number of references per function: 2
+      Maximum number of loads per function: 1
+    Variable external to the top module: __constant_1x7x1x16xf32 - 500167 - __constant_1x7x1x16xf32
+      Id: 500167
+      Base Address: 1074138112
+      Size: 448
+      Is a Read Only Memory
+      Used &(object)
+      Number of functions in which is used: 1
+      Maximum number of references per function: 7
+      Maximum number of loads per function: 7
+    Variable external to the top module: __constant_1x7x16x32xf32 - 501767 - __constant_1x7x16x32xf32
+      Id: 501767
+      Base Address: 1074139136
+      Size: 14336
+      Is a Read Only Memory
+      Used &(object)
+      Number of functions in which is used: 1
+      Maximum number of references per function: 16
+      Maximum number of loads per function: 16
+    Variable external to the top module: __constant_1x3x32x32xf32 - 506699 - __constant_1x3x32x32xf32
+      Id: 506699
+      Base Address: 1074153472
+      Size: 12288
+      Is a Read Only Memory
+      Used &(object)
+      Number of functions in which is used: 1
+      Maximum number of references per function: 3
+      Maximum number of loads per function: 3
+    Variable external to the top module: __constant_1x3x32x64xf32 - 510575 - __constant_1x3x32x64xf32
+      Id: 510575
+      Base Address: 1074165760
+      Size: 24576
+      Is a Read Only Memory
+      Used &(object)
+      Number of functions in which is used: 1
+      Maximum number of references per function: 3
+      Maximum number of loads per function: 3
+    Variable external to the top module: __constant_1x960x16xf32 - 517556 - __constant_1x960x16xf32
+      Id: 517556
+      Base Address: 1074190336
+      Size: 61440
+      Is a Read Only Memory
+      Used &(object)
+      Number of functions in which is used: 1
+      Maximum number of references per function: 1
+      Maximum number of loads per function: 1
+Warning: This function uses unknown addresses: forward_kernel
+    BRAM bitsize: 16
+    Spec may not exploit DATA bus width
+    Spec accesses data having an address unknown at compile time
+    Internal data is not externally accessible
+    DATA bus bitsize: 32
+    ADDRESS bus bitsize: 32
+    SIZE bus bitsize: 6
+    Internally allocated memory (no private memories): 0
+    Internally allocated memory: 0
+  Time to perform memory allocation: 0.00 seconds
+
+
+  Module allocation information for function __internal_free:
+    Number of complex operations: 13
+    Number of complex operations: 13
+  Time to perform module allocation: 0.02 seconds
+
+
+  Module allocation information for function __float_mule8m23b_127nih:
+    Number of complex operations: 0
+    Number of complex operations: 0
+  Time to perform module allocation: 0.04 seconds
+
+
+  Module allocation information for function __float_adde8m23b_127nih:
+    Number of complex operations: 0
+    Number of complex operations: 0
+  Time to perform module allocation: 0.06 seconds
+
+
+  Module allocation information for function __float_gee8m23b_127nih:
+    Number of complex operations: 0
+    Number of complex operations: 0
+  Time to perform module allocation: 0.01 seconds
+
+
+  Scheduling Information of function __internal_free:
+    Number of control steps: 22
+    Minimum slack: 7.7865614615591596
+    Estimated max frequency (MHz): 451.78575444177733
+  Time to perform scheduling: 0.00 seconds
+
+  Number of function call sites = 1
+
+  State Transition Graph Information of function __internal_free:
+    Number of operations: 58
+    Number of basic blocks: 12
+    Number of states: 33
+    Done port is registered
+  Time to perform creation of STG: 0.01 seconds
+
+
+  Scheduling Information of function __float_mule8m23b_127nih:
+    Number of control steps: 3
+    Minimum slack: 4.608980906170018
+    Estimated max frequency (MHz): 185.49368544149647
+  Time to perform scheduling: 0.02 seconds
+
+  Number of function call sites = 49
+
+  State Transition Graph Information of function __float_mule8m23b_127nih:
+    Number of operations: 211
+    Number of basic blocks: 3
+    Number of states: 1
+    Minimum number of cycles: 1
+    Maximum number of cycles 1
+  Time to perform creation of STG: 0.01 seconds
+
+
+  Scheduling Information of function __float_adde8m23b_127nih:
+    Number of control steps: 3
+    Minimum slack: 0.74807016027267537
+    Estimated max frequency (MHz): 108.0855580752515
+  Time to perform scheduling: 0.02 seconds
+
+  Number of function call sites = 30
+
+  State Transition Graph Information of function __float_adde8m23b_127nih:
+    Number of operations: 278
+    Number of basic blocks: 3
+    Number of states: 2
+    Minimum number of cycles: 2
+    Maximum number of cycles 2
+    Parameters are registered
+    Done port is registered
+  Time to perform creation of STG: 0.02 seconds
+
+
+  Scheduling Information of function __float_gee8m23b_127nih:
+    Number of control steps: 5
+    Minimum slack: 9.2642049436433922
+    Estimated max frequency (MHz): 1359.0740945605696
+  Time to perform scheduling: 0.00 seconds
+
+  Number of function call sites = 19
+
+  State Transition Graph Information of function __float_gee8m23b_127nih:
+    Number of operations: 28
+    Number of basic blocks: 5
+    Number of states: 3
+    Minimum number of cycles: 2
+    Maximum number of cycles 2
+    Done port is registered
+  Time to perform creation of STG: 0.00 seconds
+
+
+  Easy binding information for function __internal_free:
+    Bound operations:29/58
+  Time to perform easy binding: 0.00 seconds
+
+
+  Easy binding information for function __float_mule8m23b_127nih:
+    Bound operations:91/211
+  Time to perform easy binding: 0.00 seconds
+
+
+  Easy binding information for function __float_adde8m23b_127nih:
+    Bound operations:104/278
+  Time to perform easy binding: 0.00 seconds
+
+
+  Easy binding information for function __float_gee8m23b_127nih:
+    Bound operations:22/28
+  Time to perform easy binding: 0.00 seconds
+
+
+  Storage Value Information of function __internal_free:
+    Number of storage values inserted: 24
+  Time to compute storage value information: 0.00 seconds
+
+
+  Storage Value Information of function __float_mule8m23b_127nih:
+    Number of storage values inserted: 0
+  Time to compute storage value information: 0.00 seconds
+
+
+  Storage Value Information of function __float_adde8m23b_127nih:
+    Number of storage values inserted: 0
+  Time to compute storage value information: 0.00 seconds
+
+
+  Storage Value Information of function __float_gee8m23b_127nih:
+    Number of storage values inserted: 4
+  Time to compute storage value information: 0.00 seconds
+
+  Slack computed in 0.00 seconds
+  Weight computation completed in 0.01 seconds
+  False-loop computation completed in 0.00 seconds
+  cdfc mux estimation 13 -- Number of cliques covering the graph: 1 __internal_free_MEMORY_CTRLN_21 with 13 vertices
+  Iteration 0 completed in 0.00 seconds
+
+  Register binding information for function __internal_free:
+    Register allocation algorithm obtains a sub-optimal result: 15 registers(LB:8)
+  Time to perform register binding: 0.00 seconds
+
+  cdfc mux estimation 12 -- Number of cliques covering the graph: 1 __internal_free_MEMORY_CTRLN_21 with 13 vertices
+  Iteration 1 completed in 0.00 seconds
+
+  Register binding information for function __internal_free:
+    Register allocation algorithm obtains a sub-optimal result: 15 registers(LB:8)
+  Time to perform register binding: 0.00 seconds
+
+  cdfc mux estimation 12 -- Number of cliques covering the graph: 1 __internal_free_MEMORY_CTRLN_21 with 13 vertices
+  Iteration 2 completed in 0.00 seconds
+  Clique covering computation completed in 0.00 seconds
+
+  Module binding information for function __internal_free:
+    Number of modules instantiated: 46
+    Number of performance conflicts: 0
+    Estimated resources area (no Muxes and address logic): 38583
+    Estimated area of MUX21: 7756
+    Total estimated area: 46339
+    Estimated number of DSPs: 0
+  Time to perform module binding: 0.01 seconds
+
+
+  Register binding information for function __internal_free:
+    Register allocation algorithm obtains a sub-optimal result: 15 registers(LB:8)
+  Time to perform register binding: 0.00 seconds
+
+
+  Connection Binding Information for function __internal_free:
+    Number of allocated multiplexers (2-to-1 equivalent): 16
+    Total number of bit-level multiplexers: 512
+  Time to perform interconnection binding: 0.00 seconds
+
+  Total number of flip-flops in function __internal_free: 387
+
+  Module allocation information for function __internal_malloc:
+    Number of complex operations: 18
+    Number of complex operations: 18
+  Time to perform module allocation: 0.02 seconds
+
+
+  Scheduling Information of function __internal_malloc:
+    Number of control steps: 28
+    Minimum slack: 7.5002785373930294
+    Estimated max frequency (MHz): 400.04457094875505
+  Time to perform scheduling: 0.00 seconds
+
+  Number of function call sites = 25
+
+  State Transition Graph Information of function __internal_malloc:
+    Number of operations: 105
+    Number of basic blocks: 16
+    Number of states: 42
+    Done port is registered
+  Time to perform creation of STG: 0.01 seconds
+
+
+  Easy binding information for function __internal_malloc:
+    Bound operations:70/105
+  Time to perform easy binding: 0.00 seconds
+
+
+  Storage Value Information of function __internal_malloc:
+    Number of storage values inserted: 41
+  Time to compute storage value information: 0.00 seconds
+
+  Slack computed in 0.00 seconds
+  Weight computation completed in 0.00 seconds
+  False-loop computation completed in 0.00 seconds
+  cdfc mux estimation 22 -- Number of cliques covering the graph: 2 __internal_malloc_MEMORY_CTRLN_53 with 17 vertices
+  Iteration 0 completed in 0.00 seconds
+
+  Register binding information for function __internal_malloc:
+    Register allocation algorithm obtains a sub-optimal result: 29 registers(LB:13)
+  Time to perform register binding: 0.00 seconds
+
+  cdfc mux estimation 22 -- Number of cliques covering the graph: 2 __internal_malloc_MEMORY_CTRLN_53 with 17 vertices
+  Iteration 1 completed in 0.00 seconds
+  Clique covering computation completed in 0.00 seconds
+
+  Module binding information for function __internal_malloc:
+    Number of modules instantiated: 90
+    Number of performance conflicts: 0
+    Estimated resources area (no Muxes and address logic): 50110
+    Estimated area of MUX21: 15145
+    Total estimated area: 65255
+    Estimated number of DSPs: 0
+  Time to perform module binding: 0.00 seconds
+
+
+  Register binding information for function __internal_malloc:
+    Register allocation algorithm obtains a sub-optimal result: 29 registers(LB:13)
+  Time to perform register binding: 0.00 seconds
+
+
+  Connection Binding Information for function __internal_malloc:
+    Number of allocated multiplexers (2-to-1 equivalent): 32
+    Total number of bit-level multiplexers: 1024
+  Time to perform interconnection binding: 0.00 seconds
+
+  Total number of flip-flops in function __internal_malloc: 848
+  Slack computed in 0.01 seconds
+  Weight computation completed in 0.00 seconds
+  False-loop computation completed in 0.00 seconds
+  Iteration 0 completed in 0.00 seconds
+
+  Register binding information for function __float_mule8m23b_127nih:
+    Register allocation algorithm obtains an optimal result: 0 registers
+  Time to perform register binding: 0.00 seconds
+
+  Iteration 1 completed in 0.00 seconds
+  Clique covering computation completed in 0.00 seconds
+
+  Module binding information for function __float_mule8m23b_127nih:
+    Number of modules instantiated: 211
+    Number of performance conflicts: 0
+    Estimated resources area (no Muxes and address logic): 119193
+    Estimated area of MUX21: 0
+    Total estimated area: 119193
+    Estimated number of DSPs: 0
+  Time to perform module binding: 0.01 seconds
+
+
+  Register binding information for function __float_mule8m23b_127nih:
+    Register allocation algorithm obtains an optimal result: 0 registers
+  Time to perform register binding: 0.00 seconds
+
+  Total number of flip-flops in function __float_mule8m23b_127nih: 0
+  Slack computed in 0.00 seconds
+  Weight computation completed in 0.00 seconds
+  False-loop computation completed in 0.00 seconds
+  Iteration 0 completed in 0.00 seconds
+
+  Register binding information for function __float_adde8m23b_127nih:
+    Register allocation algorithm obtains an optimal result: 0 registers
+  Time to perform register binding: 0.00 seconds
+
+  Iteration 1 completed in 0.00 seconds
+  Clique covering computation completed in 0.00 seconds
+
+  Module binding information for function __float_adde8m23b_127nih:
+    Number of modules instantiated: 278
+    Number of performance conflicts: 0
+    Estimated resources area (no Muxes and address logic): 169257
+    Estimated area of MUX21: 0
+    Total estimated area: 169257
+    Estimated number of DSPs: 0
+  Time to perform module binding: 0.01 seconds
+
+
+  Register binding information for function __float_adde8m23b_127nih:
+    Register allocation algorithm obtains an optimal result: 0 registers
+  Time to perform register binding: 0.00 seconds
+
+  Total number of flip-flops in function __float_adde8m23b_127nih: 0
+  Slack computed in 0.00 seconds
+  Weight computation completed in 0.00 seconds
+  False-loop computation completed in 0.00 seconds
+  Iteration 0 completed in 0.00 seconds
+
+  Register binding information for function __float_gee8m23b_127nih:
+    Register allocation algorithm obtains an optimal result: 4 registers
+  Time to perform register binding: 0.00 seconds
+
+  Iteration 1 completed in 0.00 seconds
+  Clique covering computation completed in 0.00 seconds
+
+  Module binding information for function __float_gee8m23b_127nih:
+    Number of modules instantiated: 28
+    Number of performance conflicts: 0
+    Estimated resources area (no Muxes and address logic): 14928
+    Estimated area of MUX21: 0
+    Total estimated area: 14928
+    Estimated number of DSPs: 0
+  Time to perform module binding: 0.00 seconds
+
+
+  Register binding information for function __float_gee8m23b_127nih:
+    Register allocation algorithm obtains an optimal result: 4 registers
+  Time to perform register binding: 0.00 seconds
+
+
+  Connection Binding Information for function __float_gee8m23b_127nih:
+    Number of allocated multiplexers (2-to-1 equivalent): 1
+    Total number of bit-level multiplexers: 1
+  Time to perform interconnection binding: 0.00 seconds
+
+  Total number of flip-flops in function __float_gee8m23b_127nih: 35
+  All registers are without enable: function pipelining may come for free
+  Resources are not shared in function __float_gee8m23b_127nih: function pipelining may come for free
+
+  Module allocation information for function forward_kernel:
+    Number of complex operations: 338
+    Number of complex operations: 338
+  Time to perform module allocation: 0.28 seconds
+
+
+  Scheduling Information of function forward_kernel:
+    Number of control steps: 401
+    Minimum slack: 0.33588785135407306
+    Estimated max frequency (MHz): 103.47562037968625
+  Time to perform scheduling: 0.61 seconds
+
+  Number of function call sites = 0
+
+  State Transition Graph Information of function forward_kernel:
+    Number of operations: 2477
+    Number of basic blocks: 94
+    Number of states: 631
+    Done port is registered
+  Time to perform creation of STG: 0.33 seconds
+
+
+  Easy binding information for function forward_kernel:
+    Bound operations:841/2477
+  Time to perform easy binding: 0.00 seconds
+
+
+  Storage Value Information of function forward_kernel:
+    Number of storage values inserted: 849
+  Time to compute storage value information: 0.01 seconds
+
+  Slack computed in 0.03 seconds
+  Weight computation completed in 0.64 seconds
+  False-loop computation completed in 0.33 seconds
+  cdfc mux estimation 473 -- Number of cliques covering the graph: 2 forward_kernel_MEMORY_CTRLN_801 with 264 vertices
+  cdfc mux estimation 58 -- Number of cliques covering the graph: 1 forward_kernel___float_adde8m23b_127nih_940 with 30 vertices
+  cdfc mux estimation 37 -- Number of cliques covering the graph: 1 forward_kernel___float_gee8m23b_127nih_941 with 19 vertices
+  cdfc mux estimation 78 -- Number of cliques covering the graph: 1 forward_kernel___float_mule8m23b_127nih_942 with 49 vertices
+  cdfc mux estimation 12 -- Number of cliques covering the graph: 1 forward_kernel___internal_malloc_943 with 25 vertices
+  Iteration 0 completed in 0.49 seconds
+
+  Register binding information for function forward_kernel:
+    Register allocation algorithm obtains a sub-optimal result: 621 registers(LB:53)
+  Time to perform register binding: 0.46 seconds
+
+  cdfc mux estimation 464 -- Number of cliques covering the graph: 2 forward_kernel_MEMORY_CTRLN_801 with 264 vertices
+  cdfc mux estimation 58 -- Number of cliques covering the graph: 1 forward_kernel___float_adde8m23b_127nih_940 with 30 vertices
+  cdfc mux estimation 37 -- Number of cliques covering the graph: 1 forward_kernel___float_gee8m23b_127nih_941 with 19 vertices
+  cdfc mux estimation 78 -- Number of cliques covering the graph: 1 forward_kernel___float_mule8m23b_127nih_942 with 49 vertices
+  cdfc mux estimation 12 -- Number of cliques covering the graph: 1 forward_kernel___internal_malloc_943 with 25 vertices
+  Iteration 1 completed in 0.60 seconds
+  Clique covering computation completed in 1.55 seconds
+
+  Module binding information for function forward_kernel:
+    Number of modules instantiated: 2096
+    Number of performance conflicts: 0
+    Estimated resources area (no Muxes and address logic): 1161804
+    Estimated area of MUX21: inf
+    Total estimated area: inf
+    Estimated number of DSPs: 0
+  Time to perform module binding: 2.61 seconds
+
+
+  Register binding information for function forward_kernel:
+    Register allocation algorithm obtains a sub-optimal result: 621 registers(LB:53)
+  Time to perform register binding: 0.47 seconds
+
+
+  Connection Binding Information for function forward_kernel:
+    Number of allocated multiplexers (2-to-1 equivalent): 735
+    Total number of bit-level multiplexers: 24107
+  Time to perform interconnection binding: 0.06 seconds
+
+  Total number of flip-flops in function forward_kernel: 17920
+[0m .:: Creating Generic Bash Backend Flow ::.
+  C-based testbench generation for function forward_kernel
+  Prepared testbench
+Warning: Installed version of Verilator does not support multi-threading.
+
+  Summary of resources:
+     - ASSIGN_UNSIGNED_FU: 7
+     - IUdata_converter_FU: 3
+     - MEMORY_CTRLN: 3
+     - MUX_GATE: 784
+     - OR_GATE: 7
+     - SIMPLEJOIN_FU: 59
+     - UIdata_converter_FU: 3
+     - UUdata_converter_FU: 879
+     - addr_expr_FU: 10
+     - bus_merger: 10
+     - constant_value: 136
+     - flipflop_AR: 4
+     - join_signal: 20
+     - lshift_expr_FU: 3
+     - multi_read_cond_FU: 18
+     - read_cond_FU: 38
+     - register_SE: 643
+     - register_STD: 28
+     - rshift_expr_FU: 3
+     - split_signal: 10
+     - truth_and_expr_FU: 131
+     - truth_not_expr_FU: 24
+     - truth_or_expr_FU: 3
+     - truth_xor_expr_FU: 4
+     - ui_bit_and_expr_FU: 159
+     - ui_bit_ior_concat_expr_FU: 92
+     - ui_bit_ior_expr_FU: 116
+     - ui_bit_xor_expr_FU: 13
+     - ui_cond_expr_FU: 45
+     - ui_eq_expr_FU: 36
+     - ui_extract_bit_expr_FU: 26
+     - ui_ge_expr_FU: 1
+     - ui_gt_expr_FU: 3
+     - ui_lshift_expr_FU: 391
+     - ui_lt_expr_FU: 60
+     - ui_max_expr_FU: 1
+     - ui_minus_expr_FU: 6
+     - ui_mult_expr_FU: 1
+     - ui_ne_expr_FU: 27
+     - ui_plus_expr_FU: 197
+     - ui_pointer_plus_expr_FU: 252
+     - ui_rshift_expr_FU: 199
+     - ui_ternary_plus_expr_FU: 1
+     - ui_ternary_pm_expr_FU: 1
+make[1]: Entering directory '/workspaces/soda-benchmarks/models/tensorflow/EELS/output/bambu/baseline'
+Compiling libmdpi.so
+Compiling input.ll
+Compiling mdpi_driver.cpp
+Compiling mdpi_wrapper.cpp
+Compiling testbench forward_kernel_testbench.c
+clang-16: warning: -lm: 'linker' input unused [-Wunused-command-line-argument]
+clang-16: warning: argument unused during compilation: '-isystem /opt/panda/share/panda/libmdpi/include' [-Wunused-command-line-argument]
+clang-16: warning: -lm: 'linker' input unused [-Wunused-command-line-argument]
+clang-16: warning: -lm: 'linker' input unused [-Wunused-command-line-argument]
+warning: overriding the module target triple with i386-unknown-linux-gnu [-Woverride-module]
+1 warning generated.
+Linking libmdpi_driver.so
+Linking testbench
+make[1]: Leaving directory '/workspaces/soda-benchmarks/models/tensorflow/EELS/output/bambu/baseline'
+%Warning-MODDUP: HLS_output/simulation/bambu_testbench.v:70:8: Duplicate declaration of module: 'join_signal'
+   70 | module join_signal(in1,
+      |        ^~~~~~~~~~~
+                 forward_kernel.v:6655:8: ... Location of original declaration
+ 6655 | module join_signal(in1,
+      |        ^~~~~~~~~~~
+                 ... For warning description see https://verilator.org/warn/MODDUP?v=5.006
+                 ... Use "/* verilator lint_off MODDUP */" and lint_on around source to disable this message.
+%Warning-MODDUP: HLS_output/simulation/bambu_testbench.v:93:8: Duplicate declaration of module: 'split_signal'
+   93 | module split_signal(in1,
+      |        ^~~~~~~~~~~~
+                 forward_kernel.v:6678:8: ... Location of original declaration
+ 6678 | module split_signal(in1,
+      |        ^~~~~~~~~~~~
+make[1]: Entering directory '/workspaces/soda-benchmarks/models/tensorflow/EELS/output/bambu/baseline/HLS_output/beh_sim/verilator_obj'
+g++  -I.  -MMD -I/usr/share/verilator/include -I/usr/share/verilator/include/vltstd -DVM_COVERAGE=0 -DVM_SC=0 -DVM_TRACE=0 -DVM_TRACE_FST=0 -DVM_TRACE_VCD=0 -faligned-new -fcf-protection=none -Wno-bool-operation -Wno-sign-compare -Wno-uninitialized -Wno-unused-but-set-variable -Wno-unused-parameter -Wno-unused-variable -Wno-shadow  -fstrict-aliasing -DVCD_OUT_DIR=HLS_output/simulation     -Os -c -o sim_main.o HLS_output/beh_sim/sim_main.cpp
+g++  -I.  -MMD -I/usr/share/verilator/include -I/usr/share/verilator/include/vltstd -DVM_COVERAGE=0 -DVM_SC=0 -DVM_TRACE=0 -DVM_TRACE_FST=0 -DVM_TRACE_VCD=0 -faligned-new -fcf-protection=none -Wno-bool-operation -Wno-sign-compare -Wno-uninitialized -Wno-unused-but-set-variable -Wno-unused-parameter -Wno-unused-variable -Wno-shadow  -fstrict-aliasing -DVCD_OUT_DIR=HLS_output/simulation     -Os -c -o verilated.o /usr/share/verilator/include/verilated.cpp
+g++  -I.  -MMD -I/usr/share/verilator/include -I/usr/share/verilator/include/vltstd -DVM_COVERAGE=0 -DVM_SC=0 -DVM_TRACE=0 -DVM_TRACE_FST=0 -DVM_TRACE_VCD=0 -faligned-new -fcf-protection=none -Wno-bool-operation -Wno-sign-compare -Wno-uninitialized -Wno-unused-but-set-variable -Wno-unused-parameter -Wno-unused-variable -Wno-shadow  -fstrict-aliasing -DVCD_OUT_DIR=HLS_output/simulation     -Os -c -o verilated_dpi.o /usr/share/verilator/include/verilated_dpi.cpp
+g++  -I.  -MMD -I/usr/share/verilator/include -I/usr/share/verilator/include/vltstd -DVM_COVERAGE=0 -DVM_SC=0 -DVM_TRACE=0 -DVM_TRACE_FST=0 -DVM_TRACE_VCD=0 -faligned-new -fcf-protection=none -Wno-bool-operation -Wno-sign-compare -Wno-uninitialized -Wno-unused-but-set-variable -Wno-unused-parameter -Wno-unused-variable -Wno-shadow  -fstrict-aliasing -DVCD_OUT_DIR=HLS_output/simulation     -Os -c -o verilated_threads.o /usr/share/verilator/include/verilated_threads.cpp
+g++  -I.  -MMD -I/usr/share/verilator/include -I/usr/share/verilator/include/vltstd -DVM_COVERAGE=0 -DVM_SC=0 -DVM_TRACE=0 -DVM_TRACE_FST=0 -DVM_TRACE_VCD=0 -faligned-new -fcf-protection=none -Wno-bool-operation -Wno-sign-compare -Wno-uninitialized -Wno-unused-but-set-variable -Wno-unused-parameter -Wno-unused-variable -Wno-shadow  -fstrict-aliasing -DVCD_OUT_DIR=HLS_output/simulation     -Os -c -o Vbambu_testbench.o Vbambu_testbench.cpp
+g++  -I.  -MMD -I/usr/share/verilator/include -I/usr/share/verilator/include/vltstd -DVM_COVERAGE=0 -DVM_SC=0 -DVM_TRACE=0 -DVM_TRACE_FST=0 -DVM_TRACE_VCD=0 -faligned-new -fcf-protection=none -Wno-bool-operation -Wno-sign-compare -Wno-uninitialized -Wno-unused-but-set-variable -Wno-unused-parameter -Wno-unused-variable -Wno-shadow  -fstrict-aliasing -DVCD_OUT_DIR=HLS_output/simulation     -Os -c -o Vbambu_testbench___024root__DepSet_h7321823f__0.o Vbambu_testbench___024root__DepSet_h7321823f__0.cpp
+g++  -I.  -MMD -I/usr/share/verilator/include -I/usr/share/verilator/include/vltstd -DVM_COVERAGE=0 -DVM_SC=0 -DVM_TRACE=0 -DVM_TRACE_FST=0 -DVM_TRACE_VCD=0 -faligned-new -fcf-protection=none -Wno-bool-operation -Wno-sign-compare -Wno-uninitialized -Wno-unused-but-set-variable -Wno-unused-parameter -Wno-unused-variable -Wno-shadow  -fstrict-aliasing -DVCD_OUT_DIR=HLS_output/simulation     -Os -c -o Vbambu_testbench___024root__DepSet_hb4350c9a__0.o Vbambu_testbench___024root__DepSet_hb4350c9a__0.cpp
+g++  -I.  -MMD -I/usr/share/verilator/include -I/usr/share/verilator/include/vltstd -DVM_COVERAGE=0 -DVM_SC=0 -DVM_TRACE=0 -DVM_TRACE_FST=0 -DVM_TRACE_VCD=0 -faligned-new -fcf-protection=none -Wno-bool-operation -Wno-sign-compare -Wno-uninitialized -Wno-unused-but-set-variable -Wno-unused-parameter -Wno-unused-variable -Wno-shadow  -fstrict-aliasing -DVCD_OUT_DIR=HLS_output/simulation     -Os -c -o Vbambu_testbench___024root__DepSet_hb4350c9a__1.o Vbambu_testbench___024root__DepSet_hb4350c9a__1.cpp
+g++  -I.  -MMD -I/usr/share/verilator/include -I/usr/share/verilator/include/vltstd -DVM_COVERAGE=0 -DVM_SC=0 -DVM_TRACE=0 -DVM_TRACE_FST=0 -DVM_TRACE_VCD=0 -faligned-new -fcf-protection=none -Wno-bool-operation -Wno-sign-compare -Wno-uninitialized -Wno-unused-but-set-variable -Wno-unused-parameter -Wno-unused-variable -Wno-shadow  -fstrict-aliasing -DVCD_OUT_DIR=HLS_output/simulation     -Os -c -o Vbambu_testbench___024root__DepSet_hb4350c9a__2.o Vbambu_testbench___024root__DepSet_hb4350c9a__2.cpp
+g++  -I.  -MMD -I/usr/share/verilator/include -I/usr/share/verilator/include/vltstd -DVM_COVERAGE=0 -DVM_SC=0 -DVM_TRACE=0 -DVM_TRACE_FST=0 -DVM_TRACE_VCD=0 -faligned-new -fcf-protection=none -Wno-bool-operation -Wno-sign-compare -Wno-uninitialized -Wno-unused-but-set-variable -Wno-unused-parameter -Wno-unused-variable -Wno-shadow  -fstrict-aliasing -DVCD_OUT_DIR=HLS_output/simulation     -Os -c -o Vbambu_testbench___024root__DepSet_hb4350c9a__3.o Vbambu_testbench___024root__DepSet_hb4350c9a__3.cpp
+g++  -I.  -MMD -I/usr/share/verilator/include -I/usr/share/verilator/include/vltstd -DVM_COVERAGE=0 -DVM_SC=0 -DVM_TRACE=0 -DVM_TRACE_FST=0 -DVM_TRACE_VCD=0 -faligned-new -fcf-protection=none -Wno-bool-operation -Wno-sign-compare -Wno-uninitialized -Wno-unused-but-set-variable -Wno-unused-parameter -Wno-unused-variable -Wno-shadow  -fstrict-aliasing -DVCD_OUT_DIR=HLS_output/simulation     -Os -c -o Vbambu_testbench___024root__DepSet_hb4350c9a__4.o Vbambu_testbench___024root__DepSet_hb4350c9a__4.cpp
+g++  -I.  -MMD -I/usr/share/verilator/include -I/usr/share/verilator/include/vltstd -DVM_COVERAGE=0 -DVM_SC=0 -DVM_TRACE=0 -DVM_TRACE_FST=0 -DVM_TRACE_VCD=0 -faligned-new -fcf-protection=none -Wno-bool-operation -Wno-sign-compare -Wno-uninitialized -Wno-unused-but-set-variable -Wno-unused-parameter -Wno-unused-variable -Wno-shadow  -fstrict-aliasing -DVCD_OUT_DIR=HLS_output/simulation     -Os -c -o Vbambu_testbench___024root__DepSet_hb4350c9a__5.o Vbambu_testbench___024root__DepSet_hb4350c9a__5.cpp
+g++  -I.  -MMD -I/usr/share/verilator/include -I/usr/share/verilator/include/vltstd -DVM_COVERAGE=0 -DVM_SC=0 -DVM_TRACE=0 -DVM_TRACE_FST=0 -DVM_TRACE_VCD=0 -faligned-new -fcf-protection=none -Wno-bool-operation -Wno-sign-compare -Wno-uninitialized -Wno-unused-but-set-variable -Wno-unused-parameter -Wno-unused-variable -Wno-shadow  -fstrict-aliasing -DVCD_OUT_DIR=HLS_output/simulation     -Os -c -o Vbambu_testbench__Dpi.o Vbambu_testbench__Dpi.cpp
+g++  -I.  -MMD -I/usr/share/verilator/include -I/usr/share/verilator/include/vltstd -DVM_COVERAGE=0 -DVM_SC=0 -DVM_TRACE=0 -DVM_TRACE_FST=0 -DVM_TRACE_VCD=0 -faligned-new -fcf-protection=none -Wno-bool-operation -Wno-sign-compare -Wno-uninitialized -Wno-unused-but-set-variable -Wno-unused-parameter -Wno-unused-variable -Wno-shadow  -fstrict-aliasing -DVCD_OUT_DIR=HLS_output/simulation      -c -o Vbambu_testbench__ConstPool_0.o Vbambu_testbench__ConstPool_0.cpp
+g++  -I.  -MMD -I/usr/share/verilator/include -I/usr/share/verilator/include/vltstd -DVM_COVERAGE=0 -DVM_SC=0 -DVM_TRACE=0 -DVM_TRACE_FST=0 -DVM_TRACE_VCD=0 -faligned-new -fcf-protection=none -Wno-bool-operation -Wno-sign-compare -Wno-uninitialized -Wno-unused-but-set-variable -Wno-unused-parameter -Wno-unused-variable -Wno-shadow  -fstrict-aliasing -DVCD_OUT_DIR=HLS_output/simulation      -c -o Vbambu_testbench___024root__Slow.o Vbambu_testbench___024root__Slow.cpp
+g++  -I.  -MMD -I/usr/share/verilator/include -I/usr/share/verilator/include/vltstd -DVM_COVERAGE=0 -DVM_SC=0 -DVM_TRACE=0 -DVM_TRACE_FST=0 -DVM_TRACE_VCD=0 -faligned-new -fcf-protection=none -Wno-bool-operation -Wno-sign-compare -Wno-uninitialized -Wno-unused-but-set-variable -Wno-unused-parameter -Wno-unused-variable -Wno-shadow  -fstrict-aliasing -DVCD_OUT_DIR=HLS_output/simulation      -c -o Vbambu_testbench___024root__DepSet_h7321823f__0__Slow.o Vbambu_testbench___024root__DepSet_h7321823f__0__Slow.cpp
+g++  -I.  -MMD -I/usr/share/verilator/include -I/usr/share/verilator/include/vltstd -DVM_COVERAGE=0 -DVM_SC=0 -DVM_TRACE=0 -DVM_TRACE_FST=0 -DVM_TRACE_VCD=0 -faligned-new -fcf-protection=none -Wno-bool-operation -Wno-sign-compare -Wno-uninitialized -Wno-unused-but-set-variable -Wno-unused-parameter -Wno-unused-variable -Wno-shadow  -fstrict-aliasing -DVCD_OUT_DIR=HLS_output/simulation      -c -o Vbambu_testbench___024root__DepSet_hb4350c9a__0__Slow.o Vbambu_testbench___024root__DepSet_hb4350c9a__0__Slow.cpp
+g++  -I.  -MMD -I/usr/share/verilator/include -I/usr/share/verilator/include/vltstd -DVM_COVERAGE=0 -DVM_SC=0 -DVM_TRACE=0 -DVM_TRACE_FST=0 -DVM_TRACE_VCD=0 -faligned-new -fcf-protection=none -Wno-bool-operation -Wno-sign-compare -Wno-uninitialized -Wno-unused-but-set-variable -Wno-unused-parameter -Wno-unused-variable -Wno-shadow  -fstrict-aliasing -DVCD_OUT_DIR=HLS_output/simulation      -c -o Vbambu_testbench___024root__DepSet_hb4350c9a__1__Slow.o Vbambu_testbench___024root__DepSet_hb4350c9a__1__Slow.cpp
+g++  -I.  -MMD -I/usr/share/verilator/include -I/usr/share/verilator/include/vltstd -DVM_COVERAGE=0 -DVM_SC=0 -DVM_TRACE=0 -DVM_TRACE_FST=0 -DVM_TRACE_VCD=0 -faligned-new -fcf-protection=none -Wno-bool-operation -Wno-sign-compare -Wno-uninitialized -Wno-unused-but-set-variable -Wno-unused-parameter -Wno-unused-variable -Wno-shadow  -fstrict-aliasing -DVCD_OUT_DIR=HLS_output/simulation      -c -o Vbambu_testbench___024root__DepSet_hb4350c9a__2__Slow.o Vbambu_testbench___024root__DepSet_hb4350c9a__2__Slow.cpp
+g++  -I.  -MMD -I/usr/share/verilator/include -I/usr/share/verilator/include/vltstd -DVM_COVERAGE=0 -DVM_SC=0 -DVM_TRACE=0 -DVM_TRACE_FST=0 -DVM_TRACE_VCD=0 -faligned-new -fcf-protection=none -Wno-bool-operation -Wno-sign-compare -Wno-uninitialized -Wno-unused-but-set-variable -Wno-unused-parameter -Wno-unused-variable -Wno-shadow  -fstrict-aliasing -DVCD_OUT_DIR=HLS_output/simulation      -c -o Vbambu_testbench___024root__DepSet_hb4350c9a__3__Slow.o Vbambu_testbench___024root__DepSet_hb4350c9a__3__Slow.cpp
+g++  -I.  -MMD -I/usr/share/verilator/include -I/usr/share/verilator/include/vltstd -DVM_COVERAGE=0 -DVM_SC=0 -DVM_TRACE=0 -DVM_TRACE_FST=0 -DVM_TRACE_VCD=0 -faligned-new -fcf-protection=none -Wno-bool-operation -Wno-sign-compare -Wno-uninitialized -Wno-unused-but-set-variable -Wno-unused-parameter -Wno-unused-variable -Wno-shadow  -fstrict-aliasing -DVCD_OUT_DIR=HLS_output/simulation      -c -o Vbambu_testbench___024root__DepSet_hb4350c9a__4__Slow.o Vbambu_testbench___024root__DepSet_hb4350c9a__4__Slow.cpp
+g++  -I.  -MMD -I/usr/share/verilator/include -I/usr/share/verilator/include/vltstd -DVM_COVERAGE=0 -DVM_SC=0 -DVM_TRACE=0 -DVM_TRACE_FST=0 -DVM_TRACE_VCD=0 -faligned-new -fcf-protection=none -Wno-bool-operation -Wno-sign-compare -Wno-uninitialized -Wno-unused-but-set-variable -Wno-unused-parameter -Wno-unused-variable -Wno-shadow  -fstrict-aliasing -DVCD_OUT_DIR=HLS_output/simulation      -c -o Vbambu_testbench___024unit__Slow.o Vbambu_testbench___024unit__Slow.cpp
+g++  -I.  -MMD -I/usr/share/verilator/include -I/usr/share/verilator/include/vltstd -DVM_COVERAGE=0 -DVM_SC=0 -DVM_TRACE=0 -DVM_TRACE_FST=0 -DVM_TRACE_VCD=0 -faligned-new -fcf-protection=none -Wno-bool-operation -Wno-sign-compare -Wno-uninitialized -Wno-unused-but-set-variable -Wno-unused-parameter -Wno-unused-variable -Wno-shadow  -fstrict-aliasing -DVCD_OUT_DIR=HLS_output/simulation      -c -o Vbambu_testbench___024unit__DepSet_he63e5f61__0__Slow.o Vbambu_testbench___024unit__DepSet_he63e5f61__0__Slow.cpp
+g++  -I.  -MMD -I/usr/share/verilator/include -I/usr/share/verilator/include/vltstd -DVM_COVERAGE=0 -DVM_SC=0 -DVM_TRACE=0 -DVM_TRACE_FST=0 -DVM_TRACE_VCD=0 -faligned-new -fcf-protection=none -Wno-bool-operation -Wno-sign-compare -Wno-uninitialized -Wno-unused-but-set-variable -Wno-unused-parameter -Wno-unused-variable -Wno-shadow  -fstrict-aliasing -DVCD_OUT_DIR=HLS_output/simulation      -c -o Vbambu_testbench__Syms.o Vbambu_testbench__Syms.cpp
+echo "" > Vbambu_testbench__ALL.verilator_deplist.tmp
+Archive ar -rcs Vbambu_testbench__ALL.a Vbambu_testbench.o Vbambu_testbench___024root__DepSet_h7321823f__0.o Vbambu_testbench___024root__DepSet_hb4350c9a__0.o Vbambu_testbench___024root__DepSet_hb4350c9a__1.o Vbambu_testbench___024root__DepSet_hb4350c9a__2.o Vbambu_testbench___024root__DepSet_hb4350c9a__3.o Vbambu_testbench___024root__DepSet_hb4350c9a__4.o Vbambu_testbench___024root__DepSet_hb4350c9a__5.o Vbambu_testbench__Dpi.o Vbambu_testbench__ConstPool_0.o Vbambu_testbench___024root__Slow.o Vbambu_testbench___024root__DepSet_h7321823f__0__Slow.o Vbambu_testbench___024root__DepSet_hb4350c9a__0__Slow.o Vbambu_testbench___024root__DepSet_hb4350c9a__1__Slow.o Vbambu_testbench___024root__DepSet_hb4350c9a__2__Slow.o Vbambu_testbench___024root__DepSet_hb4350c9a__3__Slow.o Vbambu_testbench___024root__DepSet_hb4350c9a__4__Slow.o Vbambu_testbench___024unit__Slow.o Vbambu_testbench___024unit__DepSet_he63e5f61__0__Slow.o Vbambu_testbench__Syms.o
+g++    sim_main.o verilated.o verilated_dpi.o verilated_threads.o Vbambu_testbench__ALL.a   HLS_output/beh_sim/libmdpi.so HLS_output/beh_sim/libmdpi.so  -pthread -lpthread -latomic   -o Vbambu_testbench
+rm Vbambu_testbench__ALL.verilator_deplist.tmp
+make[1]: Leaving directory '/workspaces/soda-benchmarks/models/tensorflow/EELS/output/bambu/baseline/HLS_output/beh_sim/verilator_obj'
+Launch user testbench with args: 
+MDPI driver: Memory size for parameter 0 set to 960 bytes.
+MDPI driver: Memory size for parameter 1 set to 64 bytes.
+MDPI driver: Address 0x575BBD80 mapped at 0x40000000 (4 bytes)
+MDPI driver: Address 0x575BBDD0 mapped at 0x40000400 (8 bytes)
+MDPI driver: Address 0xF7071010 mapped at 0x40000800 (393216 bytes)
+MDPI driver: Address 0x575BBE60 mapped at 0x40060800 (4 bytes)
+MDPI driver: Address 0x575BBE90 mapped at 0x40060C00 (448 bytes)
+MDPI driver: Address 0x575BC0A0 mapped at 0x40061000 (14336 bytes)
+MDPI driver: Address 0x575BF8F0 mapped at 0x40064800 (12288 bytes)
+MDPI driver: Address 0x575C2920 mapped at 0x40067800 (24576 bytes)
+MDPI driver: Address 0x575C8950 mapped at 0x4006D800 (61440 bytes)
+MDPI driver: Address 0xFFD392C4 mapped at 0x4007C800 (960 bytes)
+MDPI driver: Address 0xFFD39280 mapped at 0x4007CBC0 (64 bytes)
+MDPI driver: Pointer parameter 0xFFD392C4 mapped at 0x4007C800
+MDPI driver: Pointer parameter 0xFFD39280 mapped at 0x4007CBC0
+Results file: results.txt
+Reset active: LOW
+Sim: Testbench returned: 0
+- HLS_output/simulation/bambu_testbench.v:305: Verilog $finish
+File "results.txt" opened
+Run 1 execution time 2663377 cycles;
+  Total cycles             : 2663377 cycles
+  Number of executions     : 1
+  Average execution        : 2663377 cycles
