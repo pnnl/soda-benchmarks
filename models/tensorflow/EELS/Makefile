@@ -14,12 +14,12 @@ TOSA_TARGET=$(ODIR)/01_tosa.mlir
 # TARGET=$(ODIR)/04_llvm.ll
 # TARGET=$(ODIR)/bambu/baseline/06_verilog.v
 TARGET=$(ODIR)/bambu/baseline/07_results.txt # For simulation results
-TARGET=$(ODIR)/bambu/transformed/07_results.txt # For simulation results
+# TARGET=$(ODIR)/bambu/transformed/07_results.txt # For simulation results
+
+all: $(TARGET)
 
 baseline: $(ODIR)/bambu/baseline/07_results.txt
 transformed: $(ODIR)/bambu/transformed/07_results.txt
-
-all: $(TARGET)
 
 # Export encoder model to protobuf and frozen graph
 $(PROTOBUF_TARGET) $(FROZEN_GRAPH_TARGET): $(FILE_PATH)
