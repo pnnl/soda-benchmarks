@@ -3,6 +3,7 @@ add_mlir_dialect_library(MLIRSODAP
         MyExtension.cpp
         ViewOpGraph.cpp
         SODAPPasses.cpp
+        InstrPasses.cpp
 
         ADDITIONAL_HEADER_DIRS
         ${PROJECT_SOURCE_DIR}/include/sodap

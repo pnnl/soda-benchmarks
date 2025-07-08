@@ -57,4 +57,16 @@ def ViewOpGraph : Pass<"soda-view-op-graph"> {
   let constructor = "mlir::sodap::createPrintOpGraphPass()";
 }
 
+def InstrBounds : Pass<"soda-instr-scf-for-assert-bounds"> {
+  let summary = "Insert assertions to check bounds of SCF For loops";
+  let description = [{
+    This pass inserts assertion calls that will be mapped to SODA assertion library.
+    It instruments all SCF For loops with a call to `@soda_assert_bounds(<bound>, <expected>)`
+    where `<bound>` is the loop induction variable and `<expected>` is the expected
+    upper bound of the loop. The pass assumes that the expected upper bound is
+    statically known and can be determined from the loop bounds.
+  }];
+  // let constructor = "mlir::sodap::createInstrAssertBoundsPass()";
+}
+
 #endif // SODAP_PASS

@@ -1,0 +1,86 @@
+//===- InstrPasses.cpp - SODAP instrumentation passes -----------*- C++ -*-===//
+//
+// This file is licensed under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+//
+//===----------------------------------------------------------------------===//
+#include "mlir/Dialect/Func/IR/FuncOps.h"
+#include "mlir/Dialect/LLVMIR/LLVMDialect.h"
+#include "mlir/Dialect/SCF/IR/SCF.h"
+#include "mlir/IR/PatternMatch.h"
+#include "mlir/Rewrite/FrozenRewritePatternSet.h"
+#include "mlir/Transforms/GreedyPatternRewriteDriver.h"
+
+#include "sodap/SODAPPasses.h"
+
+/// Library for instrumentation functions
+static constexpr const char *kAssertLessThen = "sodaInstrAssertLessThen";
+
+namespace mlir::sodap {
+#define GEN_PASS_DEF_INSTRBOUNDS
+#include "sodap/SODAPPasses.h.inc"
+
+namespace {
+
+enum class EmitCInterface : bool { Off = false, On = true };
+
+FlatSymbolRefAttr getFunc(ModuleOp module, StringRef name, TypeRange resultType,
+                          ValueRange operands, EmitCInterface emitCInterface) {
+  MLIRContext *context = module.getContext();
+  auto result = SymbolRefAttr::get(context, name);
+  auto func = module.lookupSymbol<func::FuncOp>(result.getAttr());
+  if (!func) {
+    OpBuilder moduleBuilder(module.getBodyRegion());
+    func = moduleBuilder.create<func::FuncOp>(
+        module.getLoc(), name,
+        FunctionType::get(context, operands.getTypes(), resultType));
+    func.setPrivate();
+    if (static_cast<bool>(emitCInterface))
+      func->setAttr(LLVM::LLVMDialect::getEmitCWrapperAttrName(),
+                    UnitAttr::get(context));
+  }
+  return result;
+}
+
+func::CallOp createFuncCall(OpBuilder &builder, Location loc, StringRef name,
+                            TypeRange resultType, ValueRange operands,
+                            EmitCInterface emitCInterface) {
+  auto module = builder.getBlock()->getParentOp()->getParentOfType<ModuleOp>();
+  FlatSymbolRefAttr fn =
+      getFunc(module, name, resultType, operands, emitCInterface);
+  return builder.create<func::CallOp>(loc, resultType, fn, operands);
+}
+
+class SODAPInstrBoundsRewriter : public OpRewritePattern<func::FuncOp> {
+public:
+  using OpRewritePattern<func::FuncOp>::OpRewritePattern;
+  LogicalResult matchAndRewrite(func::FuncOp funcOp,
+                                PatternRewriter &rewriter) const final {
+    bool changed = false;
+    funcOp.walk([&](mlir::scf::ForOp forOp) {
+      rewriter.setInsertionPointToStart(forOp.getBody());
+      auto loc = forOp.getLoc();
+      auto iv = forOp.getInductionVar();
+      auto ub = forOp.getUpperBound();
+      createFuncCall(rewriter, loc, kAssertLessThen, mlir::TypeRange{},
+                     mlir::ValueRange{iv, ub}, EmitCInterface::Off);
+      changed = true;
+    });
+    return changed ? success() : failure();
+  }
+};
+
+class SODAPInstrBounds : public impl::InstrBoundsBase<SODAPInstrBounds> {
+public:
+  using impl::InstrBoundsBase<SODAPInstrBounds>::InstrBoundsBase;
+  void runOnOperation() final {
+    RewritePatternSet patterns(&getContext());
+    patterns.add<SODAPInstrBoundsRewriter>(&getContext());
+    FrozenRewritePatternSet patternSet(std::move(patterns));
+    if (failed(applyPatternsAndFoldGreedily(getOperation(), patternSet)))
+      signalPassFailure();
+  }
+};
+} // namespace
+} // namespace mlir::sodap
