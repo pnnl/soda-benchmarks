@@ -11,11 +11,11 @@ module {
     %c16 = arith.constant 16 : index
     %c1 = arith.constant 1 : index
     scf.for %arg3 = %c0 to %c8 step %c1 {
-      // CHECK: @soda_assert_lt(%arg3, %c8) : (index, index) -> ()
+      // CHECK: @sodaInstrAssertLessThen(%arg3, %c8) : (index, index) -> ()
       scf.for %arg4 = %c0 to %c8 step %c1 {
-        // CHECK: @soda_assert_lt(%arg4, %c8) : (index, index) -> ()
+        // CHECK: @sodaInstrAssertLessThen(%arg4, %c8) : (index, index) -> ()
         scf.for %arg5 = %c0 to %c16 step %c1 {
-          // CHECK: @soda_assert_lt(%arg5, %c16) : (index, index) -> ()
+          // CHECK: @sodaInstrAssertLessThen(%arg5, %c16) : (index, index) -> ()
           %0 = memref.load %arg0[%arg3, %arg5] : memref<8x16xf32>
           %1 = memref.load %arg1[%arg5, %arg4] : memref<16x8xf32>
           %2 = memref.load %arg2[%arg3, %arg4] : memref<8x8xf32>

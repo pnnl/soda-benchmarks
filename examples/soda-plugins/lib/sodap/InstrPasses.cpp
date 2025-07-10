@@ -17,6 +17,8 @@
 /// Library for instrumentation functions
 static constexpr const char *kAssertLessThen = "sodaInstrAssertLessThen";
 
+using namespace mlir;
+
 namespace mlir::sodap {
 #define GEN_PASS_DEF_INSTRBOUNDS
 #include "sodap/SODAPPasses.h.inc"
@@ -52,34 +54,32 @@ func::CallOp createFuncCall(OpBuilder &builder, Location loc, StringRef name,
   return builder.create<func::CallOp>(loc, resultType, fn, operands);
 }
 
-class SODAPInstrBoundsRewriter : public OpRewritePattern<func::FuncOp> {
-public:
-  using OpRewritePattern<func::FuncOp>::OpRewritePattern;
-  LogicalResult matchAndRewrite(func::FuncOp funcOp,
-                                PatternRewriter &rewriter) const final {
-    bool changed = false;
-    funcOp.walk([&](mlir::scf::ForOp forOp) {
-      rewriter.setInsertionPointToStart(forOp.getBody());
-      auto loc = forOp.getLoc();
-      auto iv = forOp.getInductionVar();
-      auto ub = forOp.getUpperBound();
-      createFuncCall(rewriter, loc, kAssertLessThen, mlir::TypeRange{},
-                     mlir::ValueRange{iv, ub}, EmitCInterface::Off);
-      changed = true;
-    });
-    return changed ? success() : failure();
-  }
-};
+// Instrument all scf::ForOp in a function with the assertion call
+static void instrumentForOpsInFunc(func::FuncOp funcOp) {
+  OpBuilder builder(funcOp.getContext());
+  funcOp.walk([&](scf::ForOp forOp) {
+    auto &bodyOps = forOp.getBody()->getOperations();
+    if (!bodyOps.empty()) {
+      if (auto call = llvm::dyn_cast<func::CallOp>(&bodyOps.front())) {
+        if (call.getCallee() == kAssertLessThen)
+          return; // Already instrumented
+      }
+    }
+    builder.setInsertionPointToStart(forOp.getBody());
+    auto loc = forOp.getLoc();
+    auto iv = forOp.getInductionVar();
+    auto ub = forOp.getUpperBound();
+    createFuncCall(builder, loc, kAssertLessThen, TypeRange{},
+                   ValueRange{iv, ub}, EmitCInterface::Off);
+  });
+}
 
 class SODAPInstrBounds : public impl::InstrBoundsBase<SODAPInstrBounds> {
 public:
   using impl::InstrBoundsBase<SODAPInstrBounds>::InstrBoundsBase;
   void runOnOperation() final {
-    RewritePatternSet patterns(&getContext());
-    patterns.add<SODAPInstrBoundsRewriter>(&getContext());
-    FrozenRewritePatternSet patternSet(std::move(patterns));
-    if (failed(applyPatternsAndFoldGreedily(getOperation(), patternSet)))
-      signalPassFailure();
+    getOperation()->walk(
+        [](func::FuncOp funcOp) { instrumentForOpsInFunc(funcOp); });
   }
 };
 } // namespace
