@@ -56,7 +56,7 @@ module @transforms attributes {transform.with_named_sequence} {
       // transform.debug.emit_param_as_remark %dim2, "dim2:" : !transform.param<i64>
       // transform.debug.emit_param_as_remark %dim3, "dim3:" : !transform.param<i64>
       // transform.debug.emit_param_as_remark %dim4, "dim4:" : !transform.param<i64>
-      %tiled_conv, %loops:7 = transform.structured.tile_using_for %arg0 tile_sizes [1,1,1,1,%dim2,%dim3,%dim4] : (!transform.any_op, !transform.param<i64>, !transform.param<i64>, !transform.param<i64>) -> (!transform.any_op, !transform.any_op, !transform.any_op, !transform.any_op, !transform.any_op, !transform.any_op, !transform.any_op, !transform.any_op)
+      %tiled_conv, %loops:7 = transform.structured.tile_using_for %arg0 tile_sizes [1,1,1,%dim1,%dim2,%dim3,%dim4] : (!transform.any_op, !transform.param<i64>, !transform.param<i64>, !transform.param<i64>, !transform.param<i64>) -> (!transform.any_op, !transform.any_op, !transform.any_op, !transform.any_op, !transform.any_op, !transform.any_op, !transform.any_op, !transform.any_op)
       transform.yield
     }
 
