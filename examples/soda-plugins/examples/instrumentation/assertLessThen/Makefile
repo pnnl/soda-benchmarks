@@ -2,10 +2,13 @@
 
 FILE_PATH=torchscript.py
 TRANSFORM_PATH=transform.mlir
-SCRIPTS_DIR=../../../scripts
+SCRIPTS_DIR=../../../../../scripts
 # Make sure the output directory is not empty, many files will be generated.
 # ODIR=.
 ODIR=output
+
+EXP_CWD := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
+IPDIR=$(EXP_CWD)/IPs
 
 # Edit to change the target
 # TARGET=$(ODIR)/04_llvm.ll
@@ -16,8 +19,8 @@ ODIR=output
 # TARGET=$(ODIR)/bambu/optimized/06_verilog.v
 # TARGET=$(ODIR)/bambu/optimized/07_results.txt # For simulation results
 
-TARGET=$(ODIR)/bambu/transformed/06_verilog.v
-# TARGET=$(ODIR)/bambu/transformed/07_results.txt # For simulation results
+# TARGET=$(ODIR)/bambu/transformed/06_verilog.v
+TARGET=$(ODIR)/bambu/transformed/07_results.txt # For simulation results
 
 
 all: $(TARGET)
@@ -42,4 +45,13 @@ include $(SCRIPTS_DIR)/mkinc/soda_to_llvm.mk
 BAMBU_DEVICE=asap7-BC
 # BAMBU_DEVICE=nangate45
 BAMBU_CLOCK_PERIOD=5
+
+# IP Integration flow variables
+BAMBU_IP_INTEGRATION=true
+# Comma-separated lists of files, must have the full path
+IP_C_EXCLUDE=$(IPDIR)/sodaInstrAssertLessThen.c
+IP_VERILOG_INPUTS=$(IPDIR)/sodaInstrAssertLessThen.v
+IP_MODULE_LIB=$(IPDIR)/module_lib.xml
+IP_CONSTRAINTS=$(IPDIR)/constraints_STD.xml
+
 include $(SCRIPTS_DIR)/mkinc/llvm_to_verilog.mk

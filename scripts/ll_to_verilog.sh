@@ -16,6 +16,7 @@ BAMBU_DEVICE="${BAMBU_DEVICE:-asap7-BC}"
 BAMBU_MEMPOLICY="${BAMBU_MEMPOLICY:-ALL_BRAM}"
 BAMBU_CLOCK_PERIOD="${BAMBU_CLOCK_PERIOD:-5}"
 BAMBU_RUN_SIMULATION="${BAMBU_RUN_SIMULATION:-false}"
+BAMBU_IP_INTEGRATION="${BAMBU_IP_INTEGRATION:-false}"
 
 
 OUTPUT_DIR=$(pwd)/$(dirname $2)
@@ -47,19 +48,49 @@ if [ "$BAMBU_RUN_SIMULATION" = "true" ]; then
   fi
 fi
 
+IP_INTEGRATION_ARGS=""
+if [ "$BAMBU_IP_INTEGRATION" = "true" ]; then
+  # Check for required environment variables/files
+  if [ -z "$IP_CONSTRAINTS" ]; then
+    echo "Error: BAMBU_IP_INTEGRATION is true but IP_CONSTRAINTS is not set." >&2
+    exit 1
+  fi
+  if [ ! -f "$IP_CONSTRAINTS" ]; then
+    echo "Error: IP_CONSTRAINTS file '$IP_CONSTRAINTS' not found." >&2
+    exit 1
+  fi
+  if [ -z "$IP_MODULE_LIB" ] || [ ! -f "$IP_MODULE_LIB" ]; then
+    echo "Error: IP_MODULE_LIB is not set or file not found." >&2
+    exit 1
+  fi
+  if [ -z "$IP_C_EXCLUDE" ]; then
+    echo "Error: IP_C_EXCLUDE is not set." >&2
+    exit 1
+  fi
+  if [ -z "$IP_VERILOG_INPUTS" ]; then
+    echo "Error: IP_VERILOG_INPUTS is not set." >&2
+    exit 1
+  fi
+
+  # Compose the IP integration arguments
+  IP_INTEGRATION_ARGS="$IP_MODULE_LIB $IP_CONSTRAINTS --C-no-parse=$IP_C_EXCLUDE --file-input-data=$IP_VERILOG_INPUTS"
+  IP_INTEGRATION_ARGS="$IP_INTEGRATION_ARGS --generate-components-library"
+fi
+
 $DOCKER_RUN \
 bambu -v3 --print-dot \
-		-lm --soft-float \
-		--compiler=I386_CLANG16  \
-		--device=$BAMBU_DEVICE \
-		--clock-period=$BAMBU_CLOCK_PERIOD \
-		--experimental-setup=BAMBU-BALANCED-MP \
-		--channels-number=2 \
-		--memory-allocation-policy=$BAMBU_MEMPOLICY \
-		--disable-function-proxy \
-    $SIMULATION_ARGS \
-		--top-fname=forward_kernel \
-		input.ll 2>&1 | tee bambu-log
+	-lm --soft-float \
+	--compiler=I386_CLANG16  \
+	--device=$BAMBU_DEVICE \
+	--clock-period=$BAMBU_CLOCK_PERIOD \
+	--experimental-setup=BAMBU-BALANCED-MP \
+	--channels-number=2 \
+	--memory-allocation-policy=$BAMBU_MEMPOLICY \
+	--disable-function-proxy \
+  $SIMULATION_ARGS \
+  $IP_INTEGRATION_ARGS \
+	--top-fname=forward_kernel \
+	input.ll 2>&1 | tee bambu-log
 
 cp forward_kernel.v 06_verilog.v
 
