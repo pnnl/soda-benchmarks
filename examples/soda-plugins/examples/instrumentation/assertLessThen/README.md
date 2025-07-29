@@ -63,3 +63,14 @@ Is it possible to bind commands to the same module without affecting all the bin
 - [] Use function proxy
 - [] Check bambu repo for IP integration tutorials
 - [] Vito's idea: replace existing llvm instruciton with call that maps into instrumented verilog of that function.
+- [] Assertion modules could be not clocked
+- [] HW counters should include clock and memory
+
+Examples
+- [] Non-clocked non-memory interface
+- [x] clocked non-memory interface
+- [] clocked memory interface
+
+## OBS:
+
+Looking at bambu State graph

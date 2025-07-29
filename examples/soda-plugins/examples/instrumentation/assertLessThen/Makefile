@@ -54,4 +54,11 @@ IP_VERILOG_INPUTS=$(IPDIR)/sodaInstrAssertLessThen.v
 IP_MODULE_LIB=$(IPDIR)/module_lib.xml
 IP_CONSTRAINTS=$(IPDIR)/constraints_STD.xml
 
+# Space-separated list for Makefile dependencies
+IP_INTEGRATION_FILES := \
+  $(IP_C_EXCLUDE) \
+  $(IP_VERILOG_INPUTS) \
+  $(IP_MODULE_LIB) \
+  $(IP_CONSTRAINTS)
+EXTRA_VERILOG_DEPS := $(IP_INTEGRATION_FILES)
 include $(SCRIPTS_DIR)/mkinc/llvm_to_verilog.mk
