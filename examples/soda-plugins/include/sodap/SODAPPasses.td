@@ -66,7 +66,17 @@ def InstrBounds : Pass<"soda-instr-scf-for-assert-bounds"> {
     upper bound of the loop. The pass assumes that the expected upper bound is
     statically known and can be determined from the loop bounds.
   }];
-  // let constructor = "mlir::sodap::createInstrAssertBoundsPass()";
+}
+
+def InstrHWCounter : Pass<"soda-instr-hw-counter-at-loop-bounds"> {
+  let summary = "Insert hardware counter instrumentation";
+  let description = [{
+    This pass instruments loop basic blocks with hardware counter calls mapped to the SODA hardware counter library.
+    At the start of each loop body, it inserts `@soda_instr_hw_counter(%run=true, %loc=id)` to start the counter,
+    where `%run` is a boolean to enable instrumentation and `%loc` is a unique identifier for the counter.
+    At the end of the loop body, it inserts `@soda_instr_hw_counter(%run=false, %loc=id)` to stop the counter.
+  }];
+
 }
 
 #endif // SODAP_PASS

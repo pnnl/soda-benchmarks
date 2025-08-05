@@ -16,11 +16,13 @@
 
 /// Library for instrumentation functions
 static constexpr const char *kAssertLessThen = "sodaInstrAssertLessThen";
+static constexpr const char *kInstrHWCounter = "sodaInstrHWCounter";
 
 using namespace mlir;
 
 namespace mlir::sodap {
 #define GEN_PASS_DEF_INSTRBOUNDS
+#define GEN_PASS_DEF_INSTRHWCOUNTER
 #include "sodap/SODAPPasses.h.inc"
 
 namespace {
@@ -74,12 +76,47 @@ static void instrumentForOpsInFunc(func::FuncOp funcOp) {
   });
 }
 
+// Instrument all scf::ForOp in a function with HW counter calls
+static void instrumentForOpsWithHWCounter(func::FuncOp funcOp) {
+  OpBuilder builder(funcOp.getContext());
+  int loopId = 0;
+  funcOp.walk([&](scf::ForOp forOp) {
+    auto loc = forOp.getLoc();
+    // Create constants for arguments
+    auto runTrue = builder.create<arith::ConstantOp>(
+        loc, builder.getIntegerType(1), builder.getBoolAttr(true));
+    auto runFalse = builder.create<arith::ConstantOp>(
+        loc, builder.getIntegerType(1), builder.getBoolAttr(false));
+    auto idVal = builder.create<arith::ConstantOp>(
+        loc, builder.getI32Type(), builder.getI32IntegerAttr(loopId++));
+    // Insert HW counter start at the beginning
+    builder.setInsertionPointToStart(forOp.getBody());
+    createFuncCall(builder, loc, kInstrHWCounter, TypeRange{},
+                   ValueRange{runTrue, idVal}, EmitCInterface::Off);
+    // Insert HW counter stop at the end
+    builder.setInsertionPointToEnd(forOp.getBody());
+    createFuncCall(builder, loc, kInstrHWCounter, TypeRange{},
+                   ValueRange{runFalse, idVal}, EmitCInterface::Off);
+  });
+}
+
 class SODAPInstrBounds : public impl::InstrBoundsBase<SODAPInstrBounds> {
 public:
   using impl::InstrBoundsBase<SODAPInstrBounds>::InstrBoundsBase;
   void runOnOperation() final {
     getOperation()->walk(
         [](func::FuncOp funcOp) { instrumentForOpsInFunc(funcOp); });
+  }
+};
+
+class SODAInstrBoundsWithHWCounter
+    : public impl::InstrHWCounterBase<SODAInstrBoundsWithHWCounter> {
+public:
+  using impl::InstrHWCounterBase<
+      SODAInstrBoundsWithHWCounter>::InstrHWCounterBase;
+  void runOnOperation() final {
+    getOperation()->walk(
+        [](func::FuncOp funcOp) { instrumentForOpsWithHWCounter(funcOp); });
   }
 };
 } // namespace
