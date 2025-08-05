@@ -81,6 +81,7 @@ static void instrumentForOpsWithHWCounter(func::FuncOp funcOp) {
   OpBuilder builder(funcOp.getContext());
   int loopId = 0;
   funcOp.walk([&](scf::ForOp forOp) {
+    builder.setInsertionPointToStart(forOp.getBody());
     auto loc = forOp.getLoc();
     // Create constants for arguments
     auto runTrue = builder.create<arith::ConstantOp>(
@@ -88,13 +89,13 @@ static void instrumentForOpsWithHWCounter(func::FuncOp funcOp) {
     auto runFalse = builder.create<arith::ConstantOp>(
         loc, builder.getIntegerType(1), builder.getBoolAttr(false));
     auto idVal = builder.create<arith::ConstantOp>(
-        loc, builder.getI32Type(), builder.getI32IntegerAttr(loopId++));
+        loc, builder.getIndexType(), builder.getIndexAttr(loopId++));
     // Insert HW counter start at the beginning
-    builder.setInsertionPointToStart(forOp.getBody());
     createFuncCall(builder, loc, kInstrHWCounter, TypeRange{},
                    ValueRange{runTrue, idVal}, EmitCInterface::Off);
-    // Insert HW counter stop at the end
-    builder.setInsertionPointToEnd(forOp.getBody());
+    // Insert HW counter stop just before the yield
+    auto *terminator = forOp.getBody()->getTerminator();
+    builder.setInsertionPoint(terminator);
     createFuncCall(builder, loc, kInstrHWCounter, TypeRange{},
                    ValueRange{runFalse, idVal}, EmitCInterface::Off);
   });
