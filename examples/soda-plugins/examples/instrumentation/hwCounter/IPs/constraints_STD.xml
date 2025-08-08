@@ -2,5 +2,6 @@
 <constraints>
    <HLS_constraints>
       <tech_constraints fu_name="forward_kernel" fu_library="work" n="1"/>
+      <tech_constraints fu_name="sodaInstrHWCounter" fu_library="work" n="1"/>
    </HLS_constraints>
 </constraints>
