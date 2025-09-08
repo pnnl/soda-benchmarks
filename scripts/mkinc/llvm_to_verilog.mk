@@ -37,11 +37,11 @@ $(ODIR)/bambu/optimized/07_results.txt: $(ODIR)/05_llvm_optimized.ll
 
 # =============================================================================
 # Rules specific to soda-opt transformed
-$(ODIR)/bambu/transformed/06_verilog.v: $(ODIR)/05_llvm_transformed.ll
+$(ODIR)/bambu/transformed/06_verilog.v: $(ODIR)/05_llvm_transformed.ll $(EXTRA_VERILOG_DEPS)
 	$(BAMBU_SETTINGS) \
 	$(SCRIPTS_DIR)/ll_to_verilog.sh $< $@
 	
-$(ODIR)/bambu/transformed/07_results.txt: $(ODIR)/05_llvm_transformed.ll
+$(ODIR)/bambu/transformed/07_results.txt: $(ODIR)/05_llvm_transformed.ll $(EXTRA_VERILOG_DEPS)
 	BAMBU_RUN_SIMULATION=true \
 	$(BAMBU_SETTINGS) \
 	$(SCRIPTS_DIR)/ll_to_verilog.sh $< $@
