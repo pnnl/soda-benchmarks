@@ -8,8 +8,8 @@
 
 
 module sodaInstrHWCounter #(
-    parameter LOC_WIDTH = 8,      // Number of bits for location tracking
-    parameter COUNTER_WIDTH = 4   // Width of each counter
+    parameter LOC_WIDTH = 4,       // Number of bits for location tracking
+    parameter COUNTER_WIDTH = 32   // Width of each counter
 ) (
     input wire              clock,
     input wire              reset,
@@ -20,9 +20,9 @@ module sodaInstrHWCounter #(
     output reg [COUNTER_WIDTH-1:0] count  // current count for selected location
 );
 
-    // Truncate location using a simple hash (XOR folding)
+    // Truncate location to LOC_WIDTH bits (simple truncation)
     wire [LOC_WIDTH-1:0] loc_idx;
-    assign loc_idx = ^location[63:LOC_WIDTH] ^ location[LOC_WIDTH-1:0];
+    assign loc_idx = location[LOC_WIDTH-1:0];
 
     // Counter array for each location
     reg [COUNTER_WIDTH-1:0] counters [0:(1<<LOC_WIDTH)-1];
@@ -44,8 +44,9 @@ module sodaInstrHWCounter #(
             done_port <= 0;
         end else begin
             done_port <= done_port_reg;
+            // Optionally, you can print the count when done_port is asserted
             if (done_port_reg) begin
-                $display("sodaInstrHWCounter: location %h count %d", location, counters[loc_idx]);
+                $display("[HW] sodaInstrHWCounter: location %h count %d", location, counters[loc_idx]);
             end
         end
     end

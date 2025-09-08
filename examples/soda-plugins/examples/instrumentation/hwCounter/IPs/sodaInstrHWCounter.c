@@ -17,8 +17,8 @@
 void sodaInstrHWCounter(bool action, uint64_t location)
 {
   if (action) {
-    printf("HW counter STARTED at location %llu\n", location);
+    printf("[SW] HW counter STARTED at loc: %llu\n", location);
   } else {
-    printf("HW counter STOPPED at location %llu\n", location);
+    printf("[SW] HW counter STOPED at loc: %llu\n", location);
   }
 }
