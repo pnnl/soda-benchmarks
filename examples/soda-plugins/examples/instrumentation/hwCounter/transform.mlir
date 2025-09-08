@@ -2,7 +2,7 @@ module @transforms attributes { transform.with_named_sequence } {
   transform.named_sequence @__transform_main(
       %root: !transform.any_op {transform.readonly}) {
 
-    %all = transform.structured.match ops{["func.func"]} in %root : (!transform.any_op) -> !transform.any_op
+    %func = transform.structured.match ops{["func.func"]} in %root : (!transform.any_op) -> !transform.any_op
 
     %matmul = transform.collect_matching @match_matmul in %root : (!transform.any_op) -> !transform.any_op
 
@@ -10,6 +10,9 @@ module @transforms attributes { transform.with_named_sequence } {
 
 
     transform.include @tiling failures(propagate) (%matmul_tile) : (!transform.any_op) -> ()
+
+    // Pass to instrument the loop bounds with hardware counters.
+    %f = transform.apply_registered_pass "soda-instr-hw-counter-at-loop-bounds" to %func : (!transform.any_op) -> !transform.any_op
 
     transform.yield
   }
