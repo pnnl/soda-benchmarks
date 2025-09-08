@@ -4,7 +4,7 @@
     <name>module_lib</name>
     <cell>
       <name>sodaInstrHWCounter</name>
-      <operation operation_name="sodaInstrHWCounter" bounded="0"/>
+      <operation operation_name="sodaInstrHWCounter"/>
       <circuit>
 	<component_o id="sodaInstrHWCounter">
           <description>Printer 2 IP</description>
