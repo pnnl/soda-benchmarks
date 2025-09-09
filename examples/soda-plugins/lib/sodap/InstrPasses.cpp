@@ -16,13 +16,13 @@
 
 /// Library for instrumentation functions
 static constexpr const char *kAssertLessThen = "sodaInstrAssertLessThen";
-static constexpr const char *kInstrHWCounter = "sodaInstrHWCounter";
+static constexpr const char *kInstrHWCounters = "sodaInstrHWCounters";
 
 using namespace mlir;
 
 namespace mlir::sodap {
 #define GEN_PASS_DEF_INSTRBOUNDS
-#define GEN_PASS_DEF_INSTRHWCOUNTER
+#define GEN_PASS_DEF_INSTRHWCOUNTERS
 #include "sodap/SODAPPasses.h.inc"
 
 namespace {
@@ -91,12 +91,12 @@ static void instrumentForOpsWithHWCounter(func::FuncOp funcOp) {
     auto idVal = builder.create<arith::ConstantOp>(
         loc, builder.getIndexType(), builder.getIndexAttr(loopId++));
     // Insert HW counter start at the beginning
-    createFuncCall(builder, loc, kInstrHWCounter, TypeRange{},
+    createFuncCall(builder, loc, kInstrHWCounters, TypeRange{},
                    ValueRange{runTrue, idVal}, EmitCInterface::Off);
     // Insert HW counter stop just before the yield
     auto *terminator = forOp.getBody()->getTerminator();
     builder.setInsertionPoint(terminator);
-    createFuncCall(builder, loc, kInstrHWCounter, TypeRange{},
+    createFuncCall(builder, loc, kInstrHWCounters, TypeRange{},
                    ValueRange{runFalse, idVal}, EmitCInterface::Off);
   });
 }
@@ -110,11 +110,11 @@ public:
   }
 };
 
-class SODAInstrBoundsWithHWCounter
-    : public impl::InstrHWCounterBase<SODAInstrBoundsWithHWCounter> {
+class SODAInstrBoundsWithHWCounters
+    : public impl::InstrHWCountersBase<SODAInstrBoundsWithHWCounters> {
 public:
-  using impl::InstrHWCounterBase<
-      SODAInstrBoundsWithHWCounter>::InstrHWCounterBase;
+  using impl::InstrHWCountersBase<
+      SODAInstrBoundsWithHWCounters>::InstrHWCountersBase;
   void runOnOperation() final {
     getOperation()->walk(
         [](func::FuncOp funcOp) { instrumentForOpsWithHWCounter(funcOp); });

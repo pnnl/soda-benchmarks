@@ -49,8 +49,8 @@ BAMBU_CLOCK_PERIOD=5
 # IP Integration flow variables
 BAMBU_IP_INTEGRATION=true
 # Comma-separated lists of files, must have the full path
-IP_C_EXCLUDE=$(IPDIR)/sodaInstrHWCounter.c
-IP_VERILOG_INPUTS=$(IPDIR)/sodaInstrHWCounter.v
+IP_C_EXCLUDE=$(IPDIR)/sodaInstrHWCounters.c
+IP_VERILOG_INPUTS=$(IPDIR)/sodaInstrHWCounters.v
 IP_MODULE_LIB=$(IPDIR)/module_lib.xml
 IP_CONSTRAINTS=$(IPDIR)/constraints_STD.xml
 

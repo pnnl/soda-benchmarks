@@ -7,7 +7,7 @@
 //===----------------------------------------------------------------------===//
 
 
-module sodaInstrHWCounter #(
+module sodaInstrHWCounters #(
     parameter LOC_WIDTH = 4,       // Number of bits for location tracking
     parameter COUNTER_WIDTH = 32   // Width of each counter
 ) (
@@ -46,7 +46,7 @@ module sodaInstrHWCounter #(
             done_port <= done_port_reg;
             // Optionally, you can print the count when done_port is asserted
             if (done_port_reg) begin
-                $display("[HW] sodaInstrHWCounter: location %h count %d", location, counters[loc_idx]);
+                $display("[HW] sodaInstrHWCounters: location %h count %d", location, counters[loc_idx]);
             end
         end
     end

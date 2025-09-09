@@ -14,7 +14,7 @@
 /// @brief  Decides whether to start or stop the HW counter at location.
 /// @param action true to start the counter, false to stop it.
 /// @param location 
-void sodaInstrHWCounter(bool action, uint64_t location)
+void sodaInstrHWCounters(bool action, uint64_t location)
 {
   if (action) {
     printf("[SW] HW counter STARTED at loc: %llu\n", location);

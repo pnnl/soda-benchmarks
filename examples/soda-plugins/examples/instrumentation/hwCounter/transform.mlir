@@ -12,7 +12,7 @@ module @transforms attributes { transform.with_named_sequence } {
     transform.include @tiling failures(propagate) (%matmul_tile) : (!transform.any_op) -> ()
 
     // Pass to instrument the loop bounds with hardware counters.
-    %f = transform.apply_registered_pass "soda-instr-hw-counter-at-loop-bounds" to %func : (!transform.any_op) -> !transform.any_op
+    %f = transform.apply_registered_pass "soda-instr-hw-counters-at-loop-bounds" to %func : (!transform.any_op) -> !transform.any_op
 
     transform.yield
   }

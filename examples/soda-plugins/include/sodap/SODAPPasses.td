@@ -68,8 +68,8 @@ def InstrBounds : Pass<"soda-instr-scf-for-assert-bounds"> {
   }];
 }
 
-def InstrHWCounter : Pass<"soda-instr-hw-counter-at-loop-bounds"> {
-  let summary = "Insert hardware counter instrumentation";
+def InstrHWCounters : Pass<"soda-instr-hw-counters-at-loop-bounds"> {
+  let summary = "Insert hardware counters instrumentation";
   let description = [{
     This pass instruments loop basic blocks with hardware counter calls mapped to the SODA hardware counter library.
     At the start of each loop body, it inserts `@soda_instr_hw_counter(%run=true, %loc=id)` to start the counter,

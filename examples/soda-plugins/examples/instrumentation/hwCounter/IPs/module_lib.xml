@@ -3,15 +3,15 @@
   <library>
     <name>module_lib</name>
     <cell>
-      <name>sodaInstrHWCounter</name>
-      <operation operation_name="sodaInstrHWCounter"/>
+      <name>sodaInstrHWCounters</name>
+      <operation operation_name="sodaInstrHWCounters"/>
       <circuit>
-	<component_o id="sodaInstrHWCounter">
-          <description>Printer 2 IP</description>
-          <copyright>foo</copyright>
-          <authors>foo</authors>
-          <license>foo</license>
-          <structural_type_descriptor id_type="sodaInstrHWCounter"/>
+	<component_o id="sodaInstrHWCounters">
+          <description>Hardware Counter IP</description>
+          <copyright>PNNL</copyright>
+          <authors>agostinti</authors>
+          <license>Apache with LLVM Exceptions</license>
+          <structural_type_descriptor id_type="sodaInstrHWCounters"/>
           <port_o id="clock" dir="IN" is_clock="1">
             <structural_type_descriptor type="BOOL" size="1"/>
           </port_o>
@@ -30,7 +30,7 @@
 	        <port_o id="location" dir="IN">
             <structural_type_descriptor type="UINT" size="64"/>
           </port_o>
-          <NP_functionality LIBRARY="sodaInstrHWCounter " VERILOG_FILE_PROVIDED="sodaInstrHWCounter.v"/>
+          <NP_functionality LIBRARY="sodaInstrHWCounters " VERILOG_FILE_PROVIDED="sodaInstrHWCounters.v"/>
         </component_o>
       </circuit>
     </cell>
