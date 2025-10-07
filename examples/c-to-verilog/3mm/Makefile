@@ -1,0 +1,49 @@
+# Compile C to LLVM
+
+FILE_PATH=forward_kernel.c
+SCRIPTS_DIR=../../../scripts
+# Make sure the output directory is not empty, many files will be generated.
+# ODIR=.
+ODIR=output
+
+# For simulation, the testbench file can be specified as a C (preferred) or XML file.
+# In this example we have provided both examples for syntactic reference.
+SIMULATION_FILE_PATH=forward_kernel_testbench.c
+
+# Edit to change the target
+# TARGET=$(ODIR)/05_llvm_baseline.ll
+
+TARGET=$(ODIR)/bambu/baseline/06_verilog.v
+TARGET=$(ODIR)/bambu/baseline/07_results.txt # For simulation results
+
+all: $(TARGET)
+
+clean:
+	rm -rf $(ODIR)/
+
+# # Generate MLIR from Torch model
+# $(ODIR)/01_tosa.mlir: $(FILE_PATH) 
+# 	python $(FILE_PATH) $@ --dialect=tosa
+
+# # Put the transform schedule on the output directory where it is expected
+# $(ODIR)/04_transform_sched.mlir: $(TRANSFORM_PATH) 
+# 	cp $< $@ 
+
+# # Include the rules to generate linalg from a torch model translated to linalg
+# include $(SCRIPTS_DIR)/mkinc/tosa_to_llvm.mk
+
+# # Include the rules to generate soda LLVM IR
+# include $(SCRIPTS_DIR)/mkinc/soda_to_llvm.mk
+
+# Include the rules to generate soda LLVM IR
+# include $(SCRIPTS_DIR)/mkinc/c_to_llvm.mk
+
+
+# Include rules to generate verilog and simulate with Bambu
+#  Select the target Bambu device and clock period below, if not specified
+#  default values are used.
+# BAMBU_DEVICE=asap7-BC
+BAMBU_DEVICE=nangate45
+BAMBU_CLOCK_PERIOD=5
+BAMBU_MEMPOLICY=NO_BRAM
+include $(SCRIPTS_DIR)/mkinc/c_to_verilog.mk
