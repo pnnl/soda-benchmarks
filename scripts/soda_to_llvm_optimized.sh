@@ -18,9 +18,21 @@ OUTPUT_PATH=$OUTPUT_DIR/$OUTPUT_NAME
 
 # set -x
 
+# $DOCKER_RUN \
+# soda-opt \
+#   -convert-operation-to-soda="anchor-op=linalg.batch_matmul" \
+#   -soda-outline-bambu-code \
+#   -soda-extract-arguments-to-c-testbench=using-bare-ptr \
+#   -soda-generate-bambu-accelcode=no-aa \
+#   -soda-opt-pipeline-for-bambu="use-bare-ptr-memref-call-conv number-of-full-unrolls=1" \
+#   -mlir-print-ir-after-all \
+#   $1 \
+#   -o $2 \
+#   2>&1 | cat > $2.steps.mlir
+
 $DOCKER_RUN \
 soda-opt \
-  -convert-operation-to-soda="anchor-op=linalg.batch_matmul" \
+ --convert-all-to-soda \
   -soda-outline-bambu-code \
   -soda-extract-arguments-to-c-testbench=using-bare-ptr \
   -soda-generate-bambu-accelcode=no-aa \
@@ -30,10 +42,4 @@ soda-opt \
   -o $2 \
   2>&1 | cat > $2.steps.mlir
 
-# $DOCKER_RUN \
-# soda-opt \
-#   --lower-all-to-llvm \
-#   $1 \
-#   -o $2
-  
 set +x
