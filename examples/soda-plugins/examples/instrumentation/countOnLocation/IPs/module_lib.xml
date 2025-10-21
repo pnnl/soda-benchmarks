@@ -1,0 +1,38 @@
+<?xml version="1.0"?>
+<technology>
+  <library>
+    <name>module_lib</name>
+    <cell>
+      <name>sodaInstrHWCounters</name>
+      <operation operation_name="sodaInstrHWCounters"/>
+      <circuit>
+	<component_o id="sodaInstrHWCounters">
+          <description>Hardware Counter IP</description>
+          <copyright>PNNL</copyright>
+          <authors>agostinti</authors>
+          <license>Apache with LLVM Exceptions</license>
+          <structural_type_descriptor id_type="sodaInstrHWCounters"/>
+          <port_o id="clock" dir="IN" is_clock="1">
+            <structural_type_descriptor type="BOOL" size="1"/>
+          </port_o>
+	        <port_o id="reset" dir="IN">
+            <structural_type_descriptor type="BOOL" size="1"/>
+          </port_o>
+          <port_o id="start_port" dir="IN">
+            <structural_type_descriptor type="BOOL" size="1"/>
+          </port_o>
+          <port_o id="done_port" dir="OUT">
+            <structural_type_descriptor type="BOOL" size="1"/>
+          </port_o>
+	        <port_o id="action" dir="IN">
+            <structural_type_descriptor type="BOOL" size="1"/>
+          </port_o>
+	        <port_o id="location" dir="IN">
+            <structural_type_descriptor type="UINT" size="64"/>
+          </port_o>
+          <NP_functionality LIBRARY="sodaInstrHWCounters " VERILOG_FILE_PROVIDED="sodaInstrHWCounters.v"/>
+        </component_o>
+      </circuit>
+    </cell>
+  </library>
+</technology>
