@@ -8,7 +8,7 @@
 
 #include "sodap/SODAPPasses.h"
 
-#include "mlir/Analysis/TopologicalSortUtils.h"
+#include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/IR/Block.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/Operation.h"
@@ -16,6 +16,8 @@
 #include "mlir/Support/IndentedOstream.h"
 #include "llvm/Support/Format.h"
 #include "llvm/Support/GraphWriter.h"
+
+#include <cmath>
 #include <map>
 #include <optional>
 #include <utility>
@@ -63,6 +65,66 @@ static std::string quoteString(const std::string &str) {
   return "\"" + str + "\"";
 }
 
+/// Return true if an operation belongs to the TOSA dialect.
+static bool isTosaOp(Operation *op) {
+  if (!op)
+    return false;
+  return op->getName().getDialectNamespace() == "tosa";
+}
+
+/// Return the bit width for an element type if known.
+static std::optional<unsigned> getElementBitWidth(Type elementType) {
+  if (auto intType = dyn_cast<IntegerType>(elementType))
+    return intType.getWidth();
+  if (auto floatType = dyn_cast<FloatType>(elementType))
+    return floatType.getWidth();
+  if (auto complexType = dyn_cast<ComplexType>(elementType)) {
+    if (auto width = getElementBitWidth(complexType.getElementType()))
+      return (*width) * 2;
+  }
+  return std::nullopt;
+}
+
+/// Compute the memory footprint (in bytes) for a shaped type if possible.
+static std::optional<int64_t> getShapedTypeSizeInBytes(Type type) {
+  auto shapedType = dyn_cast<ShapedType>(type);
+  if (!shapedType || !shapedType.hasStaticShape())
+    return std::nullopt;
+
+  auto elementBitWidth = getElementBitWidth(shapedType.getElementType());
+  if (!elementBitWidth)
+    return std::nullopt;
+
+  int64_t numElements = shapedType.getNumElements();
+  int64_t totalBits = numElements * static_cast<int64_t>(*elementBitWidth);
+  return (totalBits + 7) / 8;
+}
+
+/// Compute the memory size for a value.
+static std::optional<int64_t> getValueMemorySize(Value value) {
+  return getShapedTypeSizeInBytes(value.getType());
+}
+
+/// Format a size in bytes using human readable units.
+static std::string formatBytes(int64_t bytes) {
+  static constexpr const char *units[] = {"B", "KiB", "MiB", "GiB", "TiB"};
+  double value = static_cast<double>(bytes);
+  int unitIdx = 0;
+  while (value >= 1024.0 && unitIdx < 4) {
+    value /= 1024.0;
+    ++unitIdx;
+  }
+
+  std::string buf;
+  llvm::raw_string_ostream os(buf);
+  if (value >= 100.0 || unitIdx == 0)
+    os << static_cast<int64_t>(std::round(value));
+  else
+    os << llvm::format("%.1f", value);
+  os << units[unitIdx];
+  return os.str();
+}
+
 using AttributeMap = std::map<std::string, std::string>;
 
 namespace {
@@ -108,6 +170,7 @@ public:
   }
 
 private:
+
   /// Generate a color mapping that will color every operation with the same
   /// name the same way. It'll interpolate the hue in the HSV color-space,
   /// attempting to keep the contrast suitable for black text.
@@ -132,8 +195,10 @@ private:
   /// emitted.
   void emitAllEdgeStmts() {
     if (printDataFlowEdges) {
-      for (const auto &[value, node, label] : dataFlowEdges) {
-        emitEdgeStmt(valueToNode[value], node, label, kLineStyleDataFlow);
+      for (const auto &edge : dataFlowEdges) {
+        auto weight = getTosaEdgeWeight(edge.value, edge.consumer);
+        emitEdgeStmt(valueToNode[edge.value], edge.node, edge.label,
+                     kLineStyleDataFlow, weight);
       }
     }
 
@@ -149,7 +214,7 @@ private:
     os << "subgraph cluster_" << clusterId << " {\n";
     os.indent();
     // Emit invisible anchor node from/to which arrows can be drawn.
-    Node anchorNode = emitNodeStmt(" ", kShapeNone);
+    Node anchorNode = emitNodeStmt(" ", "", kShapeNone);
     os << attrStmt("label", quoteString(escapeString(std::move(label))))
        << ";\n";
     builder();
@@ -170,6 +235,26 @@ private:
       os << this->attrStmt(it.first, it.second);
     });
     os << "]";
+  }
+
+  // Print only selected MLIR integer attributes to `os`.
+  void emitSelectedMlirAttrs(raw_ostream &os, StringRef attrName,
+                             Attribute attr) {
+    static const std::vector<std::string> selectedAttrs = {
+        "numArithmeticOpsEstimative", "numMemoryOpsEstimative",
+        "numArithmeticOpsInKernel", "numMemoryOpsInKernel"};
+
+    // Only proceed if the attribute name is in the selected list
+    if (std::find(selectedAttrs.begin(), selectedAttrs.end(), attrName.str()) !=
+        selectedAttrs.end()) {
+      os << "\"" << attrName << "\": ";
+      if (isa<IntegerAttr>(attr)) {
+        // Print integer attributes in decimal format.
+        auto intAttr = cast<IntegerAttr>(attr);
+        os << intAttr.getInt();
+      }
+      os << ", ";
+    }
   }
 
   // Print an MLIR attribute to `os`. Large attributes are truncated.
@@ -198,6 +283,13 @@ private:
       return;
     }
 
+    if (isa<IntegerAttr>(attr)) {
+      // Print integer attributes in decimal format.
+      auto intAttr = cast<IntegerAttr>(attr);
+      os << intAttr.getInt();
+      return;
+    }
+
     // Print all other attributes.
     std::string buf;
     llvm::raw_string_ostream ss(buf);
@@ -207,14 +299,22 @@ private:
 
   /// Append an edge to the list of edges.
   /// Note: Edges are written to the output stream via `emitAllEdgeStmts`.
-  void emitEdgeStmt(Node n1, Node n2, std::string label, StringRef style) {
+  void emitEdgeStmt(Node n1, Node n2, std::string label, StringRef style,
+                    std::optional<int64_t> weightBytes = std::nullopt) {
     AttributeMap attrs;
     attrs["style"] = style.str();
+    std::string finalLabel = std::move(label);
+    if (weightBytes) {
+      attrs["weight"] = std::to_string(*weightBytes);
+      if (!finalLabel.empty())
+        finalLabel += "\\n";
+      finalLabel += std::to_string(*weightBytes) + " bytes";
+    }
     // Do not label edges that start/end at a cluster boundary. Such edges are
     // clipped at the boundary, but labels are not. This can lead to labels
     // floating around without any edge next to them.
-    if (!n1.clusterId && !n2.clusterId)
-      attrs["label"] = quoteString(escapeString(std::move(label)));
+    if (!finalLabel.empty() && !n1.clusterId && !n2.clusterId)
+      attrs["label"] = quoteString(escapeString(finalLabel));
     // Use `ltail` and `lhead` to draw edges between clusters.
     if (n1.clusterId)
       attrs["ltail"] = "cluster_" + std::to_string(*n1.clusterId);
@@ -239,11 +339,13 @@ private:
   }
 
   /// Emit a node statement.
-  Node emitNodeStmt(std::string label, StringRef shape = kShapeNode,
-                    StringRef background = "") {
+  Node emitNodeStmt(std::string label, std::string attributes,
+                    StringRef shape = kShapeNode, StringRef background = "") {
     int nodeId = ++counter;
     AttributeMap attrs;
     attrs["label"] = quoteString(escapeString(std::move(label)));
+    if (!attributes.empty())
+      attrs["attributes"] = quoteString("{" + escapeString(std::move(attributes)) + "}");
     attrs["shape"] = shape.str();
     if (!background.empty()) {
       attrs["style"] = "filled";
@@ -267,16 +369,22 @@ private:
         interleaveComma(op->getResultTypes(), ss);
         os << truncateString(ss.str()) << ")";
       }
-
-      // Print attributes.
-      if (printAttrs) {
-        os << "\n";
-        for (const NamedAttribute &attr : op->getAttrs()) {
-          os << '\n' << attr.getName().getValue() << ": ";
-          emitMlirAttr(os, attr.getValue());
-        }
-      }
     });
+  }
+
+  /// Generate a string representation of the attributes of an operation.
+  std::string getAttributes(Operation *op) {
+    std::string buf;
+    llvm::raw_string_ostream os(buf);
+    // Print attributes.
+    if (printAttrs) {
+      auto attrs = op->getAttrs();
+      for (size_t i = 0, e = attrs.size(); i < e; ++i) {
+        const NamedAttribute &attr = attrs[i];
+        emitSelectedMlirAttrs(os, attr.getName().getValue(), attr.getValue());
+      }
+    }
+    return os.str();
   }
 
   /// Generate a label for a block argument.
@@ -289,7 +397,7 @@ private:
   void processBlock(Block &block) {
     emitClusterStmt([&]() {
       for (BlockArgument &blockArg : block.getArguments())
-        valueToNode[blockArg] = emitNodeStmt(getLabel(blockArg));
+        valueToNode[blockArg] = emitNodeStmt(getLabel(blockArg), "");
 
       // Emit a node for each operation.
       std::optional<Node> prevNode;
@@ -316,7 +424,7 @@ private:
           },
           getLabel(op));
     } else {
-      node = emitNodeStmt(getLabel(op), kShapeNode,
+      node = emitNodeStmt(getLabel(op), getAttributes(op), kShapeNode,
                           backgroundColors[op->getName()].second);
     }
 
@@ -324,8 +432,9 @@ private:
     if (printDataFlowEdges) {
       unsigned numOperands = op->getNumOperands();
       for (unsigned i = 0; i < numOperands; i++)
-        dataFlowEdges.push_back({op->getOperand(i), node,
-                                 numOperands == 1 ? "" : std::to_string(i)});
+        dataFlowEdges.push_back(
+            {op->getOperand(i), node,
+             numOperands == 1 ? "" : std::to_string(i), op});
     }
 
     for (Value result : op->getResults())
@@ -354,12 +463,25 @@ private:
   std::vector<std::string> edges;
   /// Mapping of SSA values to Graphviz nodes/clusters.
   DenseMap<Value, Node> valueToNode;
+  struct DataFlowEdge {
+    Value value;
+    Node node;
+    std::string label;
+    Operation *consumer;
+  };
   /// Output for data flow edges is delayed until the end to handle cycles
-  std::vector<std::tuple<Value, Node, std::string>> dataFlowEdges;
+  std::vector<DataFlowEdge> dataFlowEdges;
   /// Counter for generating unique node/subgraph identifiers.
   int counter = 0;
 
   DenseMap<OperationName, std::pair<int, std::string>> backgroundColors;
+
+  std::optional<int64_t> getTosaEdgeWeight(Value value, Operation *consumer) {
+    Operation *producer = value.getDefiningOp();
+    if (!isTosaOp(consumer) && !isTosaOp(producer))
+      return std::nullopt;
+    return getValueMemorySize(value);
+  }
 };
 
 } // namespace
@@ -389,3 +511,19 @@ void mlir::Region::viewGraph(const Twine &regionName) {
 }
 
 void mlir::Region::viewGraph() { viewGraph("region"); }
+
+// class TosaDotGraphPass : public sodap::impl::ViewOpGraphBase<TosaDotGraphPass> {
+// public:
+//   TosaDotGraphPass(raw_ostream &os) : os(os) {}
+  
+//   void runOnOperation() override {
+//     initColorMapping(*getOperation());
+//     emitGraph([&]() {
+//       processOperation(getOperation());
+//       emitAllEdgeStmts();
+//     });
+//   }
+
+// private:
+//   raw_indented_ostream os;
+// };
