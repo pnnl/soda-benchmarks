@@ -37,6 +37,7 @@ soda-opt \
   -soda-extract-arguments-to-c-testbench=using-bare-ptr \
   -soda-generate-bambu-accelcode=no-aa \
   -soda-opt-pipeline-for-bambu="use-bare-ptr-memref-call-conv number-of-full-unrolls=1" \
+  --convert-func-to-llvm \
   -mlir-print-ir-after-all \
   $1 \
   -o $2 \

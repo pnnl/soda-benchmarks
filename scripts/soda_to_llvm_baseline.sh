@@ -32,11 +32,12 @@ OUTPUT_PATH=$OUTPUT_DIR/$OUTPUT_NAME
 
 $DOCKER_RUN \
 soda-opt \
- --convert-all-to-soda \
+  --convert-all-to-soda \
   -soda-outline-bambu-code \
   -soda-extract-arguments-to-c-testbench=using-bare-ptr \
   -soda-generate-bambu-accelcode=no-aa \
   -lower-all-to-llvm=use-bare-ptr-memref-call-conv \
+  --convert-func-to-llvm \
   -mlir-print-ir-after-all \
   $1 \
   -o $2 \

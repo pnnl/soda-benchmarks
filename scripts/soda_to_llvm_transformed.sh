@@ -37,6 +37,7 @@ soda-opt \
 	--transform-interpreter \
 	--soda-transform-erase-schedule \
   --lower-all-to-llvm="use-bare-ptr-memref-call-conv" \
+  --convert-func-to-llvm \
   -mlir-print-ir-after-all \
   $1 \
   -o $2 \
