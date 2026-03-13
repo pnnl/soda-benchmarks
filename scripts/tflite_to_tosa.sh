@@ -41,4 +41,8 @@ tf-opt \
   $OUTPUT_DIR/00_tfl.mlir \
   -o $OUTPUT_PATH
 
+# Replace dynamic dimensions (?) with 1 and rename main to forward
+sed -i 's/?/1/g' $OUTPUT_PATH
+sed -i 's/main/forward/g' $OUTPUT_PATH
+
 set +x

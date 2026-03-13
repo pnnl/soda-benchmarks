@@ -10,6 +10,7 @@ $(ODIR)/04_llvm_baseline.mlir: $(ODIR)/02_linalg.mlir $(SCRIPTS_DIR)/soda_to_llv
 $(ODIR)/05_llvm_baseline.ll: $(ODIR)/04_llvm_baseline.mlir
 	mlir-translate $< -o $(ODIR)/05_llvm_baseline_cpu.ll --mlir-to-llvmir
 	sed -E '/llvm\.stacksave\.p0|llvm\.stackrestore\.p0/d' $(ODIR)/05_llvm_baseline_cpu.ll | opt -S -o $@ -
+	$(SCRIPTS_DIR)/link_memref_copy.sh $@
 
 
 # =============================================================================
@@ -21,6 +22,7 @@ $(ODIR)/04_llvm_optimized.mlir: $(ODIR)/02_linalg.mlir $(SCRIPTS_DIR)/soda_to_ll
 $(ODIR)/05_llvm_optimized.ll: $(ODIR)/04_llvm_optimized.mlir
 	mlir-translate $< -o $(ODIR)/05_llvm_optimized_cpu.ll --mlir-to-llvmir
 	sed -E '/llvm\.stacksave\.p0|llvm\.stackrestore\.p0/d' $(ODIR)/05_llvm_optimized_cpu.ll | opt -S -o $@ -
+	$(SCRIPTS_DIR)/link_memref_copy.sh $@
 
 # =============================================================================
 # Rules specific mlir transformed with a transform dialect library
@@ -31,6 +33,7 @@ $(ODIR)/04_llvm_transformed.mlir: $(ODIR)/02_linalg.mlir $(ODIR)/04_transform_sc
 $(ODIR)/05_llvm_transformed.ll: $(ODIR)/04_llvm_transformed.mlir
 	mlir-translate $< -o $(ODIR)/05_llvm_transformed_cpu.ll --mlir-to-llvmir
 	sed -E '/llvm\.stacksave\.p0|llvm\.stackrestore\.p0/d' $(ODIR)/05_llvm_transformed_cpu.ll | opt -S -o $@ -
+	$(SCRIPTS_DIR)/link_memref_copy.sh $@
 
 # Checks if the first generated file exists, if so, delete all generated files
 # This is to avoid deleting files from other directories
