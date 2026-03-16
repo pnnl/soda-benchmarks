@@ -7,7 +7,6 @@
 #pragma HLS_interface P6 m_axi direct
 
 #define S 10 // Number of elements in each dimension
-// #define F 5  // Unroll factor
 
 #define NI S // Number of elements
 #define NJ S // Number of elements
