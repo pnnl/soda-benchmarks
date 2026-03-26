@@ -6,14 +6,18 @@
 //
 //===----------------------------------------------------------------------===//
 #include "mlir/Dialect/Func/IR/FuncOps.h"
+#include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/PatternMatch.h"
 #include "mlir/Rewrite/FrozenRewritePatternSet.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
+
+#include <string>
 
 #include "sodap/SODAPPasses.h"
 
 namespace mlir::sodap {
 #define GEN_PASS_DEF_SODAPSWITCHBARFOO
+#define GEN_PASS_DEF_TAGOPS
 #include "sodap/SODAPPasses.h.inc"
 
 namespace {
@@ -43,4 +47,19 @@ public:
   }
 };
 } // namespace
+
+class SODAPTagOps
+    : public impl::TagOpsBase<SODAPTagOps> {
+public:
+  using impl::TagOpsBase<SODAPTagOps>::TagOpsBase;
+  void runOnOperation() final {
+    unsigned counter = 0;
+    getOperation()->walk([&](Operation *op) {
+      if (op->getName().getStringRef() == anchorOp) {
+        std::string uid = prefix + "_" + std::to_string(counter++);
+        op->setAttr("uid", StringAttr::get(op->getContext(), uid));
+      }
+    });
+  }
+};
 } // namespace mlir::sodap

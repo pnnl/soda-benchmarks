@@ -14,6 +14,7 @@
 #include "sodap/AnalysisPasses.h"
 #include "sodap/MyExtension.h"
 #include "sodap/SODAPPasses.h"
+#include "sodap/SODAPTransforms.h"
 #include "llvm/Config/llvm-config.h"
 #include "llvm/Support/Compiler.h"
 
@@ -26,7 +27,10 @@ extern "C" LLVM_ATTRIBUTE_WEAK DialectPluginLibraryInfo
 mlirGetDialectPluginInfo() {
   return {
       MLIR_PLUGIN_API_VERSION, "SODA", LLVM_VERSION_STRING,
-      [](DialectRegistry *registry) { sodap::registerMyExtension(*registry); }};
+      [](DialectRegistry *registry) {
+        sodap::registerMyExtension(*registry);
+        sodap::registerSODAPTransforms(*registry);
+      }};
 }
 
 /// Pass plugin registration mechanism.

@@ -68,6 +68,32 @@ def InstrBounds : Pass<"soda-instr-scf-for-assert-bounds"> {
   }];
 }
 
+def TagOps : Pass<"sodap-tagops", "::mlir::ModuleOp"> {
+  let summary = "Tag all instances of a specified anchor operation with a unique ID";
+  let description = [{
+    This pass walks the module and finds all operations matching the specified
+    anchor operation name. Each matching operation is tagged with a `uid`
+    string attribute of the form `<prefix>_<N>`, where `<prefix>` is a
+    user-provided string and `<N>` is an ever-increasing counter assigned
+    in visitation order.
+
+    Example with `anchor-op=func.call prefix=my_id`:
+    ```
+    func.call @foo() : () -> ()
+    func.call @bar() : () -> ()
+    // Gets transformed to:
+    func.call @foo() {uid = "my_id_0"} : () -> ()
+    func.call @bar() {uid = "my_id_1"} : () -> ()
+    ```
+  }];
+  let options = [
+    Option<"anchorOp", "anchor-op", "std::string",
+           /*default=*/"\"\"", "The operation name to match (e.g. func.call)">,
+    Option<"prefix", "prefix", "std::string",
+           /*default=*/"\"uid\"", "The prefix string for the uid tag">
+  ];
+}
+
 def InstrHWCounters : Pass<"soda-instr-hw-counters-at-loop-bounds"> {
   let summary = "Insert hardware counters instrumentation";
   let description = [{

@@ -12,6 +12,11 @@ mlir_tablegen(MyExtension.h.inc -gen-op-decls)
 mlir_tablegen(MyExtension.cpp.inc -gen-op-defs)
 add_public_tablegen_target(MyExtensionCh2IncGen)
 
+set(LLVM_TARGET_DEFINITIONS SODAPTransforms.td)
+mlir_tablegen(SODAPTransforms.h.inc -gen-op-decls)
+mlir_tablegen(SODAPTransforms.cpp.inc -gen-op-defs)
+add_public_tablegen_target(SODAPTransformsIncGen)
+
 set(LLVM_TARGET_DEFINITIONS AnalysisPasses.td)
 mlir_tablegen(AnalysisPasses.h.inc -gen-pass-decls)
 add_public_tablegen_target(SODAPAnalysisPassesIncGen)
