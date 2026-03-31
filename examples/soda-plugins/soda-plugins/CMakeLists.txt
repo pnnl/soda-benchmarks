@@ -11,8 +11,6 @@ add_llvm_library(SODAPlugin
 
         LINK_LIBS
         MLIRSODAP
-        # TODO: We should not need to link against the entire ESPRuntime
-        #       Runtime libraries could be split into smaller libraries in the future to avoid this issue.
         MLIRLinalgToESPRuntime
         )
 target_include_directories(
