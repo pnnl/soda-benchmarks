@@ -47,6 +47,8 @@ config.sodap_tools_dir = os.path.join(config.sodap_obj_root, "bin")
 config.sodap_libs_dir = os.path.join(config.sodap_obj_root, "lib")
 
 config.substitutions.append(("%sodap_libs", config.sodap_libs_dir))
+config.substitutions.append(("%shlibext", config.llvm_shlib_ext))
+config.substitutions.append(("%llvm_lib_dir", config.llvm_lib_dir))
 
 # Tweak the PATH to include the tools dir.
 llvm_config.with_environment("PATH", config.llvm_tools_dir, append_path=True)
@@ -54,6 +56,7 @@ llvm_config.with_environment("PATH", config.llvm_tools_dir, append_path=True)
 tool_dirs = [config.sodap_tools_dir, config.llvm_tools_dir]
 tools = [
     "mlir-opt",
+    "mlir-cpu-runner",
     # "sodap-capi-test",
     # "sodap-opt",
     # "sodap-translate",

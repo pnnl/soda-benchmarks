@@ -13,6 +13,7 @@ set(SODAPLUGINS_TEST_DEPENDS
         FileCheck count not
         # soda-capi-test
         SODAPlugin
+        mlir_mockesp_runner_utils
         )
 
 # TODO: Keep python bindings disabled for now, as they are not implemented yet.

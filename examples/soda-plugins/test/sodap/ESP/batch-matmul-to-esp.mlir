@@ -4,10 +4,10 @@
 // RUN:   FileCheck %s
 
 // Verify that all ESP runtime functions are declared.
-// CHECK-DAG: func.func private @esp_alloc_shared(i64) -> memref<*xi8>
-// CHECK-DAG: func.func private @esp_free_shared(memref<*xi8>)
-// CHECK-DAG: func.func private @esp_float2fixed_f32(memref<*xf32>, memref<*xi8>, i64)
-// CHECK-DAG: func.func private @esp_fixed2float_f32(memref<*xi8>, i64, memref<*xf32>)
+// CHECK-DAG: func.func private @esp_alloc_shared(i64) -> i64
+// CHECK-DAG: func.func private @esp_free_shared(i64)
+// CHECK-DAG: func.func private @esp_float2fixed_f32(memref<*xf32>, i64, i64)
+// CHECK-DAG: func.func private @esp_fixed2float_f32(i64, i64, memref<*xf32>)
 // CHECK-DAG: func.func private @esp_accel_cfg_regs(i64, i64, i64, i64, i64, i64, i64)
 // CHECK-DAG: func.func private @esp_accel_start()
 // CHECK-DAG: func.func private @esp_accel_wait()

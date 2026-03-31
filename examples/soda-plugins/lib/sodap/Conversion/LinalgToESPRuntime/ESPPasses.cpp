@@ -51,41 +51,43 @@ static FlatSymbolRefAttr getOrInsertFunc(ModuleOp module, OpBuilder &builder,
 
 /// Forward-declare all ESP runtime functions in the module.
 ///
+/// Shared memory is an opaque i64 handle (not a memref) to avoid complex
+/// struct-return ABI issues. Memref arguments use the MLIR unranked memref
+/// convention: memref<*xf32> becomes (i64 rank, void *descriptor) at the
+/// C level, but at the MLIR func level it is a single memref<*xf32> arg.
+///
 /// Function signatures:
-///   esp_alloc_shared(i64 total_bytes) -> memref<*xi8>
-///   esp_free_shared(memref<*xi8>) -> ()
-///   esp_float2fixed_f32(memref<*xf32>, memref<*xi8>, i64 offset) -> ()
-///   esp_fixed2float_f32(memref<*xi8>, i64 offset, memref<*xf32>) -> ()
-///   esp_accel_cfg_regs(i64 seq_len, i64 indim, i64 outdim,
-///                      i64 off_in, i64 off_w, i64 off_b, i64 off_o) -> ()
+///   esp_alloc_shared(i64 total_bytes) -> i64
+///   esp_free_shared(i64 handle) -> ()
+///   esp_float2fixed_f32(memref<*xf32>, i64 handle, i64 offset) -> ()
+///   esp_fixed2float_f32(i64 handle, i64 offset, memref<*xf32>) -> ()
+///   esp_accel_cfg_regs(i64 x7...) -> ()
 ///   esp_accel_start() -> ()
 ///   esp_accel_wait() -> ()
 static void declareEspFunctions(ModuleOp module, OpBuilder &builder) {
   MLIRContext *ctx = module.getContext();
   Type i64Ty = IntegerType::get(ctx, 64);
-  Type f32Ty = Float32Type::get(ctx);
-  Type urMemRefI8 = UnrankedMemRefType::get(IntegerType::get(ctx, 8), 0);
-  Type urMemRefF32 = UnrankedMemRefType::get(f32Ty, 0);
+  Type urMemRefF32 = UnrankedMemRefType::get(Float32Type::get(ctx), 0);
 
-  // esp_alloc_shared(i64) -> memref<*xi8>
+  // esp_alloc_shared(i64) -> i64
   getOrInsertFunc(module, builder, kEspAllocShared,
-                  /*resultTypes=*/{urMemRefI8}, /*argTypes=*/{i64Ty});
+                  /*resultTypes=*/{i64Ty}, /*argTypes=*/{i64Ty});
 
-  // esp_free_shared(memref<*xi8>) -> ()
+  // esp_free_shared(i64) -> ()
   getOrInsertFunc(module, builder, kEspFreeShared,
-                  /*resultTypes=*/{}, /*argTypes=*/{urMemRefI8});
+                  /*resultTypes=*/{}, /*argTypes=*/{i64Ty});
 
-  // esp_float2fixed_f32(memref<*xf32>, memref<*xi8>, i64 offset) -> ()
+  // esp_float2fixed_f32(memref<*xf32>, i64, i64) -> ()
   getOrInsertFunc(module, builder, kEspFloat2FixedF32,
                   /*resultTypes=*/{},
-                  /*argTypes=*/{urMemRefF32, urMemRefI8, i64Ty});
+                  /*argTypes=*/{urMemRefF32, i64Ty, i64Ty});
 
-  // esp_fixed2float_f32(memref<*xi8>, i64 offset, memref<*xf32>) -> ()
+  // esp_fixed2float_f32(i64, i64, memref<*xf32>) -> ()
   getOrInsertFunc(module, builder, kEspFixed2FloatF32,
                   /*resultTypes=*/{},
-                  /*argTypes=*/{urMemRefI8, i64Ty, urMemRefF32});
+                  /*argTypes=*/{i64Ty, i64Ty, urMemRefF32});
 
-  // esp_accel_cfg_regs(seq_len, indim, outdim, off_in, off_w, off_b, off_o)
+  // esp_accel_cfg_regs(i64 x7) -> ()
   SmallVector<Type, 7> cfgArgTypes(7, i64Ty);
   getOrInsertFunc(module, builder, kEspAccelCfgRegs,
                   /*resultTypes=*/{}, /*argTypes=*/cfgArgTypes);
@@ -104,9 +106,9 @@ static void declareEspFunctions(ModuleOp module, OpBuilder &builder) {
 /// linalg.batch_matmul semantics:
 ///   A: <batch x M x K>, B: <batch x K x N>, C: <batch x M x N>
 ///
-/// For each batch element, the generated code:
+/// Generated code:
 ///   1. Computes sizes and offsets for the shared memory layout
-///   2. Allocates shared memory
+///   2. Allocates shared memory (opaque i64 handle)
 ///   3. Copies A, B to shared memory (float -> fixed-point)
 ///   4. Configures accelerator registers
 ///   5. Starts the accelerator
@@ -117,16 +119,13 @@ static void replaceBatchMatmul(linalg::BatchMatmulOp op, OpBuilder &builder) {
   Location loc = op.getLoc();
   MLIRContext *ctx = builder.getContext();
   Type i64Ty = IntegerType::get(ctx, 64);
-  Type f32Ty = Float32Type::get(ctx);
-  Type urMemRefI8 = UnrankedMemRefType::get(IntegerType::get(ctx, 8), 0);
-  Type urMemRefF32 = UnrankedMemRefType::get(f32Ty, 0);
+  Type urMemRefF32 = UnrankedMemRefType::get(Float32Type::get(ctx), 0);
 
   Value A = op.getInputs()[0]; // batch x M x K
   Value B = op.getInputs()[1]; // batch x K x N
   Value C = op.getOutputs()[0]; // batch x M x N
 
   // Extract dimensions: A is <batch x M x K>, B is <batch x K x N>
-  // For static shapes, use the type directly. For dynamic, use memref.dim.
   auto getDim = [&](Value memref, unsigned idx) -> Value {
     auto mrType = cast<MemRefType>(memref.getType());
     if (!mrType.isDynamicDim(idx)) {
@@ -166,9 +165,9 @@ static void replaceBatchMatmul(linalg::BatchMatmulOp op, OpBuilder &builder) {
   Value bUR = builder.create<memref::CastOp>(loc, urMemRefF32, B);
   Value cUR = builder.create<memref::CastOp>(loc, urMemRefF32, C);
 
-  // Step 1: Allocate shared memory
+  // Step 1: Allocate shared memory (returns opaque i64 handle)
   auto allocCall = builder.create<func::CallOp>(
-      loc, kEspAllocShared, TypeRange{urMemRefI8}, ValueRange{totalBytes});
+      loc, kEspAllocShared, TypeRange{i64Ty}, ValueRange{totalBytes});
   Value mem = allocCall.getResult(0);
 
   // Step 2: Convert float inputs to fixed-point in shared memory
