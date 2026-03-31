@@ -20,3 +20,6 @@ add_mlir_dialect_library(MLIRSODAP
         MLIRInferTypeOpInterface
         MLIRFuncDialect
         )
+
+add_subdirectory(Conversion)
+add_subdirectory(ExecutionEngine)

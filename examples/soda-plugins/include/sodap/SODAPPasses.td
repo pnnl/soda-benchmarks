@@ -105,4 +105,21 @@ def InstrHWCounters : Pass<"soda-instr-hw-counters-at-loop-bounds"> {
 
 }
 
+def LinalgBatchMatmulToESP : Pass<"sodap-linalg-batch-matmul-to-esp", "::mlir::ModuleOp"> {
+  let summary = "Replace linalg.batch_matmul with ESP accelerator runtime calls";
+  let description = [{
+    This pass replaces `linalg.batch_matmul` operations with a sequence of calls
+    to ESP accelerator runtime wrapper functions that mirror the C-level
+    invocation flow:
+
+    1. `esp_alloc_shared` — allocate shared memory buffer
+    2. `esp_float2fixed_f32` — convert each input memref to fixed-point in shared mem
+    3. `esp_accel_cfg_regs` — configure accelerator registers with dimensions/offsets
+    4. `esp_accel_start` — launch the accelerator
+    5. `esp_accel_wait` — busy-wait for completion
+    6. `esp_fixed2float_f32` — convert fixed-point output back to float
+    7. `esp_free_shared` — free shared memory buffer
+  }];
+}
+
 #endif // SODAP_PASS
