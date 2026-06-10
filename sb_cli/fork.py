@@ -70,7 +70,8 @@ def fork_experiment(from_name_or_path: str, output_dir: str, base_dir: Path) -> 
     rel_path = f"experiments/{ts}"
     registry.append(output_dir, rel_path)
 
-    print(f"[sb-cli] Created experiment: experiments/{ts}/")
-    print(f"[sb-cli] Symlink: experiments/{output_dir} -> {ts}/")
+    symlink_path = (base_dir / "experiments" / output_dir).absolute()
+    print(f"[sb-cli] Created experiment: {new_dir.absolute()}")
+    print(f"[sb-cli] Symlink: {symlink_path} -> {ts}/")
     print(f"[sb-cli] Registered as '{output_dir}' in experiments/registry.py")
     return new_dir

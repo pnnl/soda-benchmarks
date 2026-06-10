@@ -225,7 +225,8 @@ def scaffold(config: ExperimentConfig, output_dir: str, base_dir: Path) -> Path:
     _create_symlink(exp_dir, output_dir, base_dir)
     Registry(base_dir).append(output_dir, rel_path)
 
-    print(f"[sb-cli] Created experiment: experiments/{ts}/")
-    print(f"[sb-cli] Symlink: experiments/{output_dir} -> {ts}/")
+    symlink_path = (base_dir / "experiments" / output_dir).absolute()
+    print(f"[sb-cli] Created experiment: {exp_dir.absolute()}")
+    print(f"[sb-cli] Symlink: {symlink_path} -> {ts}/")
     print(f"[sb-cli] Registered as '{output_dir}' in experiments/registry.py")
     return exp_dir
