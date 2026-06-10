@@ -52,3 +52,6 @@ benches/PolyBenchC-4.2.1
 # Spec-kit artifacts
 /.specs
 
+# Generated MLIR output from kernel test runs
+benches/PolyBenchPyTorch/**/output/
+
