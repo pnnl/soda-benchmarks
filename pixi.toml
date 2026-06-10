@@ -1,0 +1,27 @@
+[workspace]
+channels = ["conda-forge"]
+name = "soda-benchmarks"
+platforms = ["linux-aarch64", "linux-64"]
+version = "0.1.0"
+
+[tasks]
+lint = "ruff check benches/PolyBenchPyTorch benches/tests sb_cli"
+format = "ruff format benches/PolyBenchPyTorch benches/tests sb_cli"
+test = "pytest"
+test-mlir = "pytest -m slow"
+test-fast = "pytest -m 'not slow'"
+sb-cli = { cmd = "python -m sb_cli", cwd = "benches" }
+docs-serve = "mkdocs serve"
+docs-build = "mkdocs build"
+
+[dependencies]
+python = "3.11.13.*"
+ruff = ">=0.15.2,<0.16"
+mypy = ">=1.0,<2"
+pytest = ">=8.0,<9"
+pytest-cov = ">=6.0,<7"
+mkdocs = "*"
+mkdocs-material = "*"
+
+[activation.env]
+PYTHONPATH = "/workspaces/soda/soda-benchmarks:/workspaces/soda/soda-benchmarks/benches:/opt/llvm-project/python_packages/mlir_core:/opt/torch-mlir/python_packages/torch_mlir:/opt/soda-opt/python_packages/soda:/workspaces/soda/builds/llvm-project/install/python_packages/mlir_core:/usr/local/lib/python3.11/site-packages"

@@ -1,0 +1,40 @@
+[project]
+name = "soda-benchmarks"
+version = "0.1.0"
+requires-python = ">=3.11"
+
+[project.scripts]
+sb-cli = "sb_cli.__main__:main"
+
+[tool.ruff]
+line-length = 88
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "F",   # pyflakes
+    "I",   # isort
+    "UP",  # pyupgrade
+    "B",   # flake8-bugbear
+]
+
+[tool.pytest.ini_options]
+testpaths = ["benches/tests"]
+addopts = "-v"
+markers = [
+    "slow: marks tests as slow (MLIR generation via torch-mlir)",
+]
+
+[tool.mypy]
+python_version = "3.11"
+ignore_missing_imports = true
+warn_unused_ignores = true
+warn_return_any = false
+
+[tool.coverage.run]
+source = ["benches/PolyBenchPyTorch", "sb_cli"]
+omit = ["benches/tests/*", "*/test_*.py"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = false
