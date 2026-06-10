@@ -8,6 +8,9 @@ cmake-build-release/
 # Nested install directory
 /install*
 
+# Nested spec dir
+/.specs
+
 #==============================================================================#
 # Explicit files to ignore (only matches one).
 #==============================================================================#
