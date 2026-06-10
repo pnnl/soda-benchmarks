@@ -42,9 +42,12 @@ __pycache__/
 # mkdocs build output
 /site
 
-# Temps
-benches/experiments
-experiments
+# Temps (sb-cli generated experiment dirs; keep the registry + its own
+# .gitignore tracked)
+benches/experiments/*
+!benches/experiments/registry.py
+!benches/experiments/.gitignore
+/experiments
 
 # Vendored upstream reference, not tracked here (see benches/README.md)
 benches/PolyBenchC-4.2.1
