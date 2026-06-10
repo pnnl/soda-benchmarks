@@ -32,15 +32,24 @@ If you want to create accelerator cores for your own models, check out the
 implement machine learning models, and scripts to transform these models or
 parts of them into Verilog.
 
+For a PyTorch-based PolyBench kernel suite, see the [benches](benches/)
+folder, and for the `sb-cli` experiment scaffolding tool, see
+[sb_cli](sb_cli/). Project-wide Python dependencies and tasks (tests, lint,
+docs, `sb-cli`) are managed with [pixi](https://pixi.sh) via the root
+[`pixi.toml`](pixi.toml) — run `pixi run <task>` from the repo root.
+
 
 ## Project Structure
 
 ```
+├── benches      # PyTorch PolyBench kernel suite and generated experiments
 ├── docs         # Documentation
 ├── examples     # Simple examples demonstrating the end-to-end Python to Verilog/GDS flow
 ├── LICENSE
 ├── models       # Python scripts to download or implement ML models, and scripts to transform models into Verilog
+├── pixi.toml    # Project-wide Python dependencies and tasks (managed with pixi)
 ├── README.md
+├── sb_cli       # The sb-cli experiment scaffolding CLI
 ├── scripts      # Bash and Makefile scripts used in other folders
 ├── tests        # All tests (if possible)
 ├── tutorials    # Guided tutorials using jupyter notebooks

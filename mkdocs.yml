@@ -1,0 +1,10 @@
+site_name: SODA Benchmarks
+theme:
+  name: material
+nav:
+  - Home: index.md
+  - Examples: examples.md
+  - Models: models.md
+  - Scripts: scripts.md
+  - Tutorials: tutorials.md
+  - Tests: tests.md
