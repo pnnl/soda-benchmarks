@@ -38,6 +38,22 @@ folder, and for the `sb-cli` experiment scaffolding tool, see
 docs, `sb-cli`) are managed with [pixi](https://pixi.sh) via the root
 [`pixi.toml`](pixi.toml) — run `pixi run <task>` from the repo root.
 
+To scaffold and run a synthesis experiment for a PolyBenchPyTorch kernel:
+
+```bash
+pixi run sb-cli init \
+    --benchmark_name PolyBenchPyTorch.linear_algebra.blas.gemm \
+    --dataset MINI \
+    --dtype float32 \
+    --device nangate45 \
+    --clock_period 5 \
+    --target llvm \
+    --output_dir gemm_mini_test
+
+cd benches/experiments/gemm_mini_test
+pixi run make
+```
+
 
 ## Project Structure
 
