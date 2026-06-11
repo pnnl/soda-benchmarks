@@ -14,6 +14,7 @@ set(SODAPLUGINS_TEST_DEPENDS
         # soda-capi-test
         SODAPlugin
         mlir_mockesp_runner_utils
+        mlir_sodap_instr_runner_utils
         )
 
 # TODO: Keep python bindings disabled for now, as they are not implemented yet.
