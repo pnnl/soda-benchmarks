@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-PolyBench 2mm Kernel: Double Matrix Multiplication
+PolyBench twomm Kernel: Double Matrix Multiplication
 
 Reference: PolyBenchC-4.2.1/linear-algebra/kernels/2mm/2mm.c
 
@@ -11,7 +11,7 @@ where:
     - tmp = alpha * A * B  (intermediate result)
     - D_out = beta * D + tmp * C  (final result)
 
-This module implements the 2mm kernel as a PyTorch nn.Module and provides
+This module implements the twomm kernel as a PyTorch nn.Module and provides
 MLIR generation capability via command-line interface.
 
 Usage:
@@ -56,12 +56,12 @@ except ImportError:
 
 
 def get_dataset_dimensions(dataset: str) -> dict:
-    return _get_dataset_dimensions("2mm", dataset)
+    return _get_dataset_dimensions("twomm", dataset)
 
 
 class TwoMM(nn.Module):
     """
-    PolyBench 2mm kernel: D := alpha*A*B*C + beta*D
+    PolyBench twomm kernel: D := alpha*A*B*C + beta*D
 
     Double matrix multiplication with scalar coefficients.
 
@@ -92,7 +92,7 @@ class TwoMM(nn.Module):
         D: torch.Tensor,
     ) -> torch.Tensor:
         """
-        Execute 2mm kernel computation.
+        Execute twomm kernel computation.
 
         Adaptation from C: Nested loops converted to PyTorch matrix operations.
         C version computes tmp[i][j] = alpha * sum_k(A[i][k] * B[k][j]),
@@ -140,7 +140,7 @@ def init_array(
     torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor
 ]:
     """
-    Initialize arrays for 2mm kernel matching C reference implementation.
+    Initialize arrays for twomm kernel matching C reference implementation.
 
     Formulas from PolyBenchC-4.2.1/linear-algebra/kernels/2mm/2mm.c lines 36-49:
         alpha = 1.5
@@ -200,7 +200,7 @@ def init_array(
 
 def parse_args() -> argparse.Namespace:
     """Parse command-line arguments for MLIR generation."""
-    parser = make_parser("2mm", "./output/2mm_linalg.mlir")
+    parser = make_parser("twomm", "./output/2mm_linalg.mlir")
     parser.add_argument("--ni", type=int, help="Dimension ni (overrides dataset value)")
     parser.add_argument("--nj", type=int, help="Dimension nj (overrides dataset value)")
     parser.add_argument("--nk", type=int, help="Dimension nk (overrides dataset value)")
@@ -209,7 +209,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> None:
-    """Generate MLIR from 2mm kernel model."""
+    """Generate MLIR from twomm kernel model."""
     args = parse_args()
 
     dims = get_dataset_dimensions(args.dataset)
@@ -223,7 +223,7 @@ def main() -> None:
     model = TwoMM(ni, nj, nk, nl)
     alpha, beta, A, B, C, D = init_array(ni, nj, nk, nl, dtype=dtype)
 
-    print(f"Compiling 2mm kernel to MLIR dialect: {args.dialect}")
+    print(f"Compiling twomm kernel to MLIR dialect: {args.dialect}")
     generate_mlir(model, (alpha, beta, A, B, C, D), args.out_mlir_path, args.dialect)
 
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-PolyBench 3mm Kernel: Triple Matrix Multiplication
+PolyBench threemm Kernel: Triple Matrix Multiplication
 
 Reference: PolyBenchC-4.2.1/linear-algebra/kernels/3mm/3mm.c
 
@@ -12,7 +12,7 @@ where:
     - F = C * D  (second intermediate)
     - G = E * F  (final result)
 
-This module implements the 3mm kernel as a PyTorch nn.Module and provides
+This module implements the threemm kernel as a PyTorch nn.Module and provides
 MLIR generation capability via command-line interface.
 
 Usage:
@@ -57,12 +57,12 @@ except ImportError:
 
 
 def get_dataset_dimensions(dataset: str) -> dict:
-    return _get_dataset_dimensions("3mm", dataset)
+    return _get_dataset_dimensions("threemm", dataset)
 
 
 class ThreeMM(nn.Module):
     """
-    PolyBench 3mm kernel: G := (A*B) * (C*D)
+    PolyBench threemm kernel: G := (A*B) * (C*D)
 
     Triple matrix multiplication.
 
@@ -93,7 +93,7 @@ class ThreeMM(nn.Module):
         D: torch.Tensor,
     ) -> torch.Tensor:
         """
-        Execute 3mm kernel computation.
+        Execute threemm kernel computation.
 
         Adaptation from C: Nested loops converted to PyTorch matrix operations.
         C version computes E[i][j] = sum_k(A[i][k] * B[k][j]),
@@ -139,7 +139,7 @@ def init_array(
     ni: int, nj: int, nk: int, nl: int, nm: int, dtype: torch.dtype = torch.float32
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     """
-    Initialize arrays for 3mm kernel matching C reference implementation.
+    Initialize arrays for threemm kernel matching C reference implementation.
 
     Formulas from PolyBenchC-4.2.1/linear-algebra/kernels/3mm/3mm.c lines 43-55:
         A[i, j] = ((i*j+1) % ni) / (5*ni)
@@ -192,7 +192,7 @@ def init_array(
 def parse_args() -> argparse.Namespace:
     """Parse command-line arguments for MLIR generation."""
     parser = make_parser(
-        "3mm",
+        "threemm",
         "./output/3mm_linalg.mlir",
         extra_dtype_choices=["int32", "int16", "int64"],
     )
@@ -205,7 +205,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> None:
-    """Generate MLIR from 3mm kernel model."""
+    """Generate MLIR from threemm kernel model."""
     args = parse_args()
 
     dims = get_dataset_dimensions(args.dataset)
@@ -220,7 +220,7 @@ def main() -> None:
     model = ThreeMM(ni, nj, nk, nl, nm)
     A, B, C, D = init_array(ni, nj, nk, nl, nm, dtype=dtype)
 
-    print(f"Compiling 3mm kernel to MLIR dialect: {args.dialect}")
+    print(f"Compiling threemm kernel to MLIR dialect: {args.dialect}")
     generate_mlir(model, (A, B, C, D), args.out_mlir_path, args.dialect)
 
 

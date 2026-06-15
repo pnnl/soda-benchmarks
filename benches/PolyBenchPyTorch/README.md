@@ -13,8 +13,8 @@ Completness:
 - [x] linear-algebra/blas/syr2k
 - [x] linear-algebra/blas/syrk
 - [x] linear-algebra/blas/trmm
-- [x] linear-algebra/kernels/2mm
-- [x] linear-algebra/kernels/3mm
+- [x] linear-algebra/kernels/twomm
+- [x] linear-algebra/kernels/threemm
 - [x] linear-algebra/kernels/atax
 - [x] linear-algebra/kernels/bicg
 - [x] linear-algebra/kernels/doitgen

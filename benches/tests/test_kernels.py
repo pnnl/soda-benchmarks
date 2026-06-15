@@ -30,7 +30,7 @@ def test_sb_cli_imports() -> None:
 
 
 def test_2mm(dataset):
-    k = importlib.import_module("PolyBenchPyTorch.linear_algebra.kernels.2mm.2mm")
+    k = importlib.import_module("PolyBenchPyTorch.linear_algebra.kernels.twomm.twomm")
     dims = k.get_dataset_dimensions(dataset)
     model = k.TwoMM(dims["ni"], dims["nj"], dims["nk"], dims["nl"])
     alpha, beta, A, B, C, D = k.init_array(
@@ -41,7 +41,7 @@ def test_2mm(dataset):
 
 
 def test_3mm(dataset):
-    k = importlib.import_module("PolyBenchPyTorch.linear_algebra.kernels.3mm.3mm")
+    k = importlib.import_module("PolyBenchPyTorch.linear_algebra.kernels.threemm.threemm")
     dims = k.get_dataset_dimensions(dataset)
     model = k.ThreeMM(dims["ni"], dims["nj"], dims["nk"], dims["nl"], dims["nm"])
     A, B, C, D = k.init_array(

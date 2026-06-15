@@ -167,7 +167,7 @@ def make_parser(
         kernel_name: Human-readable kernel name used in the description string.
         default_out_path: Default value for the out_mlir_path positional argument.
         extra_dtype_choices: Additional dtype strings beyond float16/float32/float64
-            (e.g. ["int32", "int16", "int64"] for the 3mm kernel).
+            (e.g. ["int32", "int16", "int64"] for the threemm kernel).
 
     Returns:
         Configured ArgumentParser instance.
@@ -211,7 +211,7 @@ def get_dataset_dimensions(kernel: str, dataset: str) -> dict[str, int]:
     """Return dimension dict for the given kernel and dataset size.
 
     Args:
-        kernel: Lowercase kernel name (e.g. 'gemm', '2mm', 'atax').
+        kernel: Lowercase kernel name (e.g. 'gemm', 'twomm', 'atax').
         dataset: Dataset size string — one of TEST, MINI, SMALL, MEDIUM, LARGE, EXTRALARGE.
 
     Returns:

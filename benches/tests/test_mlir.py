@@ -44,7 +44,7 @@ def _assert_valid_mlir(text):
 
 @pytest.mark.slow
 def test_2mm_mlir(dataset):
-    k = importlib.import_module("PolyBenchPyTorch.linear_algebra.kernels.2mm.2mm")
+    k = importlib.import_module("PolyBenchPyTorch.linear_algebra.kernels.twomm.twomm")
     dims = k.get_dataset_dimensions(dataset)
     model = k.TwoMM(dims["ni"], dims["nj"], dims["nk"], dims["nl"])
     inputs = k.init_array(dims["ni"], dims["nj"], dims["nk"], dims["nl"])
@@ -53,7 +53,7 @@ def test_2mm_mlir(dataset):
 
 @pytest.mark.slow
 def test_3mm_mlir(dataset):
-    k = importlib.import_module("PolyBenchPyTorch.linear_algebra.kernels.3mm.3mm")
+    k = importlib.import_module("PolyBenchPyTorch.linear_algebra.kernels.threemm.threemm")
     dims = k.get_dataset_dimensions(dataset)
     model = k.ThreeMM(dims["ni"], dims["nj"], dims["nk"], dims["nl"], dims["nm"])
     inputs = k.init_array(dims["ni"], dims["nj"], dims["nk"], dims["nl"], dims["nm"])

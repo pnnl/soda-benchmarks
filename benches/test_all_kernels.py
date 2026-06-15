@@ -25,13 +25,13 @@ DATASET = os.environ.get("POLYBENCH_DATASET", "MINI")
 
 # ---------------------------------------------------------------------------
 # Kernel imports.
-# Module names starting with a digit (2mm, 3mm) cannot be used with the
+# Module names starting with a digit (twomm, threemm) cannot be used with the
 # `import` statement directly, so importlib.import_module is used for all
 # kernels for consistency. The __init__.py files in each subdirectory make
 # these proper package imports — no file-path fallback needed.
 # ---------------------------------------------------------------------------
-k2mm     = importlib.import_module("PolyBenchPyTorch.linear_algebra.kernels.2mm.2mm")
-k3mm     = importlib.import_module("PolyBenchPyTorch.linear_algebra.kernels.3mm.3mm")
+k2mm     = importlib.import_module("PolyBenchPyTorch.linear_algebra.kernels.twomm.twomm")
+k3mm     = importlib.import_module("PolyBenchPyTorch.linear_algebra.kernels.threemm.threemm")
 katax    = importlib.import_module("PolyBenchPyTorch.linear_algebra.kernels.atax.atax")
 kbicg    = importlib.import_module("PolyBenchPyTorch.linear_algebra.kernels.bicg.bicg")
 kdoit    = importlib.import_module("PolyBenchPyTorch.linear_algebra.kernels.doitgen.doitgen")
@@ -68,8 +68,8 @@ def test_2mm():
     alpha, beta, A, B, C, D = k2mm.init_array(dims["ni"], dims["nj"], dims["nk"], dims["nl"])
     result = model(alpha, beta, A, B, C, D)
     assert result.shape == (dims["ni"], dims["nl"]), f"Unexpected shape: {result.shape}"
-    print(f"✓ 2mm: result shape {result.shape}, dtype {result.dtype}")
-    save_mlir_output("2mm", model, alpha, beta, A, B, C, D)
+    print(f"✓ twomm: result shape {result.shape}, dtype {result.dtype}")
+    save_mlir_output("twomm", model, alpha, beta, A, B, C, D)
 
 
 def test_3mm():
@@ -78,8 +78,8 @@ def test_3mm():
     A, B, C, D = k3mm.init_array(dims["ni"], dims["nj"], dims["nk"], dims["nl"], dims["nm"])
     result = model(A, B, C, D)
     assert result.shape == (dims["ni"], dims["nl"]), f"Unexpected shape: {result.shape}"
-    print(f"✓ 3mm: result shape {result.shape}, dtype {result.dtype}")
-    save_mlir_output("3mm", model, A, B, C, D)
+    print(f"✓ threemm: result shape {result.shape}, dtype {result.dtype}")
+    save_mlir_output("threemm", model, A, B, C, D)
 
 
 def test_atax():
