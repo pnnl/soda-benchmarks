@@ -27,14 +27,16 @@ __all__ = [
 # ---------------------------------------------------------------------------
 
 _DATASETS: dict[str, dict[str, dict[str, int]]] = {
-    "2mm": {
+    "twomm": {
+        "TEST": {"ni": 4, "nj": 4, "nk": 4, "nl": 4},
         "MINI": {"ni": 16, "nj": 18, "nk": 22, "nl": 24},
         "SMALL": {"ni": 40, "nj": 50, "nk": 70, "nl": 80},
         "MEDIUM": {"ni": 180, "nj": 190, "nk": 210, "nl": 220},
         "LARGE": {"ni": 800, "nj": 900, "nk": 1100, "nl": 1200},
         "EXTRALARGE": {"ni": 1600, "nj": 1800, "nk": 2200, "nl": 2400},
     },
-    "3mm": {
+    "threemm": {
+        "TEST": {"ni": 4, "nj": 4, "nk": 4, "nl": 4, "nm": 4},
         "MINI": {"ni": 16, "nj": 18, "nk": 20, "nl": 22, "nm": 24},
         "SMALL": {"ni": 40, "nj": 50, "nk": 60, "nl": 70, "nm": 80},
         "MEDIUM": {"ni": 180, "nj": 190, "nk": 200, "nl": 210, "nm": 220},
@@ -42,6 +44,7 @@ _DATASETS: dict[str, dict[str, dict[str, int]]] = {
         "EXTRALARGE": {"ni": 1600, "nj": 1800, "nk": 2000, "nl": 2200, "nm": 2400},
     },
     "atax": {
+        "TEST": {"m": 4, "n": 4},
         "MINI": {"m": 38, "n": 42},
         "SMALL": {"m": 116, "n": 124},
         "MEDIUM": {"m": 390, "n": 410},
@@ -49,6 +52,7 @@ _DATASETS: dict[str, dict[str, dict[str, int]]] = {
         "EXTRALARGE": {"m": 1800, "n": 2200},
     },
     "bicg": {
+        "TEST": {"m": 4, "n": 4},
         "MINI": {"m": 38, "n": 42},
         "SMALL": {"m": 116, "n": 124},
         "MEDIUM": {"m": 390, "n": 410},
@@ -56,6 +60,7 @@ _DATASETS: dict[str, dict[str, dict[str, int]]] = {
         "EXTRALARGE": {"m": 1800, "n": 2200},
     },
     "doitgen": {
+        "TEST": {"nr": 4, "nq": 4, "np": 4},
         "MINI": {"nr": 10, "nq": 8, "np": 12},
         "SMALL": {"nr": 25, "nq": 20, "np": 30},
         "MEDIUM": {"nr": 50, "nq": 40, "np": 60},
@@ -63,6 +68,7 @@ _DATASETS: dict[str, dict[str, dict[str, int]]] = {
         "EXTRALARGE": {"nr": 250, "nq": 220, "np": 270},
     },
     "mvt": {
+        "TEST": {"n": 4},
         "MINI": {"n": 40},
         "SMALL": {"n": 120},
         "MEDIUM": {"n": 400},
@@ -70,6 +76,7 @@ _DATASETS: dict[str, dict[str, dict[str, int]]] = {
         "EXTRALARGE": {"n": 4000},
     },
     "gemm": {
+        "TEST": {"ni": 4, "nj": 4, "nk": 4},
         "MINI": {"ni": 20, "nj": 25, "nk": 30},
         "SMALL": {"ni": 60, "nj": 70, "nk": 80},
         "MEDIUM": {"ni": 200, "nj": 220, "nk": 240},
@@ -77,6 +84,7 @@ _DATASETS: dict[str, dict[str, dict[str, int]]] = {
         "EXTRALARGE": {"ni": 2000, "nj": 2300, "nk": 2600},
     },
     "gemver": {
+        "TEST": {"n": 4},
         "MINI": {"n": 40},
         "SMALL": {"n": 120},
         "MEDIUM": {"n": 400},
@@ -84,6 +92,7 @@ _DATASETS: dict[str, dict[str, dict[str, int]]] = {
         "EXTRALARGE": {"n": 4000},
     },
     "gesummv": {
+        "TEST": {"n": 4},
         "MINI": {"n": 30},
         "SMALL": {"n": 90},
         "MEDIUM": {"n": 250},
@@ -91,6 +100,7 @@ _DATASETS: dict[str, dict[str, dict[str, int]]] = {
         "EXTRALARGE": {"n": 2800},
     },
     "symm": {
+        "TEST": {"m": 4, "n": 4},
         "MINI": {"m": 20, "n": 30},
         "SMALL": {"m": 60, "n": 80},
         "MEDIUM": {"m": 200, "n": 240},
@@ -98,6 +108,7 @@ _DATASETS: dict[str, dict[str, dict[str, int]]] = {
         "EXTRALARGE": {"m": 2000, "n": 2600},
     },
     "syr2k": {
+        "TEST": {"m": 4, "n": 4},
         "MINI": {"m": 20, "n": 30},
         "SMALL": {"m": 60, "n": 80},
         "MEDIUM": {"m": 200, "n": 240},
@@ -105,6 +116,7 @@ _DATASETS: dict[str, dict[str, dict[str, int]]] = {
         "EXTRALARGE": {"m": 2000, "n": 2600},
     },
     "syrk": {
+        "TEST": {"m": 4, "n": 4},
         "MINI": {"m": 20, "n": 30},
         "SMALL": {"m": 60, "n": 80},
         "MEDIUM": {"m": 200, "n": 240},
@@ -112,6 +124,7 @@ _DATASETS: dict[str, dict[str, dict[str, int]]] = {
         "EXTRALARGE": {"m": 2000, "n": 2600},
     },
     "trmm": {
+        "TEST": {"m": 4, "n": 4},
         "MINI": {"m": 20, "n": 30},
         "SMALL": {"m": 60, "n": 80},
         "MEDIUM": {"m": 200, "n": 240},
@@ -199,7 +212,7 @@ def get_dataset_dimensions(kernel: str, dataset: str) -> dict[str, int]:
 
     Args:
         kernel: Lowercase kernel name (e.g. 'gemm', '2mm', 'atax').
-        dataset: Dataset size string — one of MINI, SMALL, MEDIUM, LARGE, EXTRALARGE.
+        dataset: Dataset size string — one of TEST, MINI, SMALL, MEDIUM, LARGE, EXTRALARGE.
 
     Returns:
         Dictionary mapping dimension names to integer values.
