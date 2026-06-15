@@ -14,6 +14,7 @@
 #include <iostream>
 #include <unordered_map>
 #include <vector>
+#include "llvm/ADT/ArrayRef.h"
 
 namespace {
 struct CounterState {
@@ -53,22 +54,19 @@ void printAllLoopSummaries() {
 }
 
 const char *dynamicCounterName(int64_t counterId) {
-  switch (counterId) {
-  case 0:
-    return "memref.load";
-  case 1:
-    return "memref.store";
-  case 2:
-    return "arith.int";
-  case 3:
-    return "arith.float";
-  case 4:
-    return "scf\t";
-  case 5:
-    return "affine";
-  default:
+    static constexpr std::array<const char *, 6> names = {{
+        "memref.load",
+        "memref.store",
+        "arith.int",
+        "arith.float",
+        "scf",
+        "affine"
+    }};
+
+    if (counterId >= 0 && counterId < static_cast<int64_t>(names.size())) {
+        return names[counterId];
+    }
     return "unknown";
-  }
 }
 
 void printDynamicCounterSummaries() {
