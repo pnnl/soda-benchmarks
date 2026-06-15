@@ -225,74 +225,73 @@ struct DynamicCounterSelection {
 static bool parseTrackedKinds(StringRef trackedKinds,
                               DynamicCounterSelection &selection,
                               std::string &errorMessage) {
-  DynamicCounterSelection parsed{/*memrefLoad=*/false,
-                                 /*memrefStore=*/false,
-                                 /*arithInt=*/false,
-                                 /*arithFloat=*/false,
-                                 /*scf=*/false,
-                                 /*affine=*/false};
+  // If not specified (or only whitespace), keep defaults: track all.
+  if (trackedKinds.trim().empty()) {
+    selection = DynamicCounterSelection{};
+    return true;
+  }
+
+  // Start from nothing selected; add items as we parse.
+  DynamicCounterSelection parsed;
+  parsed.memrefLoad = false;
+  parsed.memrefStore = false;
+  parsed.arithInt = false;
+  parsed.arithFloat = false;
+  parsed.scf = false;
+  parsed.affine = false;
+
+  // Split on commas, then split each piece on '+'.
+  llvm::SmallVector<StringRef, 8> commaTokens;
+  trackedKinds.split(commaTokens, ',', /*MaxSplit=*/-1, /*KeepEmpty=*/false);
 
   llvm::SmallVector<StringRef, 8> items;
-  llvm::SmallVector<StringRef, 8> commaParts;
-  trackedKinds.split(commaParts, ',', /*MaxSplit=*/-1, /*KeepEmpty=*/false);
-  if (commaParts.empty())
-    commaParts.push_back("all");
-  for (StringRef part : commaParts)
-    part.split(items, '+', /*MaxSplit=*/-1, /*KeepEmpty=*/false);
+  for (StringRef t : commaTokens)
+    t.split(items, '+', /*MaxSplit=*/-1, /*KeepEmpty=*/false);
+
+  // If the string was something like "," or "+", treat as "all".
+  if (items.empty()) {
+    selection = DynamicCounterSelection{};
+    return true;
+  }
 
   llvm::StringSet<> seen;
   for (StringRef raw : items) {
-    StringRef kind = raw.trim().lower();
+    std::string kind = raw.trim().lower();
     if (kind.empty())
       continue;
+
+    // Dedup.
     if (!seen.insert(kind).second)
       continue;
 
     if (kind == "all") {
-      parsed = DynamicCounterSelection{};
-      continue;
-    }
-    if (kind == "memref-load") {
+      selection = DynamicCounterSelection{}; // defaults are all true
+      return true; // "all" overrides everything; we're done.
+    } else if (kind == "memref-load") {
       parsed.memrefLoad = true;
-      continue;
-    }
-    if (kind == "memref-store") {
+    } else if (kind == "memref-store") {
       parsed.memrefStore = true;
-      continue;
-    }
-    if (kind == "memref") {
+    } else if (kind == "memref") {
       parsed.memrefLoad = true;
       parsed.memrefStore = true;
-      continue;
-    }
-    if (kind == "arith-int") {
+    } else if (kind == "arith-int") {
       parsed.arithInt = true;
-      continue;
-    }
-    if (kind == "arith-float") {
+    } else if (kind == "arith-float") {
       parsed.arithFloat = true;
-      continue;
-    }
-    if (kind == "arith") {
+    } else if (kind == "arith") {
       parsed.arithInt = true;
       parsed.arithFloat = true;
-      continue;
-    }
-    if (kind == "scf") {
+    } else if (kind == "scf") {
       parsed.scf = true;
-      continue;
-    }
-    if (kind == "affine") {
+    } else if (kind == "affine") {
       parsed.affine = true;
-      continue;
+    } else {
+      errorMessage =
+          ("Unknown tracked kind '" + kind +
+           "'. Expected one of: all, memref-load, memref-store, memref, "
+           "arith-int, arith-float, arith, scf, affine");
+      return false;
     }
-
-    errorMessage =
-        ("Unknown tracked kind '" + kind +
-         "'. Expected one of: all, memref-load, memref-store, memref, "
-         "arith-int, arith-float, arith, scf, affine")
-            .str();
-    return false;
   }
 
   selection = parsed;
