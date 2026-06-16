@@ -5,6 +5,7 @@
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
+#include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
@@ -27,6 +28,8 @@ static constexpr const char *kAssertLessThen = "sodaInstrAssertLessThen";
 static constexpr const char *kInstrHWCounters = "sodaInstrHWCounters";
 static constexpr const char *kInstrCollectOpCounts = "sodaInstrCollectOpCounts";
 static constexpr const char *kInstrDynamicCounter = "sodaInstrDynamicCounter";
+static constexpr const char *kInstrDynamicCounterFlush = "sodaInstrDynamicCounterFlush";
+static constexpr const char *kInstrDynamicCounterStartGroup = "sodaInstrDynamicCounterStartGroup";
 
 using namespace mlir;
 
@@ -343,6 +346,9 @@ getDynamicCounterKind(Operation &op, const DynamicCounterSelection &selection) {
 
 static void instrumentForOpsWithDynamicCounter(
     func::FuncOp funcOp, const DynamicCounterSelection &selection) {
+  if (funcOp.isExternal() || funcOp.getBody().empty())
+    return;
+
   llvm::SmallVector<std::pair<Operation *, DynamicCounterKind>, 64> worklist;
   funcOp.walk([&](Operation *op) {
     if (auto kind = getDynamicCounterKind(*op, selection))
@@ -350,6 +356,7 @@ static void instrumentForOpsWithDynamicCounter(
   });
 
   OpBuilder builder(funcOp.getContext());
+
   for (auto [op, kind] : worklist) {
     builder.setInsertionPoint(op);
     auto loc = op->getLoc();
@@ -362,6 +369,38 @@ static void instrumentForOpsWithDynamicCounter(
                    ValueRange{counterId, delta}, EmitCInterface::Off);
     op->setAttr("soda.dynamic_counter.instrumented",
                 UnitAttr::get(funcOp.getContext()));
+  }
+
+  // Insert start/flush calls around each top-level loop.
+  int groupId = 0;
+  llvm::SmallVector<Operation *, 16> topLevelLoops;
+
+  // Collect top-level loops (both scf.for and affine.for) in the function body.
+  for (Operation &op : funcOp.getBody().front().getOperations()) {
+    if (isa<scf::ForOp, affine::AffineForOp>(&op))
+      topLevelLoops.push_back(&op);
+  }
+
+  for (auto loopOp : topLevelLoops) {
+    auto loc = loopOp->getLoc();
+
+    // Start group before the loop executes.
+    builder.setInsertionPoint(loopOp);
+    auto startGroupIdVal = builder.create<arith::ConstantOp>(
+        loc, builder.getI64Type(),
+        builder.getI64IntegerAttr(static_cast<int64_t>(groupId)));
+    createFuncCall(builder, loc, kInstrDynamicCounterStartGroup, TypeRange{},
+                   ValueRange{startGroupIdVal}, EmitCInterface::Off);
+
+    // Flush once after the loop to print loop totals.
+    builder.setInsertionPointAfter(loopOp);
+    auto flushGroupIdVal = builder.create<arith::ConstantOp>(
+        loc, builder.getI64Type(),
+        builder.getI64IntegerAttr(static_cast<int64_t>(groupId)));
+    createFuncCall(builder, loc, kInstrDynamicCounterFlush, TypeRange{},
+                   ValueRange{flushGroupIdVal}, EmitCInterface::Off);
+
+    groupId++;
   }
 }
 

@@ -141,11 +141,17 @@ def InstrDynamicCounter : Pass<"soda-instr-dynamic-counter"> {
     - `arith` (enables both int/float)
     - `scf`
     - `affine`
+
+    The pass tracks operation counts separately for each top-level loop group and print 
+    group summaries before printing the total counts.
   }];
   let options = [
     Option<"trackedKinds", "tracked-kinds", "std::string",
            /*default=*/"\"all\"",
-          "Counter kinds to track, separated by '+' or ',' (e.g. memref-load+memref-store+arith-float)">
+          "Counter kinds to track, separated by '+' or ',' (e.g. memref-load+memref-store+arith-float)">,
+    // Option<"enableGroupCounters", "enable-group-counters", "bool",
+    //        /*default=*/"false",
+    //       "Enable per-loop-group counter tracking and printing">
   ];
 }
 

@@ -15,6 +15,7 @@
 #include <unordered_map>
 #include <vector>
 #include "llvm/ADT/ArrayRef.h"
+#include <string>
 
 namespace {
 struct CounterState {
@@ -29,12 +30,21 @@ struct CounterState {
     fpArith += fp;
     intArith += in;
   }
+
+  void reset() {
+    loads = 0;
+    stores = 0;
+    fpArith = 0;
+    intArith = 0;
+  }
 };
 
 std::unordered_map<int64_t, CounterState> gCounterByLoopId;
 std::unordered_map<int64_t, int64_t> gDynamicCounters;
+std::unordered_map<int64_t, int64_t> gGroupDynamicCounters;
 std::vector<int64_t> gActiveLoopStack;
 bool gAtExitRegistered = false;
+int64_t gCurrentGroupId = -1;
 
 void printLoopSummary(int64_t loopId, const CounterState &state) {
   std::cout << "SODA_COUNTER loop=" << loopId << " loads=" << state.loads
@@ -76,9 +86,30 @@ void printDynamicCounterSummaries() {
     counterIds.push_back(it.first);
 
   std::sort(counterIds.begin(), counterIds.end());
-  for (int64_t counterId : counterIds) {
-    std::cout << "SODA_DYNAMIC_COUNTER name=" << dynamicCounterName(counterId)
-              << "\tcount=" << gDynamicCounters[counterId] << std::endl;
+  if (!counterIds.empty()) {
+    std::cout << "\n--- Dynamic Counter Totals ---" << std::endl;
+    for (int64_t counterId : counterIds) {
+      std::cout << "SODA_DYNAMIC_COUNTER name=" << dynamicCounterName(counterId)
+                << "\tcount=" << gDynamicCounters[counterId] << std::endl;
+    }
+  }
+}
+
+void printGroupCounterSummaries(int64_t groupId) {
+  std::vector<int64_t> counterIds;
+  for (const auto &it : gGroupDynamicCounters) {
+    if (it.first >> 32 == groupId)
+      counterIds.push_back(it.first & 0xFFFFFFFF);
+  }
+
+  if (!counterIds.empty()) {
+    std::cout << "\n--- Loop Group " << groupId << " ---" << std::endl;
+    std::sort(counterIds.begin(), counterIds.end());
+    for (int64_t counterId : counterIds) {
+      int64_t key = (groupId << 32) | counterId;
+      std::cout << "SODA_DYNAMIC_COUNTER name=" << dynamicCounterName(counterId)
+                << "\tcount=" << gGroupDynamicCounters[key] << std::endl;
+    }
   }
 }
 
@@ -129,5 +160,36 @@ extern "C" void sodaInstrDynamicCounter(int64_t counterId, int64_t delta) {
     gAtExitRegistered = true;
   }
 
+  // Track counter in global map
   gDynamicCounters[counterId] += delta;
+  
+  // If we're in a group, also track group-specific counters
+  if (gCurrentGroupId >= 0) {
+    int64_t key = (gCurrentGroupId << 32) | counterId;
+    gGroupDynamicCounters[key] += delta;
+  }
+}
+
+extern "C" void sodaInstrDynamicCounterStartGroup(int64_t groupId) {
+  gCurrentGroupId = groupId;
+}
+
+extern "C" void sodaInstrDynamicCounterFlush(int64_t groupId) {
+  // Print group-specific counters.
+  printGroupCounterSummaries(groupId);
+
+  // Disable grouping after the loop flush.
+  if (gCurrentGroupId == groupId)
+    gCurrentGroupId = -1;
+
+  // Reset group counters for this group.
+  std::vector<int64_t> keysToErase;
+  for (auto &it : gGroupDynamicCounters) {
+    if (it.first >> 32 == groupId) {
+      keysToErase.push_back(it.first);
+    }
+  }
+  for (int64_t key : keysToErase) {
+    gGroupDynamicCounters.erase(key);
+  }
 }
