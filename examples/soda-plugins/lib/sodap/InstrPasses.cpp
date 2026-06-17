@@ -6,14 +6,11 @@
 //
 //===----------------------------------------------------------------------===//
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
+#include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
-#include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
-#include "mlir/IR/PatternMatch.h"
-#include "mlir/Rewrite/FrozenRewritePatternSet.h"
-#include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 
 #include <optional>
 #include <string>
@@ -24,12 +21,14 @@
 #include "sodap/SODAPPasses.h"
 
 /// Library for instrumentation functions
-static constexpr const char *kAssertLessThen = "sodaInstrAssertLessThen";
-static constexpr const char *kInstrHWCounters = "sodaInstrHWCounters";
-static constexpr const char *kInstrCollectOpCounts = "sodaInstrCollectOpCounts";
-static constexpr const char *kInstrDynamicCounter = "sodaInstrDynamicCounter";
-static constexpr const char *kInstrDynamicCounterFlush = "sodaInstrDynamicCounterFlush";
-static constexpr const char *kInstrDynamicCounterStartGroup = "sodaInstrDynamicCounterStartGroup";
+constexpr llvm::StringLiteral kAssertLessThen = "sodaInstrAssertLessThen";
+constexpr llvm::StringLiteral kInstrHWCounters = "sodaInstrHWCounters";
+constexpr llvm::StringLiteral kInstrCollectOpCounts = "sodaInstrCollectOpCounts";
+constexpr llvm::StringLiteral kInstrDynamicCounter = "sodaInstrDynamicCounter";
+constexpr llvm::StringLiteral kInstrDynamicCounterFlush = "sodaInstrDynamicCounterFlush";
+constexpr llvm::StringLiteral kInstrDynamicCounterStartGroup = "sodaInstrDynamicCounterStartGroup";
+constexpr llvm::StringLiteral kInstrDynamicCounterSetGroupFunctionName =
+  "sodaInstrDynamicCounterSetGroupFunctionName";
 
 using namespace mlir;
 
@@ -78,18 +77,18 @@ struct LoopTrackedOpCounts {
   int64_t intArithmetic = 0;
 };
 
-static bool isTrackedFloatType(Type type) {
+bool isTrackedFloatType(Type type) {
   auto floatType = dyn_cast<FloatType>(type);
   return floatType && (floatType.isF32() || floatType.isF64());
 }
 
-static bool isTrackedIntegerType(Type type) {
+bool isTrackedIntegerType(Type type) {
   auto integerType = dyn_cast<IntegerType>(type);
   return integerType &&
          (integerType.getWidth() == 32 || integerType.getWidth() == 64);
 }
 
-static LoopTrackedOpCounts countTrackedOpsInLoopBody(scf::ForOp forOp) {
+LoopTrackedOpCounts countTrackedOpsInLoopBody(scf::ForOp forOp) {
   LoopTrackedOpCounts counts;
   for (Operation &op : forOp.getBody()->without_terminator()) {
     if (isa<memref::LoadOp>(op)) {
@@ -125,7 +124,7 @@ static LoopTrackedOpCounts countTrackedOpsInLoopBody(scf::ForOp forOp) {
 }
 
 // Instrument all scf::ForOp in a function with the assertion call
-static void instrumentForOpsInFunc(func::FuncOp funcOp) {
+void instrumentForOpsInFunc(func::FuncOp funcOp) {
   OpBuilder builder(funcOp.getContext());
   funcOp.walk([&](scf::ForOp forOp) {
     auto &bodyOps = forOp.getBody()->getOperations();
@@ -145,9 +144,9 @@ static void instrumentForOpsInFunc(func::FuncOp funcOp) {
 }
 
 // Instrument all scf::ForOp in a function with HW counter calls
-static void instrumentForOpsWithHWCounter(func::FuncOp funcOp) {
+void instrumentForOpsWithHWCounter(func::FuncOp funcOp) {
   OpBuilder builder(funcOp.getContext());
-  int loopId = 0;
+  int64_t loopId = 0;
   funcOp.walk([&](scf::ForOp forOp) {
     builder.setInsertionPointToStart(forOp.getBody());
     auto loc = forOp.getLoc();
@@ -171,9 +170,9 @@ static void instrumentForOpsWithHWCounter(func::FuncOp funcOp) {
 
 // Instrument all scf::ForOp with runtime calls that collect tracked operation
 // counts at loop boundaries.
-static void instrumentForOpsWithDynamicOpCounts(func::FuncOp funcOp) {
+void instrumentForOpsWithDynamicOpCounts(func::FuncOp funcOp) {
   OpBuilder builder(funcOp.getContext());
-  int loopId = 0;
+  int64_t loopId = 0;
   auto i64Type = builder.getI64Type();
   auto createI64Const = [&](Location loc, int64_t value) -> Value {
     return builder.create<arith::ConstantOp>(loc, i64Type,
@@ -301,7 +300,7 @@ static bool parseTrackedKinds(StringRef trackedKinds,
   return true;
 }
 
-static std::optional<DynamicCounterKind>
+std::optional<DynamicCounterKind>
 getDynamicCounterKind(Operation &op, const DynamicCounterSelection &selection) {
   if (isa<func::CallOp>(op) || op.hasAttr("soda.dynamic_counter.instrumented"))
     return std::nullopt;
@@ -344,7 +343,13 @@ getDynamicCounterKind(Operation &op, const DynamicCounterSelection &selection) {
   return std::nullopt;
 }
 
-static void instrumentForOpsWithDynamicCounter(
+static std::string getFunctionName(Operation *op) {
+  if (auto parentFunc = op->getParentOfType<func::FuncOp>())
+    return parentFunc.getSymName().str();
+  return "unknown";
+}
+
+void instrumentForOpsWithDynamicCounter(
     func::FuncOp funcOp, const DynamicCounterSelection &selection) {
   if (funcOp.isExternal() || funcOp.getBody().empty())
     return;
@@ -372,7 +377,7 @@ static void instrumentForOpsWithDynamicCounter(
   }
 
   // Insert start/flush calls around each top-level loop.
-  int groupId = 0;
+  int64_t groupId = 0;
   llvm::SmallVector<Operation *, 16> topLevelLoops;
 
   // Collect top-level loops (both scf.for and affine.for) in the function body.
@@ -383,6 +388,24 @@ static void instrumentForOpsWithDynamicCounter(
 
   for (auto loopOp : topLevelLoops) {
     auto loc = loopOp->getLoc();
+    std::string functionName = getFunctionName(loopOp);
+
+    builder.setInsertionPoint(loopOp);
+
+    for (size_t i = 0; i < functionName.size(); ++i) {
+      auto groupIdVal = builder.create<arith::ConstantOp>(
+        loc, builder.getI64Type(),
+        builder.getI64IntegerAttr(static_cast<int64_t>(groupId)));
+      auto charCodeVal = builder.create<arith::ConstantOp>(
+        loc, builder.getI64Type(), builder.getI64IntegerAttr(
+                      static_cast<int64_t>(
+                        static_cast<unsigned char>(
+                          functionName[i]))));
+      createFuncCall(builder, loc, kInstrDynamicCounterSetGroupFunctionName,
+             TypeRange{},
+             ValueRange{groupIdVal, charCodeVal},
+             EmitCInterface::Off);
+    }
 
     // Start group before the loop executes.
     builder.setInsertionPoint(loopOp);
@@ -445,8 +468,8 @@ public:
     DynamicCounterSelection selection;
     std::string errorMessage;
     if (!parseTrackedKinds(trackedKinds, selection, errorMessage)) {
-      signalPassFailure();
       getOperation()->emitError(errorMessage);
+      signalPassFailure();
       return;
     }
 
