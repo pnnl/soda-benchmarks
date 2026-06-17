@@ -26,11 +26,12 @@ module {
 }
 // CHECK-DAG: func.func private @sodaInstrDynamicCounter(i64, i64)
 // CHECK-DAG: func.func private @sodaInstrDynamicCounterStartGroup(i64)
+// CHECK-DAG: func.func private @sodaInstrDynamicCounterSetGroupFunctionName(i64, i64)
 // CHECK-DAG: func.func private @sodaInstrDynamicCounterFlush(i64)
 
 // CHECK-LABEL: func.func @instr_dynamic_counter(
-  // CHECK: %[[C0I64_START:.*]] = arith.constant 0 : i64
-  // CHECK: call @sodaInstrDynamicCounterStartGroup(%[[C0I64_START]]) : (i64) -> ()
+  // CHECK: call @sodaInstrDynamicCounterSetGroupFunctionName({{.*}}) : (i64, i64) -> ()
+  // CHECK: call @sodaInstrDynamicCounterStartGroup({{.*}}) : (i64) -> ()
 
   // In the loop, for each instrumentation point:
   // CHECK: scf.for
@@ -90,5 +91,4 @@ module {
   // CHECK: memref.store {{.*}} {soda.dynamic_counter.instrumented}
 
   // flush at end
-  // CHECK: %[[C0I64_FLUSH:.*]] = arith.constant 0 : i64
-  // CHECK: call @sodaInstrDynamicCounterFlush(%[[C0I64_FLUSH]]) : (i64) -> ()
+  // CHECK: call @sodaInstrDynamicCounterFlush({{.*}}) : (i64) -> ()

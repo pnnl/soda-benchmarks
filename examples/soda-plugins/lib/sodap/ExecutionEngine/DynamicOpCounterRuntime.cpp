@@ -42,6 +42,7 @@ struct CounterState {
 std::unordered_map<int64_t, CounterState> gCounterByLoopId;
 std::unordered_map<int64_t, int64_t> gDynamicCounters;
 std::unordered_map<int64_t, int64_t> gGroupDynamicCounters;
+std::unordered_map<int64_t, std::string> gGroupFunctionNames;
 std::vector<int64_t> gActiveLoopStack;
 bool gAtExitRegistered = false;
 int64_t gCurrentGroupId = -1;
@@ -103,7 +104,13 @@ void printGroupCounterSummaries(int64_t groupId) {
   }
 
   if (!counterIds.empty()) {
-    std::cout << "\n--- Loop Group " << groupId << " ---" << std::endl;
+    auto nameIt = gGroupFunctionNames.find(groupId);
+    if (nameIt != gGroupFunctionNames.end() && !nameIt->second.empty()) {
+      std::cout << "\n--- Loop Group " << groupId << " Function "
+                << nameIt->second << " ---" << std::endl;
+    } else {
+      std::cout << "\n--- Loop Group " << groupId << " ---" << std::endl;
+    }
     std::sort(counterIds.begin(), counterIds.end());
     for (int64_t counterId : counterIds) {
       int64_t key = (groupId << 32) | counterId;
@@ -174,6 +181,13 @@ extern "C" void sodaInstrDynamicCounterStartGroup(int64_t groupId) {
   gCurrentGroupId = groupId;
 }
 
+extern "C" void sodaInstrDynamicCounterSetGroupFunctionName(
+    int64_t groupId, int64_t charCode) {
+  if (charCode < 0 || charCode > 127)
+    return;
+  gGroupFunctionNames[groupId].push_back(static_cast<char>(charCode));
+}
+
 extern "C" void sodaInstrDynamicCounterFlush(int64_t groupId) {
   // Print group-specific counters.
   printGroupCounterSummaries(groupId);
@@ -192,4 +206,6 @@ extern "C" void sodaInstrDynamicCounterFlush(int64_t groupId) {
   for (int64_t key : keysToErase) {
     gGroupDynamicCounters.erase(key);
   }
+
+  gGroupFunctionNames.erase(groupId);
 }
