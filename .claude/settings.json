@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "defaultMode": "bypassPermissions"
+  },
+  "env": {
+    "MLFLOW_EXPERIMENT_NAME": "claude-tracing",
+    "MLFLOW_CLAUDE_TRACING_ENABLED": "true"
+  },
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "mlflow autolog claude stop-hook"
+          }
+        ]
+      }
+    ]
+  }
+}
