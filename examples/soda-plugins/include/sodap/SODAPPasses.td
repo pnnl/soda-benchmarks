@@ -142,8 +142,13 @@ def InstrDynamicCounter : Pass<"soda-instr-dynamic-counter"> {
     - `scf`
     - `affine`
 
-    The pass tracks operation counts separately for each top-level loop group and print 
-    group summaries before printing the total counts.
+    The pass tracks operation counts per top-level loop group and emits:
+    - per-loop-group summaries
+    - per-function totals (from loop-contained operations only)
+    - overall totals (including operations executed outside loops)
+
+    A top-level loop group is a set of loops that are not nested inside any
+    other loop.
   }];
   let options = [
     Option<"trackedKinds", "tracked-kinds", "std::string",
