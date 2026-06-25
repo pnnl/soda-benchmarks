@@ -9,6 +9,7 @@
 #include "sodap/ExecutionEngine/DynamicOpCounterRuntime.h"
 
 #include <algorithm>
+#include <array>
 #include <cstdlib>
 #include <cstdint>
 #include <iostream>
@@ -43,6 +44,8 @@ std::unordered_map<int64_t, CounterState> gCounterByLoopId;
 std::unordered_map<int64_t, int64_t> gDynamicCounters;
 std::unordered_map<int64_t, int64_t> gGroupDynamicCounters;
 std::unordered_map<int64_t, std::string> gGroupFunctionNames;
+std::unordered_map<std::string, std::unordered_map<int64_t, int64_t>>
+    gFunctionDynamicCounters;
 std::vector<int64_t> gActiveLoopStack;
 bool gAtExitRegistered = false;
 int64_t gCurrentGroupId = -1;
@@ -96,6 +99,37 @@ void printDynamicCounterSummaries() {
   }
 }
 
+void printFunctionCounterSummaries() {
+  std::vector<std::string> functionNames;
+  functionNames.reserve(gFunctionDynamicCounters.size());
+  for (const auto &it : gFunctionDynamicCounters)
+    functionNames.push_back(it.first);
+
+  if (functionNames.empty())
+    return;
+
+  std::sort(functionNames.begin(), functionNames.end());
+  std::cout << "\n--- Dynamic Counter Totals By Function (SDCF=SODA_DYNAMIC_COUNTER_FUNCTION) ---" << std::endl;
+  for (const std::string &functionName : functionNames) {
+    const auto &counterMap = gFunctionDynamicCounters[functionName];
+    if (counterMap.empty())
+      continue;
+
+    std::vector<int64_t> counterIds;
+    counterIds.reserve(counterMap.size());
+    for (const auto &it : counterMap)
+      counterIds.push_back(it.first);
+    std::sort(counterIds.begin(), counterIds.end());
+
+    for (int64_t counterId : counterIds) {
+      std::cout << "SDCF function=" << functionName
+                << "\tname=" << dynamicCounterName(counterId)
+                << "\tcount=" << counterMap.at(counterId) << std::endl;
+    }
+    std::cout << std::endl;
+  }
+}
+
 void printGroupCounterSummaries(int64_t groupId) {
   std::vector<int64_t> counterIds;
   for (const auto &it : gGroupDynamicCounters) {
@@ -106,8 +140,8 @@ void printGroupCounterSummaries(int64_t groupId) {
   if (!counterIds.empty()) {
     auto nameIt = gGroupFunctionNames.find(groupId);
     if (nameIt != gGroupFunctionNames.end() && !nameIt->second.empty()) {
-      std::cout << "\n--- Loop Group " << groupId << " Function "
-                << nameIt->second << " ---" << std::endl;
+      std::cout << "\n---  Loop Group " << groupId << " (func "
+                << nameIt->second << ") ---" << std::endl;
     } else {
       std::cout << "\n--- Loop Group " << groupId << " ---" << std::endl;
     }
@@ -122,6 +156,7 @@ void printGroupCounterSummaries(int64_t groupId) {
 
 void printAllCounterSummaries() {
   printAllLoopSummaries();
+  printFunctionCounterSummaries();
   printDynamicCounterSummaries();
 }
 } // namespace
@@ -191,6 +226,18 @@ extern "C" void sodaInstrDynamicCounterSetGroupFunctionName(
 extern "C" void sodaInstrDynamicCounterFlush(int64_t groupId) {
   // Print group-specific counters.
   printGroupCounterSummaries(groupId);
+
+  // Accumulate loop-group counters into per-function totals.
+  std::string functionName = "unknown";
+  auto nameIt = gGroupFunctionNames.find(groupId);
+  if (nameIt != gGroupFunctionNames.end() && !nameIt->second.empty())
+    functionName = nameIt->second;
+  for (const auto &it : gGroupDynamicCounters) {
+    if (it.first >> 32 == groupId) {
+      int64_t counterId = it.first & 0xFFFFFFFF;
+      gFunctionDynamicCounters[functionName][counterId] += it.second;
+    }
+  }
 
   // Disable grouping after the loop flush.
   if (gCurrentGroupId == groupId)
