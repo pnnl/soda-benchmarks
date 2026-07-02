@@ -23,7 +23,6 @@
 /// Library for instrumentation functions
 constexpr llvm::StringLiteral kAssertLessThen = "sodaInstrAssertLessThen";
 constexpr llvm::StringLiteral kInstrHWCounters = "sodaInstrHWCounters";
-constexpr llvm::StringLiteral kInstrCollectOpCounts = "sodaInstrCollectOpCounts";
 constexpr llvm::StringLiteral kInstrDynamicCounter = "sodaInstrDynamicCounter";
 constexpr llvm::StringLiteral kInstrDynamicCounterFlush = "sodaInstrDynamicCounterFlush";
 constexpr llvm::StringLiteral kInstrDynamicCounterStartGroup = "sodaInstrDynamicCounterStartGroup";
@@ -35,7 +34,6 @@ using namespace mlir;
 namespace mlir::sodap {
 #define GEN_PASS_DEF_INSTRBOUNDS
 #define GEN_PASS_DEF_INSTRHWCOUNTERS
-#define GEN_PASS_DEF_INSTRDYNAMICOPCOUNTS
 #define GEN_PASS_DEF_INSTRDYNAMICCOUNTER
 #include "sodap/SODAPPasses.h.inc"
 
@@ -88,41 +86,6 @@ bool isTrackedIntegerType(Type type) {
          (integerType.getWidth() == 32 || integerType.getWidth() == 64);
 }
 
-LoopTrackedOpCounts countTrackedOpsInLoopBody(scf::ForOp forOp) {
-  LoopTrackedOpCounts counts;
-  for (Operation &op : forOp.getBody()->without_terminator()) {
-    if (isa<memref::LoadOp>(op)) {
-      ++counts.loads;
-      continue;
-    }
-    if (isa<memref::StoreOp>(op)) {
-      ++counts.stores;
-      continue;
-    }
-    if (auto addf = dyn_cast<arith::AddFOp>(op);
-        addf && isTrackedFloatType(addf.getType())) {
-      ++counts.fpArithmetic;
-      continue;
-    }
-    if (auto mulf = dyn_cast<arith::MulFOp>(op);
-        mulf && isTrackedFloatType(mulf.getType())) {
-      ++counts.fpArithmetic;
-      continue;
-    }
-    if (auto addi = dyn_cast<arith::AddIOp>(op);
-        addi && isTrackedIntegerType(addi.getType())) {
-      ++counts.intArithmetic;
-      continue;
-    }
-    if (auto muli = dyn_cast<arith::MulIOp>(op);
-        muli && isTrackedIntegerType(muli.getType())) {
-      ++counts.intArithmetic;
-      continue;
-    }
-  }
-  return counts;
-}
-
 // Instrument all scf::ForOp in a function with the assertion call
 void instrumentForOpsInFunc(func::FuncOp funcOp) {
   OpBuilder builder(funcOp.getContext());
@@ -165,44 +128,6 @@ void instrumentForOpsWithHWCounter(func::FuncOp funcOp) {
     builder.setInsertionPoint(terminator);
     createFuncCall(builder, loc, kInstrHWCounters, TypeRange{},
                    ValueRange{runFalse, idVal}, EmitCInterface::Off);
-  });
-}
-
-// Instrument all scf::ForOp with runtime calls that collect tracked operation
-// counts at loop boundaries.
-void instrumentForOpsWithDynamicOpCounts(func::FuncOp funcOp) {
-  OpBuilder builder(funcOp.getContext());
-  int64_t loopId = 0;
-  auto i64Type = builder.getI64Type();
-  auto createI64Const = [&](Location loc, int64_t value) -> Value {
-    return builder.create<arith::ConstantOp>(loc, i64Type,
-                                             builder.getI64IntegerAttr(value));
-  };
-  funcOp.walk([&](scf::ForOp forOp) {
-    const LoopTrackedOpCounts counts = countTrackedOpsInLoopBody(forOp);
-    auto loc = forOp.getLoc();
-
-    builder.setInsertionPointToStart(forOp.getBody());
-    auto runStart = createI64Const(loc, 1);
-    auto idVal = builder.create<arith::ConstantOp>(
-        loc, builder.getIndexType(), builder.getIndexAttr(loopId++));
-    auto zero = createI64Const(loc, 0);
-
-    createFuncCall(builder, loc, kInstrCollectOpCounts, TypeRange{},
-                   ValueRange{runStart, idVal, zero, zero, zero, zero},
-                   EmitCInterface::Off);
-
-    auto *terminator = forOp.getBody()->getTerminator();
-    builder.setInsertionPoint(terminator);
-    auto runStop = createI64Const(loc, 0);
-    auto loads = createI64Const(loc, counts.loads);
-    auto stores = createI64Const(loc, counts.stores);
-    auto fpArith = createI64Const(loc, counts.fpArithmetic);
-    auto intArith = createI64Const(loc, counts.intArithmetic);
-
-    createFuncCall(builder, loc, kInstrCollectOpCounts, TypeRange{},
-                   ValueRange{runStop, idVal, loads, stores, fpArith, intArith},
-                   EmitCInterface::Off);
   });
 }
 
@@ -444,17 +369,6 @@ public:
   void runOnOperation() final {
     getOperation()->walk(
         [](func::FuncOp funcOp) { instrumentForOpsWithHWCounter(funcOp); });
-  }
-};
-
-class SODAPInstrDynamicOpCounts
-    : public impl::InstrDynamicOpCountsBase<SODAPInstrDynamicOpCounts> {
-public:
-  using impl::InstrDynamicOpCountsBase<
-      SODAPInstrDynamicOpCounts>::InstrDynamicOpCountsBase;
-  void runOnOperation() final {
-    getOperation()->walk(
-        [](func::FuncOp funcOp) { instrumentForOpsWithDynamicOpCounts(funcOp); });
   }
 };
 

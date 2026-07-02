@@ -1,6 +1,6 @@
 // RUN: mlir-opt %s \
 // RUN:   --load-pass-plugin=%sodap_libs/SODAPlugin%shlibext \
-// RUN:   --pass-pipeline="builtin.module(soda-instr-dynamic-op-counts-at-loop-bounds)" | \
+// RUN:   --pass-pipeline="builtin.module(soda-instr-dynamic-counter{tracked-kinds=memref-load+memref-store+arith})" | \
 // RUN: mlir-opt \
 // RUN:   --pass-pipeline="builtin.module(func.func(convert-linalg-to-loops,lower-affine,convert-scf-to-cf,convert-arith-to-llvm),convert-vector-to-llvm,finalize-memref-to-llvm,convert-func-to-llvm,convert-cf-to-llvm,reconcile-unrealized-casts)" | \
 // RUN: mlir-cpu-runner \
@@ -58,11 +58,25 @@ func.func @main() {
   return
 }
 
-// Counting the *tiled* nest:
-// Inner body per iteration: 3 loads (A,B,iA), 2 stores (A,iA), 2 fp ops, 2 int ops.
-// Inner loop runs 2 iters per tile, outer loop runs 2 tiles => 4 total iterations.
-// => loads=12 stores=8 fp=8 int=8.
+// Dynamic op counts with soda-instr-dynamic-counter{tracked-kinds=memref-load+memref-store+arith}:
 //
-// Depending on your pass, you may see counters for both loops (outer and inner).
-// The line below matches the loop that corresponds to the inner work-carrying loop.
-// CHECK: SODA_COUNTER loop={{[0-9]+}} loads=12 stores=8 fp=8 int=8
+// Init loop (4 iters × 3 stores = 12 stores).
+// Tiled compute inner body (3 loads + 2 stores + 2 fp + 2 int) × 4 total inner iters.
+// Outer-only store (memref.store %f1, %mfA[%ii]) × 2 outer iters = 2 stores.
+//
+// Totals for @main:
+//   memref.load  = 12           (3 loads × 4 inner iters)
+//   memref.store = 22           (12 init + 8 inner compute + 2 outer-only)
+//   arith.float  = 8            (mulf + addf) × 4 inner iters
+//   arith.int    = 8            (addi + muli on i32) × 4 inner iters
+//
+// CHECK: --- Dynamic Counter Totals By Function (SDCF=SODA_DYNAMIC_COUNTER_FUNCTION) ---
+// CHECK-DAG: SDCF function=main{{.*}}name=memref.load{{.*}}count=12
+// CHECK-DAG: SDCF function=main{{.*}}name=memref.store{{.*}}count=22
+// CHECK-DAG: SDCF function=main{{.*}}name=arith.float{{.*}}count=8
+// CHECK-DAG: SDCF function=main{{.*}}name=arith.int{{.*}}count=8
+//
+// CHECK: SODA_DYNAMIC_COUNTER name=memref.load count=12
+// CHECK: SODA_DYNAMIC_COUNTER name=memref.store count=22
+// CHECK: SODA_DYNAMIC_COUNTER name=arith.int count=8
+// CHECK: SODA_DYNAMIC_COUNTER name=arith.float count=8

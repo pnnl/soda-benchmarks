@@ -105,22 +105,6 @@ def InstrHWCounters : Pass<"soda-instr-hw-counters-at-loop-bounds"> {
 
 }
 
-def InstrDynamicOpCounts : Pass<"soda-instr-dynamic-op-counts-at-loop-bounds"> {
-  let summary = "Collect dynamic operation counts at SCF loop boundaries";
-  let description = [{
-    Instruments each `scf.for` loop with calls to `@sodaInstrCollectOpCounts`.
-    The generated calls collect dynamic counts at runtime for:
-
-    - `memref.load`
-    - `memref.store`
-    - `arith.addf`, `arith.mulf` for f32/f64
-    - `arith.addi`, `arith.muli` for i32/i64
-
-    A start marker is inserted at the beginning of each loop body and a stop
-    marker with per-iteration deltas is inserted before `scf.yield`.
-  }];
-}
-
 def InstrDynamicCounter : Pass<"soda-instr-dynamic-counter"> {
   let summary = "Insert fully dynamic per-op counters with configurable filters";
   let description = [{
@@ -154,9 +138,6 @@ def InstrDynamicCounter : Pass<"soda-instr-dynamic-counter"> {
     Option<"trackedKinds", "tracked-kinds", "std::string",
            /*default=*/"\"all\"",
           "Counter kinds to track, separated by '+' or ',' (e.g. memref-load+memref-store+arith-float)">,
-    // Option<"enableGroupCounters", "enable-group-counters", "bool",
-    //        /*default=*/"false",
-    //       "Enable per-loop-group counter tracking and printing">
   ];
 }
 
