@@ -12,10 +12,13 @@
 #include <array>
 #include <cstdlib>
 #include <cstdint>
+#include <iomanip>
 #include <iostream>
+#include <sstream>
 #include <unordered_map>
 #include <vector>
 #include "llvm/ADT/ArrayRef.h"
+#include "mlir/ExecutionEngine/CRunnerUtils.h"
 #include <string>
 
 namespace {
@@ -50,6 +53,17 @@ std::vector<int64_t> gActiveLoopStack;
 bool gAtExitRegistered = false;
 int64_t gCurrentGroupId = -1;
 
+const char *linalgOperandKindName(int64_t operandKind) {
+  switch (operandKind) {
+  case 0:
+    return "in";
+  case 1:
+    return "out";
+  default:
+    return "unknown";
+  }
+}
+
 void printLoopSummary(int64_t loopId, const CounterState &state) {
   std::cout << "SODA_COUNTER loop=" << loopId << " loads=" << state.loads
             << " stores=" << state.stores << " fp=" << state.fpArith
@@ -83,6 +97,35 @@ const char *dynamicCounterName(int64_t counterId) {
     return "unknown";
 }
 
+
+template <typename T>
+std::string formatVector(const DynamicMemRefType<T> &memref) {
+  std::ostringstream os;
+  os << '[';
+  int64_t count = 0;
+  if (memref.rank > 0 && memref.sizes)
+    count = memref.sizes[0];
+  for (int64_t i = 0; i < count; ++i) {
+    if (i != 0)
+      os << ", ";
+    os << static_cast<int64_t>(memref.data[memref.offset + i]);
+  }
+  os << ']';
+  return os.str();
+}
+
+std::string stringFromMemRef(int64_t rank, void *ptr) {
+  ::UnrankedMemRefType<int8_t> memref{rank, ptr};
+  DynamicMemRefType<int8_t> dynamic(memref);
+  std::string result;
+  int64_t count = 0;
+  if (dynamic.rank > 0 && dynamic.sizes)
+    count = dynamic.sizes[0];
+  result.reserve(static_cast<size_t>(std::max<int64_t>(count, 0)));
+  for (int64_t i = 0; i < count; ++i)
+    result.push_back(static_cast<char>(dynamic.data[dynamic.offset + i]));
+  return result;
+}
 void printDynamicCounterSummaries() {
   std::vector<int64_t> counterIds;
   counterIds.reserve(gDynamicCounters.size());
@@ -255,4 +298,46 @@ extern "C" void sodaInstrDynamicCounterFlush(int64_t groupId) {
   }
 
   gGroupFunctionNames.erase(groupId);
+}
+
+extern "C" void sodaInstrMarkMatrixAccessStarts(int64_t baseAddr) {
+  std::cout << "beginning matrix access" << std::endl;
+  std::cout << "SODA_MATRIX_BASE addr=0x" << std::hex
+            << static_cast<uint64_t>(baseAddr) << std::dec << std::endl;
+}
+
+extern "C" void sodaInstrTraceLinalg(int64_t opId, int64_t opNameRank,
+                                      void *opNamePtr, int64_t numInputs,
+                                      int64_t numOutputs, int64_t mapsRank,
+                                      void *mapsPtr, int64_t itersRank,
+                                      void *itersPtr) {
+  std::string opName = stringFromMemRef(opNameRank, opNamePtr);
+  std::string maps = stringFromMemRef(mapsRank, mapsPtr);
+  std::string iteratorTypes = stringFromMemRef(itersRank, itersPtr);
+
+  std::cout << "SODA_LINALG " << opName << ": ins=" << numInputs
+            << " outs=" << numOutputs;
+  if (maps != "-")
+    std::cout << " maps=" << maps;
+  if (iteratorTypes != "-")
+    std::cout << " iterator_types=" << iteratorTypes;
+  std::cout << std::endl;
+}
+
+extern "C" void sodaInstrTraceLinalgMemref(
+    int64_t opId, int64_t operandKind, int64_t operandIndex, int64_t baseAddr,
+    int64_t offset, int64_t dimsRank, void *dimsPtr, int64_t stridesRank,
+    void *stridesPtr) {
+  (void)opId;
+  ::UnrankedMemRefType<int64_t> dimsMemref{dimsRank, dimsPtr};
+  ::UnrankedMemRefType<int64_t> stridesMemref{stridesRank, stridesPtr};
+  DynamicMemRefType<int64_t> dims(dimsMemref);
+  DynamicMemRefType<int64_t> strides(stridesMemref);
+
+  std::cout << "  " << linalgOperandKindName(operandKind) << '['
+            << operandIndex << "]"
+            << " base=0x" << std::hex << static_cast<uint64_t>(baseAddr)
+            << std::dec << " offset=" << offset
+            << " dims=" << formatVector(dims)
+            << " strides=" << formatVector(strides) << std::endl;
 }

@@ -160,6 +160,23 @@ def InstrDynamicCounter : Pass<"soda-instr-dynamic-counter"> {
   ];
 }
 
+def InstrMatrixAccessTrace : Pass<"soda-instr-matrix-access-trace"> {
+  let summary = "Trace linalg.generic metadata and operand memref specs";
+  let description = [{
+    Instruments each `linalg.generic` operation with runtime trace calls that
+    print:
+
+    - indexing maps
+    - iterator types
+    - memref operand specs for each input/output (base address, rank, offset,
+      dimensions, strides)
+
+    This pass is intended to run on IR that still contains `linalg.generic`
+    operations (for example, after linalg-level transformations and before
+    lowering to loops/LLVM).
+  }];
+}
+
 def LinalgBatchMatmulToESP : Pass<"sodap-linalg-batch-matmul-to-esp", "::mlir::ModuleOp"> {
   let summary = "Replace linalg.batch_matmul with ESP accelerator runtime calls";
   let description = [{

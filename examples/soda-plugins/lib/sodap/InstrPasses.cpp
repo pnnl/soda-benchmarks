@@ -8,6 +8,7 @@
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
+#include "mlir/Dialect/Linalg/IR/Linalg.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
@@ -27,8 +28,13 @@ constexpr llvm::StringLiteral kInstrCollectOpCounts = "sodaInstrCollectOpCounts"
 constexpr llvm::StringLiteral kInstrDynamicCounter = "sodaInstrDynamicCounter";
 constexpr llvm::StringLiteral kInstrDynamicCounterFlush = "sodaInstrDynamicCounterFlush";
 constexpr llvm::StringLiteral kInstrDynamicCounterStartGroup = "sodaInstrDynamicCounterStartGroup";
+constexpr llvm::StringLiteral kInstrMarkMatrixAccessStarts =
+    "sodaInstrMarkMatrixAccessStarts";
 constexpr llvm::StringLiteral kInstrDynamicCounterSetGroupFunctionName =
   "sodaInstrDynamicCounterSetGroupFunctionName";
+constexpr llvm::StringLiteral kInstrTraceLinalg = "sodaInstrTraceLinalg";
+constexpr llvm::StringLiteral kInstrTraceLinalgMemref =
+  "sodaInstrTraceLinalgMemref";
 
 using namespace mlir;
 
@@ -37,6 +43,7 @@ namespace mlir::sodap {
 #define GEN_PASS_DEF_INSTRHWCOUNTERS
 #define GEN_PASS_DEF_INSTRDYNAMICOPCOUNTS
 #define GEN_PASS_DEF_INSTRDYNAMICCOUNTER
+#define GEN_PASS_DEF_INSTRMATRIXACCESSTRACE
 #include "sodap/SODAPPasses.h.inc"
 
 namespace {
@@ -379,7 +386,7 @@ void instrumentForOpsWithDynamicCounter(
   // Insert start/flush calls around each top-level loop.
   int64_t groupId = 0;
   llvm::SmallVector<Operation *, 16> topLevelLoops;
-
+  
   // Collect top-level loops (both scf.for and affine.for) in the function body.
   for (Operation &op : funcOp.getBody().front().getOperations()) {
     if (isa<scf::ForOp, affine::AffineForOp>(&op))
@@ -424,6 +431,219 @@ void instrumentForOpsWithDynamicCounter(
                    ValueRange{flushGroupIdVal}, EmitCInterface::Off);
 
     groupId++;
+  }
+}
+
+enum class LinalgGenericOperandKind : int64_t {
+  Input = 0,
+  Output = 1,
+};
+
+static Value createI64Constant(OpBuilder &builder, Location loc,
+                               int64_t value) {
+  return builder.create<arith::ConstantOp>(
+      loc, builder.getI64Type(), builder.getI64IntegerAttr(value));
+}
+
+static std::string sanitizeSymbolSuffix(StringRef text) {
+  std::string sanitized;
+  sanitized.reserve(text.size());
+  for (char ch : text) {
+    if (llvm::isAlnum(static_cast<unsigned char>(ch))) {
+      sanitized.push_back(ch);
+      continue;
+    }
+    sanitized.push_back('_');
+  }
+  return sanitized;
+}
+
+static std::string affineMapToString(AffineMap map) {
+  std::string out;
+  llvm::raw_string_ostream os(out);
+  map.print(os);
+  return os.str();
+}
+
+static std::string indexingMapsToString(linalg::GenericOp genericOp) {
+  std::string out;
+  llvm::raw_string_ostream os(out);
+  os << '[';
+  llvm::interleaveComma(genericOp.getIndexingMapsArray(), os,
+                        [&](AffineMap map) { os << affineMapToString(map); });
+  os << ']';
+  return os.str();
+}
+
+static std::string iteratorTypesToString(linalg::GenericOp genericOp) {
+  std::string out;
+  llvm::raw_string_ostream os(out);
+  genericOp.getIteratorTypesAttr().print(os);
+  return os.str();
+}
+
+struct StringLiteralValue {
+  Value unrankedMemref;
+};
+
+static StringLiteralValue getOrCreateStringLiteral(
+    OpBuilder &builder, ModuleOp module, Location loc, StringRef prefix,
+    StringRef text, llvm::StringMap<std::string> &cache,
+    int64_t &nextStringId) {
+  std::string cacheKey = text.str();
+  auto cacheIt = cache.find(cacheKey);
+  std::string symbolName;
+  if (cacheIt != cache.end()) {
+    symbolName = cacheIt->second;
+  } else {
+    symbolName =
+        (Twine("__soda_trace_") + prefix + "_" + Twine(nextStringId++)).str();
+    cache[cacheKey] = symbolName;
+
+    OpBuilder moduleBuilder(module.getBodyRegion());
+    auto i8Type = moduleBuilder.getIntegerType(8);
+    auto memrefType =
+        MemRefType::get({static_cast<int64_t>(text.size())}, i8Type);
+    auto tensorType = RankedTensorType::get(
+        {static_cast<int64_t>(text.size())}, i8Type);
+
+    SmallVector<APInt> values;
+    values.reserve(text.size());
+    for (unsigned char ch : text)
+      values.emplace_back(8, ch);
+
+    auto init = DenseIntElementsAttr::get(tensorType, values);
+    moduleBuilder.create<memref::GlobalOp>(
+        loc, symbolName, moduleBuilder.getStringAttr("private"), memrefType,
+        init, /*constant=*/true, /*alignment=*/IntegerAttr{});
+  }
+
+  auto i8Type = builder.getIntegerType(8);
+  auto memrefType = MemRefType::get({static_cast<int64_t>(text.size())}, i8Type);
+  auto unrankedType = UnrankedMemRefType::get(i8Type, 0);
+  Value global = builder.create<memref::GetGlobalOp>(loc, memrefType, symbolName);
+  Value unranked = builder.create<memref::CastOp>(loc, unrankedType, global);
+  return {unranked};
+}
+
+static void emitMemrefSpec(OpBuilder &builder, Location loc, int64_t opId,
+                           LinalgGenericOperandKind operandKind,
+                           int64_t operandIndex, Value memref) {
+  auto memrefType = dyn_cast<MemRefType>(memref.getType());
+  if (!memrefType)
+    return;
+
+  Value baseAddrIdx =
+      builder.create<memref::ExtractAlignedPointerAsIndexOp>(loc, memref);
+  Value baseAddr =
+      builder.create<arith::IndexCastOp>(loc, builder.getI64Type(), baseAddrIdx);
+
+  auto metadata = builder.create<memref::ExtractStridedMetadataOp>(loc, memref);
+  Value offset = builder.create<arith::IndexCastOp>(loc, builder.getI64Type(),
+                                                    metadata.getOffset());
+
+  Value opIdVal = createI64Constant(builder, loc, opId);
+  Value operandKindVal =
+      createI64Constant(builder, loc, static_cast<int64_t>(operandKind));
+  Value operandIndexVal = createI64Constant(builder, loc, operandIndex);
+  auto i64Type = builder.getI64Type();
+  auto dimsType = MemRefType::get({memrefType.getRank()}, i64Type);
+  auto dimsUnrankedType = UnrankedMemRefType::get(i64Type, 0);
+  Value dimsBuffer = builder.create<memref::AllocaOp>(loc, dimsType);
+  Value stridesBuffer = builder.create<memref::AllocaOp>(loc, dimsType);
+
+  for (auto [dimIndex, dimVal] : llvm::enumerate(metadata.getSizes())) {
+    Value dimI64 =
+        builder.create<arith::IndexCastOp>(loc, builder.getI64Type(), dimVal);
+    Value dimPos = builder.create<arith::ConstantIndexOp>(loc, dimIndex);
+    builder.create<memref::StoreOp>(loc, dimI64, dimsBuffer, ValueRange{dimPos});
+  }
+
+  for (auto [strideIndex, strideVal] : llvm::enumerate(metadata.getStrides())) {
+    Value strideI64 =
+        builder.create<arith::IndexCastOp>(loc, builder.getI64Type(), strideVal);
+    Value stridePos = builder.create<arith::ConstantIndexOp>(loc, strideIndex);
+    builder.create<memref::StoreOp>(loc, strideI64, stridesBuffer,
+                                    ValueRange{stridePos});
+  }
+
+  Value dimsUnranked =
+      builder.create<memref::CastOp>(loc, dimsUnrankedType, dimsBuffer);
+  Value stridesUnranked =
+      builder.create<memref::CastOp>(loc, dimsUnrankedType, stridesBuffer);
+
+  createFuncCall(builder, loc, kInstrTraceLinalgMemref, TypeRange{},
+                 ValueRange{opIdVal, operandKindVal, operandIndexVal, baseAddr,
+                            offset, dimsUnranked, stridesUnranked},
+                 EmitCInterface::Off);
+}
+
+static void instrumentMatrixAccessTrace(func::FuncOp funcOp) {
+  if (funcOp.isExternal() || funcOp.getBody().empty())
+    return;
+
+  ModuleOp module = funcOp->getParentOfType<ModuleOp>();
+  llvm::SmallVector<Operation *, 16> linalgOps;
+  funcOp.walk([&](Operation *op) {
+    if (isa<linalg::LinalgOp>(op))
+      linalgOps.push_back(op);
+  });
+  if (linalgOps.empty())
+    return;
+
+  OpBuilder builder(funcOp.getContext());
+  int64_t opId = 0;
+  int64_t nextStringId = 0;
+  llvm::StringMap<std::string> stringLiteralCache;
+  const std::string missingMetadata = "-";
+
+  for (Operation *op : linalgOps) {
+    auto linalgOp = cast<linalg::LinalgOp>(op);
+    Location loc = op->getLoc();
+    builder.setInsertionPoint(op);
+
+    std::string opName = op->getName().getStringRef().str();
+    if (StringRef(opName).starts_with("linalg."))
+      opName = opName.substr(strlen("linalg."));
+
+    std::string mapsText = missingMetadata;
+    std::string iteratorTypesText = missingMetadata;
+    if (auto genericOp = dyn_cast<linalg::GenericOp>(op)) {
+      mapsText = indexingMapsToString(genericOp);
+      iteratorTypesText = iteratorTypesToString(genericOp);
+    }
+
+    auto opNameVal = getOrCreateStringLiteral(builder, module, loc, "opname",
+                                              opName, stringLiteralCache,
+                                              nextStringId);
+    auto mapsVal = getOrCreateStringLiteral(builder, module, loc, "maps",
+                                            mapsText, stringLiteralCache,
+                                            nextStringId);
+    auto iterVal = getOrCreateStringLiteral(builder, module, loc, "iters",
+                                            iteratorTypesText,
+                                            stringLiteralCache, nextStringId);
+
+    Value opIdVal = createI64Constant(builder, loc, opId);
+    Value numInputsVal =
+        createI64Constant(builder, loc, linalgOp.getNumDpsInputs());
+    Value numOutputsVal =
+        createI64Constant(builder, loc, linalgOp.getNumDpsInits());
+    createFuncCall(builder, loc, kInstrTraceLinalg, TypeRange{},
+                   ValueRange{opIdVal, opNameVal.unrankedMemref, numInputsVal,
+                              numOutputsVal, mapsVal.unrankedMemref,
+                              iterVal.unrankedMemref},
+                   EmitCInterface::Off);
+
+    for (auto [inputIndex, input] : llvm::enumerate(linalgOp.getDpsInputs())) {
+      emitMemrefSpec(builder, loc, opId, LinalgGenericOperandKind::Input,
+                     inputIndex, input);
+    }
+    for (auto [outputIndex, output] : llvm::enumerate(linalgOp.getDpsInits())) {
+      emitMemrefSpec(builder, loc, opId, LinalgGenericOperandKind::Output,
+                     outputIndex, output);
+    }
+
+    ++opId;
   }
 }
 
@@ -476,6 +696,18 @@ public:
     getOperation()->walk([&](func::FuncOp funcOp) {
       instrumentForOpsWithDynamicCounter(funcOp, selection);
     });
+  }
+};
+
+class SODAPInstrMatrixAccessTrace
+    : public impl::InstrMatrixAccessTraceBase<SODAPInstrMatrixAccessTrace> {
+public:
+  using impl::InstrMatrixAccessTraceBase<
+      SODAPInstrMatrixAccessTrace>::InstrMatrixAccessTraceBase;
+
+  void runOnOperation() final {
+    getOperation()->walk(
+        [&](func::FuncOp funcOp) { instrumentMatrixAccessTrace(funcOp); });
   }
 };
 } // namespace

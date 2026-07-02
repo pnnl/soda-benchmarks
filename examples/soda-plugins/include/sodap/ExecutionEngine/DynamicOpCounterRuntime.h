@@ -65,4 +65,29 @@ sodaInstrDynamicCounterSetGroupFunctionName(int64_t groupId, int64_t charCode);
 extern "C" MLIR_SODAPINSTRRUNNERUTILS_EXPORT void
 sodaInstrDynamicCounterFlush(int64_t groupId);
 
+/// Matrix access trace entry point emitted by soda-instr-matrix-access-trace.
+///
+/// \param baseAddr   Aligned memref base pointer represented as an i64.
+extern "C" MLIR_SODAPINSTRRUNNERUTILS_EXPORT void
+sodaInstrMarkMatrixAccessStarts(int64_t baseAddr);
+
+/// Emit one summary line for a traced linalg op.
+///
+/// Unranked memref arguments follow the MLIR ABI: `(int64_t rank, void *ptr)`.
+/// String arguments are rank-1 byte buffers.
+extern "C" MLIR_SODAPINSTRRUNNERUTILS_EXPORT void
+sodaInstrTraceLinalg(int64_t opId, int64_t opNameRank, void *opNamePtr,
+                     int64_t numInputs, int64_t numOutputs, int64_t mapsRank,
+                     void *mapsPtr, int64_t itersRank, void *itersPtr);
+
+/// Emit one operand memref spec for a traced linalg op.
+///
+/// Unranked memref arguments follow the MLIR ABI: `(int64_t rank, void *ptr)`.
+/// `dims` and `strides` are rank-1 i64 buffers.
+extern "C" MLIR_SODAPINSTRRUNNERUTILS_EXPORT void
+sodaInstrTraceLinalgMemref(int64_t opId, int64_t operandKind,
+                           int64_t operandIndex, int64_t baseAddr,
+                           int64_t offset, int64_t dimsRank, void *dimsPtr,
+                           int64_t stridesRank, void *stridesPtr);
+
 #endif // SODAP_EXECUTIONENGINE_DYNAMICOPCOUNTERRUNTIME_H
