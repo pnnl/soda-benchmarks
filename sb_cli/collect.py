@@ -11,6 +11,7 @@ restructuring collector logic.
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
@@ -52,6 +53,152 @@ def _file_info(path: Path) -> dict[str, Any]:
         return {"size_bytes": 0, "exists": False}
 
 
+def _read_text(path: Path) -> str | None:
+    """Read a text file, returning None (never raising) if it is unreadable."""
+    try:
+        return path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return None
+
+
+# Matches Bambu's simulation summary line, e.g.:
+#   Total cycles             : 14028 cycles
+_CYCLE_COUNT_RE = re.compile(r"Total cycles\s*:\s*(\d+)\s*cycles")
+
+# Matches per-function flip-flop totals, e.g.:
+#   Total number of flip-flops in function forward_kernel: 9911
+_FLIP_FLOPS_RE = re.compile(r"Total number of flip-flops in function (\S+):\s*(\d+)")
+
+# Matches per-function area estimates, e.g.:
+#   Total estimated area: 885472
+_ESTIMATED_AREA_RE = re.compile(r"Total estimated area:\s*(\d+)")
+
+# Matches "Summary of resources" cell totals, e.g.:
+#   Total cells    : 4334
+_TOTAL_CELLS_RE = re.compile(r"Total cells\s*:\s*(\d+)")
+
+# Matches HW performance-counter prints, e.g.:
+#   [HW] sodaInstrHWCounters: location 0000000000000004 count        106
+_HW_COUNTER_RE = re.compile(
+    r"\[HW\] sodaInstrHWCounters: location ([0-9a-fA-F]+) count\s+(\d+)"
+)
+
+# Matches the SW C-stub start/stop markers, e.g.:
+#   [SW] HW counter STARTED at loc: 4
+#   [SW] HW counter STOPED at loc: 4
+_SW_COUNTER_RE = re.compile(r"\[SW\] HW counter (STARTED|STOPED) at loc: (\d+)")
+
+# Matches assertion checker prints, e.g.:
+#   sodaInstrAssertLessThen: 0000000000000003 < 000000000000000a ? true
+_ASSERT_RE = re.compile(
+    r"sodaInstrAssertLessThen: [0-9a-fA-F]+ < [0-9a-fA-F]+ \? (true|false)"
+)
+
+
+def _parse_cycle_count(path: Path) -> int | None:
+    """Extract the Bambu Verilator simulation cycle count from a Bambu log.
+
+    Looks for a line such as ``Total cycles             : 14028 cycles``
+    (emitted at the end of ``output/bambu/<variant>/bambu-log``).
+
+    Returns:
+        The cycle count as an int, or None if the file is missing/unreadable
+        or does not contain the expected line.
+    """
+    text = _read_text(path)
+    if text is None:
+        return None
+    match = _CYCLE_COUNT_RE.search(text)
+    return int(match.group(1)) if match else None
+
+
+def _parse_resource_usage(path: Path) -> dict[str, Any]:
+    """Extract resource-usage figures (flip-flops, area, cells) from a Bambu log.
+
+    Parses the "Summary of resources"-adjacent lines that Bambu prints once
+    per synthesized function, e.g.::
+
+        Total estimated area: 885472
+        Total number of flip-flops in function forward_kernel: 9911
+        Total cells    : 4334
+
+    The *last* flip-flop/area entries in the log correspond to the top-level
+    kernel function (helper/library functions are reported earlier), so those
+    are surfaced as ``top_function*`` keys alongside the full per-function
+    breakdown.
+
+    Returns:
+        A dict with per-function flip-flop counts, the raw list of area
+        estimates, and top-function/summary figures. Empty dict if the file
+        is missing/unreadable.
+    """
+    text = _read_text(path)
+    if text is None:
+        return {}
+
+    flip_flops_by_function = {
+        name: int(count) for name, count in _FLIP_FLOPS_RE.findall(text)
+    }
+    estimated_area_values = [int(area) for area in _ESTIMATED_AREA_RE.findall(text)]
+    total_cells_values = [int(cells) for cells in _TOTAL_CELLS_RE.findall(text)]
+
+    result: dict[str, Any] = {
+        "flip_flops_by_function": flip_flops_by_function,
+        "estimated_area_values": estimated_area_values,
+    }
+    if flip_flops_by_function:
+        top_function, top_flip_flops = list(flip_flops_by_function.items())[-1]
+        result["top_function"] = top_function
+        result["top_function_flip_flops"] = top_flip_flops
+    if estimated_area_values:
+        result["top_function_estimated_area"] = estimated_area_values[-1]
+    if total_cells_values:
+        result["total_cells"] = total_cells_values[-1]
+    return result
+
+
+def _parse_instrumentation_events(path: Path) -> dict[str, Any]:
+    """Summarize instrumentation ``$display`` events from a Bambu log.
+
+    Covers three event families emitted by the instrumentation IPs during
+    simulation:
+
+    - HW performance counters: ``[HW] sodaInstrHWCounters: location <hex>
+      count <n>`` — the final (last-printed) count per location is kept.
+    - SW C-stub markers: ``[SW] HW counter STARTED/STOPED at loc: <n>``.
+    - Assertion checker: ``sodaInstrAssertLessThen: <hex> < <hex> ?
+      true/false``.
+
+    Returns:
+        A dict with per-location final counter values, SW start/stop event
+        counts, and assertion pass/fail counts. Empty dict if the file is
+        missing/unreadable.
+    """
+    text = _read_text(path)
+    if text is None:
+        return {}
+
+    hw_counter_final_count_by_location: dict[str, int] = {}
+    for location_hex, count in _HW_COUNTER_RE.findall(text):
+        location = str(int(location_hex, 16))
+        hw_counter_final_count_by_location[location] = int(count)
+
+    sw_counter_event_counts = {"STARTED": 0, "STOPED": 0}
+    for state, _loc in _SW_COUNTER_RE.findall(text):
+        sw_counter_event_counts[state] += 1
+
+    assertion_results = {"true": 0, "false": 0}
+    for outcome in _ASSERT_RE.findall(text):
+        assertion_results[outcome] += 1
+
+    return {
+        "hw_counter_final_count_by_location": hw_counter_final_count_by_location,
+        "sw_counter_event_counts": sw_counter_event_counts,
+        "assertion_results": assertion_results,
+        "assertion_total": sum(assertion_results.values()),
+    }
+
+
 # Built-in collectors shipped with sb-cli
 BUILTIN_COLLECTORS: list[MetricCollector] = [
     MetricCollector(
@@ -68,6 +215,21 @@ BUILTIN_COLLECTORS: list[MetricCollector] = [
         name="file_inventory",
         pattern="output/**/*",
         parser=_file_info,
+    ),
+    MetricCollector(
+        name="simulation_cycles",
+        pattern="output/bambu/**/bambu-log",
+        parser=_parse_cycle_count,
+    ),
+    MetricCollector(
+        name="resource_usage",
+        pattern="output/bambu/**/bambu-log",
+        parser=_parse_resource_usage,
+    ),
+    MetricCollector(
+        name="instrumentation_events",
+        pattern="output/bambu/**/bambu-log",
+        parser=_parse_instrumentation_events,
     ),
 ]
 
