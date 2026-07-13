@@ -26,12 +26,12 @@ TARGET=$(ODIR)/bambu/transformed/07_results.txt # For simulation results
 all: $(TARGET)
 
 # Generate MLIR from Torch model
-$(ODIR)/01_tosa.mlir: $(FILE_PATH) 
+$(ODIR)/01_tosa.mlir: $(FILE_PATH)
 	python $(FILE_PATH) $@ --dialect=tosa
 
 # Put the transform schedule on the output directory where it is expected
-$(ODIR)/04_transform_sched.mlir: $(TRANSFORM_PATH) 
-	cp $< $@ 
+$(ODIR)/04_transform_sched.mlir: $(TRANSFORM_PATH)
+	cp $< $@
 
 # Include the rules to generate linalg from a torch model translated to linalg
 include $(SCRIPTS_DIR)/mkinc/tosa_to_llvm.mk
@@ -49,8 +49,8 @@ BAMBU_CLOCK_PERIOD=5
 # IP Integration flow variables
 BAMBU_IP_INTEGRATION=true
 # Comma-separated lists of files, must have the full path
-IP_C_EXCLUDE=$(IPDIR)/sodaInstrChangeLocation.c
-IP_VERILOG_INPUTS=$(IPDIR)/sodaInstrChangeLocation.v
+IP_C_EXCLUDE=$(IPDIR)/sodaVectorDot.c
+IP_VERILOG_INPUTS=$(IPDIR)/sodaVectorDot.v
 IP_MODULE_LIB=$(IPDIR)/module_lib.xml
 IP_CONSTRAINTS=$(IPDIR)/constraints_STD.xml
 

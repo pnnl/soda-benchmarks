@@ -8,6 +8,7 @@
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/Dialect/Linalg/IR/Linalg.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/IR/PatternMatch.h"
@@ -25,16 +26,29 @@
 /// Library for instrumentation functions
 static constexpr const char *kAssertLessThen = "sodaInstrAssertLessThen";
 static constexpr const char *kInstrHWCounters = "sodaInstrHWCounters";
+static constexpr const char *kInstrChangeLocation = "sodaInstrChangeLocation";
 static constexpr const char *kInstrCollectOpCounts = "sodaInstrCollectOpCounts";
 static constexpr const char *kInstrDynamicCounter = "sodaInstrDynamicCounter";
+static constexpr const char *kVectorDot = "sodaVectorDot";
+
+/// Sentinel location value recognized by the `sodaInstrHWCounters` hardware
+/// IP as "print every counter's final value once", instead of a normal
+/// start/stop location id. Encoded as all-bits-set (-1) so it can be carried
+/// through the existing 2-argument `(action, location)` call signature
+/// without changing the interface: real loop ids are small non-negative
+/// numbers assigned incrementally, so this value is never produced by the
+/// normal instrumentation walk.
+static constexpr int64_t kReportSentinelLocation = -1;
 
 using namespace mlir;
 
 namespace mlir::sodap {
 #define GEN_PASS_DEF_INSTRBOUNDS
 #define GEN_PASS_DEF_INSTRHWCOUNTERS
+#define GEN_PASS_DEF_INSTRCHANGELOCATION
 #define GEN_PASS_DEF_INSTRDYNAMICOPCOUNTS
 #define GEN_PASS_DEF_INSTRDYNAMICCOUNTER
+#define GEN_PASS_DEF_SWAPOPTOHW
 #include "sodap/SODAPPasses.h.inc"
 
 namespace {
@@ -163,6 +177,61 @@ static void instrumentForOpsWithHWCounter(func::FuncOp funcOp) {
     builder.setInsertionPoint(terminator);
     createFuncCall(builder, loc, kInstrHWCounters, TypeRange{},
                    ValueRange{runFalse, idVal}, EmitCInterface::Off);
+  });
+}
+
+// Insert a single finalize call before every `func.return` in `funcOp` that
+// asks the `sodaInstrHWCounters` hardware IP to print every counter's final
+// value once, instead of relying on the per-stop `$display` (which prints on
+// every loop stop and floods the simulation log).
+static void instrumentFuncWithHWCounterReport(func::FuncOp funcOp) {
+  OpBuilder builder(funcOp.getContext());
+  funcOp.walk([&](func::ReturnOp returnOp) {
+    builder.setInsertionPoint(returnOp);
+    auto loc = returnOp.getLoc();
+    auto runTrue = builder.create<arith::ConstantOp>(
+        loc, builder.getIntegerType(1), builder.getBoolAttr(true));
+    auto reportLoc = builder.create<arith::ConstantOp>(
+        loc, builder.getIndexType(),
+        builder.getIndexAttr(kReportSentinelLocation));
+    createFuncCall(builder, loc, kInstrHWCounters, TypeRange{},
+                   ValueRange{runTrue, reportLoc}, EmitCInterface::Off);
+  });
+}
+
+// Instrument all scf::ForOp in a function with a single change-location call
+// mapped to a single-active-counter SODA hardware IP. Unlike
+// `instrumentForOpsWithHWCounter`, this only emits one call per loop (no
+// separate stop call): switching the active location implicitly stops the
+// previous location and starts the new one in hardware.
+static void instrumentForOpsWithChangeLocation(func::FuncOp funcOp) {
+  OpBuilder builder(funcOp.getContext());
+  int loopId = 0;
+  funcOp.walk([&](scf::ForOp forOp) {
+    builder.setInsertionPointToStart(forOp.getBody());
+    auto loc = forOp.getLoc();
+    auto idVal = builder.create<arith::ConstantOp>(
+        loc, builder.getIndexType(), builder.getIndexAttr(loopId++));
+    createFuncCall(builder, loc, kInstrChangeLocation, TypeRange{},
+                   ValueRange{idVal}, EmitCInterface::Off);
+  });
+}
+
+// Insert a single finalize call before every `func.return` in `funcOp` that
+// asks the `sodaInstrChangeLocation` hardware IP to print every location's
+// final count once. Because only one counter is ever active at a time, the
+// single-active-counter design naturally lends itself to a print-once-at-end
+// report (unlike the concurrent-counters IP, which prints on every stop).
+static void instrumentFuncWithChangeLocationReport(func::FuncOp funcOp) {
+  OpBuilder builder(funcOp.getContext());
+  funcOp.walk([&](func::ReturnOp returnOp) {
+    builder.setInsertionPoint(returnOp);
+    auto loc = returnOp.getLoc();
+    auto reportLoc = builder.create<arith::ConstantOp>(
+        loc, builder.getIndexType(),
+        builder.getIndexAttr(kReportSentinelLocation));
+    createFuncCall(builder, loc, kInstrChangeLocation, TypeRange{},
+                   ValueRange{reportLoc}, EmitCInterface::Off);
   });
 }
 
@@ -365,6 +434,54 @@ static void instrumentForOpsWithDynamicCounter(
   }
 }
 
+// Returns true if `type` is a memref of static rank 1 (a fixed-size vector).
+static bool isStaticVectorMemRef(Type type) {
+  auto memrefType = dyn_cast<MemRefType>(type);
+  return memrefType && memrefType.getRank() == 1 &&
+         !memrefType.isDynamicDim(0);
+}
+
+// Matches a `linalg.dot` op that can be swapped for the `sodaVectorDot`
+// hardware module: two same-length, statically-shaped 1-D memref inputs,
+// reducing into a rank-0 (scalar) memref output. Dynamically-shaped dot
+// products are left untouched, since the HW module is modeled as a
+// fixed-size vector engine.
+static bool isMatchableVectorDot(linalg::DotOp op) {
+  if (op.getInputs().size() != 2 || op.getOutputs().size() != 1)
+    return false;
+
+  Value a = op.getInputs()[0];
+  Value b = op.getInputs()[1];
+  if (!isStaticVectorMemRef(a.getType()) || !isStaticVectorMemRef(b.getType()))
+    return false;
+
+  auto aType = cast<MemRefType>(a.getType());
+  auto bType = cast<MemRefType>(b.getType());
+  if (aType.getDimSize(0) != bType.getDimSize(0))
+    return false;
+
+  auto outType = dyn_cast<MemRefType>(op.getOutputs()[0].getType());
+  return outType && outType.getRank() == 0;
+}
+
+// Replace a single `linalg.dot` with a call to `@sodaVectorDot(A, B, len,
+// out)`, mirroring a Bambu memory-master hardware IP that streams both
+// operands from memory and writes the reduced result back to `out`.
+static void replaceVectorDot(linalg::DotOp op, OpBuilder &builder) {
+  Location loc = op.getLoc();
+  Value a = op.getInputs()[0];
+  Value b = op.getInputs()[1];
+  Value out = op.getOutputs()[0];
+  auto aType = cast<MemRefType>(a.getType());
+
+  builder.setInsertionPoint(op);
+  Value len = builder.create<arith::ConstantOp>(
+      loc, builder.getIndexType(), builder.getIndexAttr(aType.getDimSize(0)));
+  createFuncCall(builder, loc, kVectorDot, TypeRange{},
+                 ValueRange{a, b, len, out}, EmitCInterface::Off);
+  op.erase();
+}
+
 class SODAPInstrBounds : public impl::InstrBoundsBase<SODAPInstrBounds> {
 public:
   using impl::InstrBoundsBase<SODAPInstrBounds>::InstrBoundsBase;
@@ -380,8 +497,24 @@ public:
   using impl::InstrHWCountersBase<
       SODAInstrBoundsWithHWCounters>::InstrHWCountersBase;
   void runOnOperation() final {
-    getOperation()->walk(
-        [](func::FuncOp funcOp) { instrumentForOpsWithHWCounter(funcOp); });
+    getOperation()->walk([&](func::FuncOp funcOp) {
+      instrumentForOpsWithHWCounter(funcOp);
+      if (reportAtEnd)
+        instrumentFuncWithHWCounterReport(funcOp);
+    });
+  }
+};
+
+class SODAPInstrChangeLocation
+    : public impl::InstrChangeLocationBase<SODAPInstrChangeLocation> {
+public:
+  using impl::InstrChangeLocationBase<
+      SODAPInstrChangeLocation>::InstrChangeLocationBase;
+  void runOnOperation() final {
+    getOperation()->walk([](func::FuncOp funcOp) {
+      instrumentForOpsWithChangeLocation(funcOp);
+      instrumentFuncWithChangeLocationReport(funcOp);
+    });
   }
 };
 
@@ -414,6 +547,27 @@ public:
     getOperation()->walk([&](func::FuncOp funcOp) {
       instrumentForOpsWithDynamicCounter(funcOp, selection);
     });
+  }
+};
+
+class SODAPSwapOpToHW
+    : public impl::SwapOpToHWBase<SODAPSwapOpToHW> {
+public:
+  using impl::SwapOpToHWBase<SODAPSwapOpToHW>::SwapOpToHWBase;
+
+  void runOnOperation() final {
+    ModuleOp module = getOperation();
+    OpBuilder builder(module.getContext());
+
+    // Collect matches first to avoid modifying the IR while walking it.
+    SmallVector<linalg::DotOp> opsToReplace;
+    module.walk([&](linalg::DotOp op) {
+      if (isMatchableVectorDot(op))
+        opsToReplace.push_back(op);
+    });
+
+    for (auto op : opsToReplace)
+      replaceVectorDot(op, builder);
   }
 };
 } // namespace

@@ -101,8 +101,41 @@ def InstrHWCounters : Pass<"soda-instr-hw-counters-at-loop-bounds"> {
     At the start of each loop body, it inserts `@soda_instr_hw_counter(%run=true, %loc=id)` to start the counter,
     where `%run` is a boolean to enable instrumentation and `%loc` is a unique identifier for the counter.
     At the end of the loop body, it inserts `@soda_instr_hw_counter(%run=false, %loc=id)` to stop the counter.
-  }];
 
+    When `report-at-end` is enabled, a single extra
+    `@sodaInstrHWCounters(%run=true, %loc=<report-sentinel>)` call is inserted
+    right before each `func.return` in the instrumented function. The
+    hardware IP recognizes the sentinel location (all bits set) as a request
+    to print every counter's final value once, instead of relying on the
+    default per-stop `$display` (which floods the simulation log with one
+    line per loop iteration/stop).
+  }];
+  let options = [
+    Option<"reportAtEnd", "report-at-end", "bool",
+           /*default=*/"false",
+           "Emit a single finalize call before each return to print all "
+           "counters once at the end of simulation">
+  ];
+}
+
+def InstrChangeLocation : Pass<"soda-instr-change-location"> {
+  let summary = "Insert change-location calls for a single active HW counter";
+  let description = [{
+    This pass instruments loop bodies with a single `@sodaInstrChangeLocation(%loc=id)`
+    call mapped to a single-active-counter SODA hardware IP. Unlike
+    `soda-instr-hw-counters-at-loop-bounds`, which starts/stops many concurrent
+    counters, this pass only ever switches which single running counter is
+    active: at the start of each loop body it emits one call that changes the
+    tracked location, instead of a pair of start/stop calls. Location `0`
+    counts cycles from reset (i.e. the outermost/global scope); higher
+    locations are used as the pass descends into nested loops.
+
+    A single finalize `@sodaInstrChangeLocation(<report-sentinel>)` call
+    (sentinel location with all bits set) is also inserted right before each
+    `func.return`, asking the hardware IP to print every location's final
+    count once. Because only one counter is ever active, this design never
+    needs a per-stop `$display`.
+  }];
 }
 
 def InstrDynamicOpCounts : Pass<"soda-instr-dynamic-op-counts-at-loop-bounds"> {
@@ -147,6 +180,25 @@ def InstrDynamicCounter : Pass<"soda-instr-dynamic-counter"> {
            /*default=*/"\"all\"",
           "Counter kinds to track, separated by '+' or ',' (e.g. memref-load+memref-store+arith-float)">
   ];
+}
+
+def SwapOpToHW : Pass<"sodap-swap-op-to-hw", "::mlir::ModuleOp"> {
+  let summary = "Swap a linalg.dot reduction for a call to a HW dot-product module";
+  let description = [{
+    This pass matches `linalg.dot` operations -- a fixed-size vector dot
+    product/reduction over two 1-D memrefs into a scalar memref -- and
+    replaces each match with a single call to
+    `@sodaVectorDot(%A, %B, %len, %out)`, mirroring a Bambu memory-master
+    hardware IP (modeled on the `IP_integration_example` `module1`/`module2`
+    memory-master pattern). This demonstrates the instrumentation flow
+    adding *performance* hardware, not just observability
+    (assertions/counters).
+
+    Matcher: any `linalg.dot` op whose two 1-D memref inputs have the same
+    statically-known length and whose output is a rank-0 (scalar) memref.
+    Dot products with dynamic operand shapes are left untouched, since the
+    HW module is modeled as a fixed-size vector engine.
+  }];
 }
 
 def LinalgBatchMatmulToESP : Pass<"sodap-linalg-batch-matmul-to-esp", "::mlir::ModuleOp"> {

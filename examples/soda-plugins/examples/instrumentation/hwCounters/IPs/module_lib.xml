@@ -30,6 +30,9 @@
 	        <port_o id="location" dir="IN">
             <structural_type_descriptor type="UINT" size="64"/>
           </port_o>
+          <port_o id="count" dir="OUT">
+            <structural_type_descriptor type="UINT" size="32"/>
+          </port_o>
           <NP_functionality LIBRARY="sodaInstrHWCounters " VERILOG_FILE_PROVIDED="sodaInstrHWCounters.v"/>
         </component_o>
       </circuit>
