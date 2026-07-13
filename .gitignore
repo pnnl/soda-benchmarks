@@ -58,3 +58,4 @@ benches/PolyBenchC-4.2.1
 # Generated MLIR output from kernel test runs
 benches/PolyBenchPyTorch/**/output/
 
+papers/
