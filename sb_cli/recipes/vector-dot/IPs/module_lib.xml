@@ -1,0 +1,81 @@
+<?xml version="1.0"?>
+<technology>
+  <library>
+    <name>module_lib</name>
+    <cell>
+      <name>sodaVectorDot</name>
+      <operation operation_name="sodaVectorDot" bounded="0"/>
+      <channels_type>MEM_ACC_11,MEM_ACC_N1</channels_type>
+      <circuit>
+        <component_o id="sodaVectorDot">
+          <description>Fixed-size vector dot-product HW module</description>
+          <copyright>PNNL</copyright>
+          <authors>agostinti</authors>
+          <license>Apache with LLVM Exceptions</license>
+          <structural_type_descriptor id_type="sodaVectorDot"/>
+          <port_o id="clock" dir="IN" is_clock="1">
+            <structural_type_descriptor type="BOOL" size="1"/>
+          </port_o>
+          <port_o id="reset" dir="IN">
+            <structural_type_descriptor type="BOOL" size="1"/>
+          </port_o>
+          <port_o id="start_port" dir="IN">
+            <structural_type_descriptor type="BOOL" size="1"/>
+          </port_o>
+          <port_o id="done_port" dir="OUT">
+            <structural_type_descriptor type="BOOL" size="1"/>
+          </port_o>
+          <port_o id="a_addr" dir="IN" is_addr_bus="1">
+            <structural_type_descriptor type="VECTOR_BOOL" size="1" vector_size="1"/>
+          </port_o>
+          <port_o id="b_addr" dir="IN" is_addr_bus="1">
+            <structural_type_descriptor type="VECTOR_BOOL" size="1" vector_size="1"/>
+          </port_o>
+          <port_o id="len" dir="IN">
+            <structural_type_descriptor type="UINT" size="32"/>
+          </port_o>
+          <port_o id="out_addr" dir="IN" is_addr_bus="1">
+            <structural_type_descriptor type="VECTOR_BOOL" size="1" vector_size="1"/>
+          </port_o>
+          <port_o id="Min_oe_ram" dir="IN" is_memory="1" is_master="1">
+            <structural_type_descriptor type="BOOL" size="1"/>
+          </port_o>
+          <port_o id="Mout_oe_ram" dir="OUT" is_memory="1" is_master="1">
+            <structural_type_descriptor type="BOOL" size="1"/>
+          </port_o>
+          <port_o id="Min_we_ram" dir="IN" is_memory="1" is_master="1">
+            <structural_type_descriptor type="BOOL" size="1"/>
+          </port_o>
+          <port_o id="Mout_we_ram" dir="OUT" is_memory="1" is_master="1">
+            <structural_type_descriptor type="BOOL" size="1"/>
+          </port_o>
+          <port_o id="Min_addr_ram" dir="IN" is_memory="1" is_master="1" is_addr_bus="1">
+            <structural_type_descriptor type="VECTOR_BOOL" size="1" vector_size="1"/>
+          </port_o>
+          <port_o id="Mout_addr_ram" dir="OUT" is_memory="1" is_master="1" is_addr_bus="1">
+            <structural_type_descriptor type="VECTOR_BOOL" size="1" vector_size="1"/>
+          </port_o>
+          <port_o id="M_Rdata_ram" dir="IN" is_memory="1" is_global="1" is_extern="1" is_data_bus="1">
+            <structural_type_descriptor type="VECTOR_BOOL" size="1" vector_size="8"/>
+          </port_o>
+          <port_o id="Min_Wdata_ram" dir="IN" is_memory="1" is_master="1" is_data_bus="1">
+            <structural_type_descriptor type="VECTOR_BOOL" size="1" vector_size="8"/>
+          </port_o>
+          <port_o id="Mout_Wdata_ram" dir="OUT" is_memory="1" is_master="1" is_data_bus="1">
+            <structural_type_descriptor type="VECTOR_BOOL" size="1" vector_size="8"/>
+          </port_o>
+          <port_o id="Min_data_ram_size" dir="IN" is_memory="1" is_master="1" is_size_bus="1">
+            <structural_type_descriptor type="VECTOR_BOOL" size="1" vector_size="1"/>
+          </port_o>
+          <port_o id="Mout_data_ram_size" dir="OUT" is_memory="1" is_master="1" is_size_bus="1">
+            <structural_type_descriptor type="VECTOR_BOOL" size="1" vector_size="1"/>
+          </port_o>
+          <port_o id="M_DataRdy" dir="IN" is_memory="1" is_global="1" is_extern="1">
+            <structural_type_descriptor type="BOOL" size="1"/>
+          </port_o>
+          <NP_functionality LIBRARY="sodaVectorDot a_addr b_addr out_addr Min_addr_ram Mout_addr_ram M_Rdata_ram Min_Wdata_ram Mout_Wdata_ram Min_data_ram_size Mout_data_ram_size" IP_COMPONENT="__builtin_memstore" VERILOG_FILE_PROVIDED="sodaVectorDot.v"/>
+        </component_o>
+      </circuit>
+    </cell>
+  </library>
+</technology>

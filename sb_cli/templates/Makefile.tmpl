@@ -28,6 +28,9 @@ include $$(SCRIPTS_DIR)/mkinc/soda_to_llvm.mk
 #  BAMBU_DEVICE and BAMBU_CLOCK_PERIOD can be overridden by env vars (set by flow.py)
 BAMBU_DEVICE?=$device
 BAMBU_CLOCK_PERIOD?=$clock_period
+
+# Instrumentation IP integration (empty unless an --instrumentation recipe was selected)
+$ip_integration_block
 include $$(SCRIPTS_DIR)/mkinc/llvm_to_verilog.mk
 
 # Include rules to generate gds files with openroad

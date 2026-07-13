@@ -15,6 +15,7 @@ from pathlib import Path
 
 import benches
 from sb_cli.flow import BACKENDS, FLOWS, STAGES
+from sb_cli.recipes import NONE_RECIPE, available_recipes
 
 _DATASET_CHOICES = ["TEST", "MINI", "SMALL", "MEDIUM", "LARGE", "EXTRALARGE"]
 _DTYPE_CHOICES = ["float16", "float32", "float64"]
@@ -28,6 +29,7 @@ _TARGET_MIGRATION = """--target has been split into --flow and --stage.
   --target transformed  ->  --flow transformed --stage verilog
   --target llvm         ->  --flow <flow>      --stage llvm
   --target gds          ->  --flow <flow>      --stage gds
+  --target simulation   ->  --flow transformed --stage simulation
 Flows: {flows}. Stages: {stages}.""".format(
     flows=", ".join(FLOWS), stages=", ".join(STAGES)
 )
@@ -96,6 +98,12 @@ def _add_init_parser(
         default="verilog",
         choices=STAGES,
         help="How far down the compilation path to build",
+    )
+    p.add_argument(
+        "--instrumentation",
+        default=NONE_RECIPE,
+        choices=available_recipes(),
+        help="Instrumentation recipe to integrate (default: none)",
     )
     p.add_argument("--target", action=_TargetRemoved, nargs="?", help=argparse.SUPPRESS)
 
@@ -199,6 +207,7 @@ def main() -> None:
             flow=args.flow,
             backend=args.backend,
             stage=args.stage,
+            instrumentation=args.instrumentation,
         )
         scaffold(config, args.output_dir, base_dir)
 

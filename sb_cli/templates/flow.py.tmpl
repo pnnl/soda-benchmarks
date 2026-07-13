@@ -14,6 +14,7 @@ Config:
     backend        : $backend
     stage          : $stage
     target         : $target_name -> $target_path
+    instrumentation: $instrumentation
 
 Usage:
     python flow.py
@@ -38,6 +39,7 @@ class Flow:
     clock_period: float = $clock_period
     memory_policy: str = "$memory_policy"
     target: str = "$target_path"
+    instrumentation: str = "$instrumentation"
 
     def run(self) -> None:
         """Set hardware env vars and invoke make targeting self.target."""

@@ -79,6 +79,12 @@ def fork_experiment(
         else:
             print(f"[sb-cli] WARNING: {fname} not found in source, skipping")
 
+    # Carry the instrumentation IP directory (present when the source was
+    # scaffolded with an --instrumentation recipe) so the fork stays buildable.
+    ip_src = source_dir / "IPs"
+    if ip_src.is_dir():
+        shutil.copytree(ip_src, new_dir / "IPs")
+
     rel_path = f"experiments/{ts}"
     registry.append(output_dir, rel_path)
 

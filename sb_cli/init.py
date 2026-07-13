@@ -8,11 +8,13 @@ the experiment in experiments/registry.py.
 from __future__ import annotations
 
 import re
+import shutil
 from datetime import datetime
 from pathlib import Path
 
 from benches import catalog
-from sb_cli.flow import ExperimentConfig
+from sb_cli.flow import ExperimentConfig, ip_integration_block
+from sb_cli.recipes import resolve_recipe
 from sb_cli.registry import Registry
 from sb_cli.templates import render
 
@@ -227,6 +229,10 @@ def scaffold(config: ExperimentConfig, output_dir: str | None, base_dir: Path) -
         bench = _resolve_benchmark(config.benchmark_name)
     output_dir = _resolve_output_dir(output_dir, config, bench, base_dir)
 
+    # Resolve the instrumentation recipe (None for the "none" sentinel) before
+    # creating files so an unknown recipe fails fast.
+    recipe = resolve_recipe(config.instrumentation)
+
     ts = _timestamp(base_dir)
     exp_dir = _create_experiment_dir(ts, base_dir)
     rel_path = f"experiments/{ts}"
@@ -248,6 +254,8 @@ def scaffold(config: ExperimentConfig, output_dir: str | None, base_dir: Path) -
         "stage": config.stage,
         "target_name": config.target_name,
         "target_path": target_path,
+        "instrumentation": config.instrumentation,
+        "ip_integration_block": ip_integration_block(recipe),
         "created_at": created_at,
     }
 
@@ -265,11 +273,20 @@ def scaffold(config: ExperimentConfig, output_dir: str | None, base_dir: Path) -
     (exp_dir / "torchscript.py").write_text(torchscript_content, encoding="utf-8")
     (exp_dir / "flow.py").write_text(render("flow.py.tmpl", ctx), encoding="utf-8")
     (exp_dir / "Makefile").write_text(render("Makefile.tmpl", ctx), encoding="utf-8")
-    (exp_dir / "transform.mlir").write_text(
-        render("transform.mlir.tmpl", ctx), encoding="utf-8"
-    )
     (exp_dir / "README.md").write_text(render("README.md.tmpl", ctx), encoding="utf-8")
     (exp_dir / ".gitignore").write_text(render("gitignore.tmpl", ctx), encoding="utf-8")
+
+    # transform.mlir + IP files come from the selected recipe, or fall back to
+    # the no-op template when no instrumentation is requested.
+    if recipe is not None:
+        shutil.copyfile(recipe.transform_mlir, exp_dir / "transform.mlir")
+        if recipe.ip_dir.is_dir():
+            shutil.copytree(recipe.ip_dir, exp_dir / "IPs")
+        print(f"[sb-cli] Instrumentation recipe: '{recipe.name}' (IPs copied to IPs/)")
+    else:
+        (exp_dir / "transform.mlir").write_text(
+            render("transform.mlir.tmpl", ctx), encoding="utf-8"
+        )
 
     # Create symlink and register
     _create_symlink(exp_dir, output_dir, base_dir)

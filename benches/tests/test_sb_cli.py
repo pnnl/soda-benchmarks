@@ -32,6 +32,7 @@ def _run_scaffold(
     flow: str = "baseline",
     backend: str = "bambu",
     stage: str = "verilog",
+    instrumentation: str = "none",
 ) -> Path:
     """Run scaffold() with given args and return the experiment dir."""
     from sb_cli.flow import ExperimentConfig
@@ -47,6 +48,7 @@ def _run_scaffold(
         flow=flow,
         backend=backend,
         stage=stage,
+        instrumentation=instrumentation,
     )
     return scaffold(config, output_dir, tmp_path)
 
@@ -250,6 +252,9 @@ class TestInit:
 
         mk = (exp_dir / "Makefile").read_text()
         assert "bambu/transformed/07_results.txt" in mk
+
+        flow = (exp_dir / "flow.py").read_text()
+        assert "bambu/transformed/07_results.txt" in flow
 
     def test_init_transform_mlir_is_noop(self, tmp_path: Path) -> None:
         """transform.mlir is generated as a no-op boilerplate."""
@@ -517,6 +522,78 @@ class TestInitAutoName:
 
 
 # ---------------------------------------------------------------------------
+# Instrumentation recipe tests
+# ---------------------------------------------------------------------------
+
+
+class TestInstrumentation:
+    def test_none_recipe_no_ip_block(self, tmp_path: Path) -> None:
+        """Default (none) recipe: no IP integration, no-op transform, no IPs/."""
+        base = _make_base_dir(tmp_path)
+        exp_dir = _run_scaffold(base, output_dir="plain_exp")
+
+        mk = (exp_dir / "Makefile").read_text()
+        assert "BAMBU_IP_INTEGRATION" not in mk
+        assert not (exp_dir / "IPs").exists()
+
+        xfm = (exp_dir / "transform.mlir").read_text()
+        assert "transform.yield" in xfm
+        assert "apply_registered_pass" not in xfm
+
+    def test_hw_counters_recipe_wires_ip_and_transform(self, tmp_path: Path) -> None:
+        """hw-counters recipe copies IPs, transform, and wires the Makefile."""
+        base = _make_base_dir(tmp_path)
+        exp_dir = _run_scaffold(
+            base, output_dir="hwc_exp", instrumentation="hw-counters"
+        )
+
+        # IP files copied into the experiment
+        ips = exp_dir / "IPs"
+        assert (ips / "sodaInstrHWCounters.v").exists()
+        assert (ips / "module_lib.xml").exists()
+        assert (ips / "constraints_STD.xml").exists()
+
+        # Makefile wires Bambu IP integration referencing IPs/
+        mk = (exp_dir / "Makefile").read_text()
+        assert "BAMBU_IP_INTEGRATION=true" in mk
+        assert "IP_VERILOG_INPUTS=$(IPDIR)/sodaInstrHWCounters.v" in mk
+        assert "IP_MODULE_LIB=$(IPDIR)/module_lib.xml" in mk
+        assert "EXTRA_VERILOG_DEPS" in mk
+
+        # transform.mlir is the recipe's schedule invoking the counter pass
+        xfm = (exp_dir / "transform.mlir").read_text()
+        assert "soda-instr-hw-counters-at-loop-bounds" in xfm
+
+        # flow.py records the recipe for provenance
+        flow = (exp_dir / "flow.py").read_text()
+        assert 'instrumentation: str = "hw-counters"' in flow
+
+    def test_assert_recipe_wires_assert_ip(self, tmp_path: Path) -> None:
+        """assert recipe copies the assertion IP and its schedule."""
+        base = _make_base_dir(tmp_path)
+        exp_dir = _run_scaffold(base, output_dir="assert_exp", instrumentation="assert")
+
+        assert (exp_dir / "IPs" / "sodaInstrAssertLessThen.v").exists()
+        xfm = (exp_dir / "transform.mlir").read_text()
+        assert "soda-instr-scf-for-assert-bounds" in xfm
+
+    def test_unknown_recipe_raises(self, tmp_path: Path) -> None:
+        """An unknown recipe name is rejected."""
+        base = _make_base_dir(tmp_path)
+        with pytest.raises(ValueError):
+            _run_scaffold(base, output_dir="bad_recipe", instrumentation="nope")
+
+    def test_available_recipes_includes_seeded(self, tmp_path: Path) -> None:
+        """The recipe library exposes the seeded recipes plus the none sentinel."""
+        from sb_cli.recipes import available_recipes
+
+        recipes = available_recipes()
+        assert "none" in recipes
+        assert "hw-counters" in recipes
+        assert "assert" in recipes
+
+
+# ---------------------------------------------------------------------------
 # Registry tests
 # ---------------------------------------------------------------------------
 
@@ -681,6 +758,19 @@ class TestFork:
             ".gitignore",
         ]:
             assert (fork_dir / fname).exists(), f"Missing in fork: {fname}"
+
+    def test_fork_carries_instrumentation_ips(self, tmp_path: Path) -> None:
+        """Forking an instrumented experiment copies its IPs/ directory."""
+        from sb_cli.fork import fork_experiment
+
+        base = _make_base_dir(tmp_path)
+        _run_scaffold(base, output_dir="instr_src", instrumentation="hw-counters")
+
+        fork_experiment("instr_src", "instr_fork", base)
+
+        fork_dir = (base / "experiments" / "instr_fork").resolve()
+        assert (fork_dir / "IPs" / "sodaInstrHWCounters.v").exists()
+        assert (fork_dir / "IPs" / "module_lib.xml").exists()
 
     def test_fork_no_output_dir(self, tmp_path: Path) -> None:
         """Forked experiment has no output/ directory."""
@@ -940,3 +1030,103 @@ class TestCollect:
         assert "experiment" in data
         assert "metrics" in data
         assert data["experiment"] == exp_dir.name
+
+    # -- fixture bambu-log, modeled on hwCounters/output/bambu/transformed/
+    # bambu-log under examples/soda-plugins/examples/instrumentation/
+    _FIXTURE_BAMBU_LOG = """\
+  Total number of flip-flops in function __internal_malloc: 824
+    Total estimated area: 136374
+  Total number of flip-flops in function forward_kernel: 9911
+
+  Summary of resources:
+     - MUX_GATE: 470
+  Total cells    : 4334
+[SW] HW counter STARTED at loc: 4
+[SW] HW counter STOPED at loc: 4
+[HW] sodaInstrHWCounters: location 0000000000000004 count         99
+[HW] sodaInstrHWCounters: location 0000000000000004 count        106
+[HW] sodaInstrHWCounters: location 0000000000000005 count         51
+sodaInstrAssertLessThen: 0000000000000003 < 000000000000000a ? true
+sodaInstrAssertLessThen: 000000000000000a < 0000000000000003 ? false
+Sim: Testbench returned: 0
+Run 1 execution time 14028 cycles;
+  Total cycles             : 14028 cycles
+  Number of executions     : 1
+  Average execution        : 14028 cycles
+"""
+
+    def _make_experiment_with_bambu_log(self, base: Path, name: str) -> Path:
+        """Create a scaffolded experiment with a synthetic bambu-log fixture."""
+        exp_dir = _run_scaffold(base, output_dir=name)
+        log_dir = exp_dir / "output" / "bambu" / "transformed"
+        log_dir.mkdir(parents=True)
+        (log_dir / "bambu-log").write_text(self._FIXTURE_BAMBU_LOG, encoding="utf-8")
+        return exp_dir
+
+    def test_collect_simulation_cycles(self, tmp_path: Path) -> None:
+        """simulation_cycles collector extracts the Bambu 'Total cycles' line."""
+        import json as _json
+
+        from sb_cli.collect import collect_command
+
+        base = _make_base_dir(tmp_path)
+        exp_dir = self._make_experiment_with_bambu_log(base, "cycles_exp")
+
+        collect_command("cycles_exp", base)
+
+        data = _json.loads((exp_dir / "output" / "metrics.json").read_text())
+        cycles = data["metrics"]["simulation_cycles"]
+        assert len(cycles) == 1
+        assert next(iter(cycles.values())) == 14028
+
+    def test_collect_resource_usage(self, tmp_path: Path) -> None:
+        """resource_usage collector extracts flip-flops/area/cells from the log."""
+        import json as _json
+
+        from sb_cli.collect import collect_command
+
+        base = _make_base_dir(tmp_path)
+        exp_dir = self._make_experiment_with_bambu_log(base, "resource_exp")
+
+        collect_command("resource_exp", base)
+
+        data = _json.loads((exp_dir / "output" / "metrics.json").read_text())
+        resources = next(iter(data["metrics"]["resource_usage"].values()))
+        assert resources["top_function"] == "forward_kernel"
+        assert resources["top_function_flip_flops"] == 9911
+        assert resources["flip_flops_by_function"]["__internal_malloc"] == 824
+        assert resources["total_cells"] == 4334
+
+    def test_collect_instrumentation_events(self, tmp_path: Path) -> None:
+        """instrumentation_events collector summarizes counter/assertion prints."""
+        import json as _json
+
+        from sb_cli.collect import collect_command
+
+        base = _make_base_dir(tmp_path)
+        exp_dir = self._make_experiment_with_bambu_log(base, "events_exp")
+
+        collect_command("events_exp", base)
+
+        data = _json.loads((exp_dir / "output" / "metrics.json").read_text())
+        events = next(iter(data["metrics"]["instrumentation_events"].values()))
+        assert events["hw_counter_final_count_by_location"]["4"] == 106
+        assert events["hw_counter_final_count_by_location"]["5"] == 51
+        assert events["sw_counter_event_counts"] == {"STARTED": 1, "STOPED": 1}
+        assert events["assertion_results"] == {"true": 1, "false": 1}
+        assert events["assertion_total"] == 2
+
+    def test_collect_bambu_log_missing_returns_empty(self, tmp_path: Path) -> None:
+        """New Bambu-log collectors are empty (not raising) when no log exists."""
+        import json as _json
+
+        from sb_cli.collect import collect_command
+
+        base = _make_base_dir(tmp_path)
+        exp_dir = _run_scaffold(base, output_dir="no_log_exp")
+
+        collect_command("no_log_exp", base)
+
+        data = _json.loads((exp_dir / "output" / "metrics.json").read_text())
+        for key in ["simulation_cycles", "resource_usage", "instrumentation_events"]:
+            assert data["metrics"][key] == {}
