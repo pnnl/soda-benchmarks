@@ -1,4 +1,5 @@
 add_mlir_dialect_library(MLIRSODAP
+        APEPasses.cpp
         GenerateLinalgSummary.cpp
         MyExtension.cpp
         ViewOpGraph.cpp

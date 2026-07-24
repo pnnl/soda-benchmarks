@@ -9,6 +9,7 @@
 #define SODAP_SODAPPASSES_H
 
 #include "mlir/Pass/Pass.h"
+#include "mlir/Pass/PassManager.h"
 // #include "sodap/SODAPDialect.h"
 // #include "sodap/SODAPOps.h"
 #include <memory>
@@ -23,6 +24,11 @@ namespace sodap {
 
 /// Creates a pass to print op graphs.
 std::unique_ptr<Pass> createPrintOpGraphPass(raw_ostream &os = llvm::errs());
+
+/// Adds the APE pipeline in canonical order:
+///   1) linalg metadata analysis
+///   2) affine insertion (to run after lowering to affine)
+void populateAPE(OpPassManager &pm);
 
 #define GEN_PASS_REGISTRATION
 #include "sodap/SODAPPasses.h.inc"

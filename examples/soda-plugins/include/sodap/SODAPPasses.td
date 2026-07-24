@@ -177,6 +177,30 @@ def InstrMatrixAccessTrace : Pass<"soda-instr-matrix-access-trace"> {
   }];
 }
 
+def LinalgAPEAnalysis : Pass<"soda-linalg-ape-analysis"> {
+  let summary = "Analyze linalg tensor access and attach ape.tensor_info metadata";
+  let description = [{
+    Runs at the linalg level and annotates linalg ops / memref values with
+    `ape.tensor_info` dictionaries containing shape, stride, indexing map,
+    access kind, vectorization heuristic, and prefetch guidance.
+
+    The pass also ensures a declaration of `@issue_APE_request` exists in the
+    module so downstream passes can emit calls consistently.
+  }];
+}
+
+def AffineAPEInsertion : Pass<"soda-affine-ape-insertion"> {
+  let summary = "Insert issue_APE_request calls near affine memory operations";
+  let description = [{
+    Runs after lowering to affine loops. For each `affine.load`/`affine.store`,
+    determines the surrounding loop context and inserts calls to
+    `@issue_APE_request` at the chosen loop level.
+
+    The pass avoids duplicate calls for the same tensor at a given loop level
+    and pads missing loop-IV arguments with zero constants.
+  }];
+}
+
 def LinalgBatchMatmulToESP : Pass<"sodap-linalg-batch-matmul-to-esp", "::mlir::ModuleOp"> {
   let summary = "Replace linalg.batch_matmul with ESP accelerator runtime calls";
   let description = [{
