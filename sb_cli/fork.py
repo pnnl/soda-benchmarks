@@ -56,6 +56,7 @@ def fork_experiment(from_name_or_path: str, output_dir: str, base_dir: Path) -> 
 
     # Check symlink target does not already exist
     from sb_cli.init import _create_symlink
+
     _create_symlink(new_dir, output_dir, base_dir)
 
     # Hard-copy tracked files

@@ -2,11 +2,11 @@
 
 The canonical implementations now live in
 PolyBenchPyTorch.linear_algebra.utils. This module re-exports them so that
-existing code importing from PolyBenchPyTorch.linear_algebra.blas.utils
+existing code importing from benches.PolyBenchPyTorch.linear_algebra.blas.utils
 continues to work without modification.
 """
 
-from PolyBenchPyTorch.linear_algebra.utils import (  # noqa: F401
+from benches.PolyBenchPyTorch.linear_algebra.utils import (  # noqa: F401
     gemm_init_array,
     get_dataset_dimensions,
 )

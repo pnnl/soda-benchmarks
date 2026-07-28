@@ -1,10 +1,27 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "soda-benchmarks"
 version = "0.1.0"
 requires-python = ">=3.11"
+# No dependencies on purpose: torch and the MLIR/SODA bindings are installed in
+# the container and reach Python through pixi.toml's PYTHONPATH, not from PyPI.
 
 [project.scripts]
 sb-cli = "sb_cli.__main__:main"
+
+# Flat layout: sb_cli/ and benches/ sit at the repo root and ship as one
+# distribution. namespaces = false collects only directories with an
+# __init__.py, which already skips benches/experiments/, benches/tests/, and
+# benches/PolyBenchC-4.2.1/.
+[tool.setuptools.packages.find]
+include = ["sb_cli*", "benches*"]
+namespaces = false
+
+[tool.setuptools.package-data]
+"sb_cli.templates" = ["*.tmpl"]
 
 [tool.ruff]
 line-length = 88

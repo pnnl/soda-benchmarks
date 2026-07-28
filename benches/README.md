@@ -57,8 +57,11 @@ either:
    ```
 
 2. **Implement `foo.py`** following the pattern of any existing kernel:
-   - Import shared utilities from `PolyBenchPyTorch.linear_algebra.utils`
-     (with the `ImportError` fallback for standalone execution).
+   - Import shared utilities from
+     `benches.PolyBenchPyTorch.linear_algebra.utils`. Always spell imports with
+     the `benches.` prefix — an unqualified `PolyBenchPyTorch...` only resolves
+     when the interpreter starts inside `benches/`, and loads a second,
+     unrelated copy of the same modules.
    - Define a `get_dataset_dimensions` function — 1-arg for `kernels/`,
      2-arg for `blas/` (see memory notes for the distinction).
    - Implement the kernel as an `nn.Module` subclass with a `forward()` method.
@@ -132,11 +135,14 @@ package tree, its own utils, its own dataset registry.
 # sb-cli — Experiment Scaffolding CLI
 
 `sb-cli` automates the creation of hardware synthesis experiment folders from
-any PolyBench (or future benchmark) kernel. `sb-cli` is run from `benches/`
-(it resolves `experiments/` relative to the current working directory):
+any PolyBench (or future benchmark) kernel. It can be run from any directory —
+it locates `benches/experiments/` through the imported `benches` package, not
+through the current working directory. Use `--base_dir` to point it elsewhere.
+
+List the benchmarks it accepts with `pixi run sb-cli list`. `--benchmark_name`
+takes either the short name (`gemm`) or the full dotted path:
 
 ```bash
-cd benches
 pixi run sb-cli init \
   --benchmark_name PolyBenchPyTorch.linear_algebra.blas.gemm \
   --dataset MEDIUM \
@@ -183,15 +189,20 @@ Results are written to `experiments/<name>/output/metrics.json`.
 
 # Common tasks
 
-- List available kernels: inspect `PolyBenchPyTorch/` or run `pixi run test`.
-- Run a single kernel standalone to produce MLIR output:
+- List available kernels: `pixi run sb-cli list`.
+- Run a single kernel standalone to produce MLIR output (from the repo root):
   ```bash
-  python PolyBenchPyTorch/linear_algebra/blas/gemm/gemm.py output/gemm.mlir \
-      --dialect tosa --dataset SMALL --dtype float32
+  pixi run python -m benches.PolyBenchPyTorch.linear_algebra.blas.gemm.gemm \
+      output/gemm.mlir --dialect tosa --dataset SMALL --dtype float32
   ```
 
 # Troubleshooting
 
+- If `import benches` or `import sb_cli` fails, run `pixi install`. Both come
+  from an editable install of this repo (declared in `pyproject.toml` and
+  `pixi.toml`'s `[pypi-dependencies]`) — they are deliberately **not** on
+  `PYTHONPATH`, which is reserved for dependencies installed outside the pixi
+  environment.
 - If MLIR generation fails while importing MLIR/PyTorch conversion bindings, verify the root `pixi.toml`'s `PYTHONPATH` includes the SODA/torch-mlir python packages and that they are built/installed in this container.
 - If PyTorch is missing or the wrong version is installed, create a virtual environment and install a compatible torch wheel from https://pytorch.org.
 - **torch-mlir status**: MLIR generation requires torch-mlir, which is currently deferred for aarch64 platforms. The kernel implementations are complete and functional for PyTorch execution. torch-mlir can be built from source when needed for MLIR compilation.

@@ -14,12 +14,10 @@ import importlib
 import os
 import sys
 
-# ---------------------------------------------------------------------------
-# Ensure the repository root is on sys.path so package imports resolve.
-# ---------------------------------------------------------------------------
-repo_root = os.path.abspath(os.path.dirname(__file__))
-if repo_root not in sys.path:
-    sys.path.insert(0, repo_root)
+import benches
+
+# Generated MLIR goes to benches/output/
+OUTPUT_ROOT = str(benches.ROOT)
 
 DATASET = os.environ.get("POLYBENCH_DATASET", "MINI")
 
@@ -30,27 +28,27 @@ DATASET = os.environ.get("POLYBENCH_DATASET", "MINI")
 # kernels for consistency. The __init__.py files in each subdirectory make
 # these proper package imports — no file-path fallback needed.
 # ---------------------------------------------------------------------------
-k2mm     = importlib.import_module("PolyBenchPyTorch.linear_algebra.kernels.twomm.twomm")
-k3mm     = importlib.import_module("PolyBenchPyTorch.linear_algebra.kernels.threemm.threemm")
-katax    = importlib.import_module("PolyBenchPyTorch.linear_algebra.kernels.atax.atax")
-kbicg    = importlib.import_module("PolyBenchPyTorch.linear_algebra.kernels.bicg.bicg")
-kdoit    = importlib.import_module("PolyBenchPyTorch.linear_algebra.kernels.doitgen.doitgen")
-kmvt     = importlib.import_module("PolyBenchPyTorch.linear_algebra.kernels.mvt.mvt")
+k2mm     = importlib.import_module("benches.PolyBenchPyTorch.linear_algebra.kernels.twomm.twomm")
+k3mm     = importlib.import_module("benches.PolyBenchPyTorch.linear_algebra.kernels.threemm.threemm")
+katax    = importlib.import_module("benches.PolyBenchPyTorch.linear_algebra.kernels.atax.atax")
+kbicg    = importlib.import_module("benches.PolyBenchPyTorch.linear_algebra.kernels.bicg.bicg")
+kdoit    = importlib.import_module("benches.PolyBenchPyTorch.linear_algebra.kernels.doitgen.doitgen")
+kmvt     = importlib.import_module("benches.PolyBenchPyTorch.linear_algebra.kernels.mvt.mvt")
 
-kgemm    = importlib.import_module("PolyBenchPyTorch.linear_algebra.blas.gemm.gemm")
-kgemver  = importlib.import_module("PolyBenchPyTorch.linear_algebra.blas.gemver.gemver")
-kgesummv = importlib.import_module("PolyBenchPyTorch.linear_algebra.blas.gesummv.gesummv")
-ksymm    = importlib.import_module("PolyBenchPyTorch.linear_algebra.blas.symm.symm")
-ksyr2k   = importlib.import_module("PolyBenchPyTorch.linear_algebra.blas.syr2k.syr2k")
-ksyrk    = importlib.import_module("PolyBenchPyTorch.linear_algebra.blas.syrk.syrk")
-ktrmm    = importlib.import_module("PolyBenchPyTorch.linear_algebra.blas.trmm.trmm")
+kgemm    = importlib.import_module("benches.PolyBenchPyTorch.linear_algebra.blas.gemm.gemm")
+kgemver  = importlib.import_module("benches.PolyBenchPyTorch.linear_algebra.blas.gemver.gemver")
+kgesummv = importlib.import_module("benches.PolyBenchPyTorch.linear_algebra.blas.gesummv.gesummv")
+ksymm    = importlib.import_module("benches.PolyBenchPyTorch.linear_algebra.blas.symm.symm")
+ksyr2k   = importlib.import_module("benches.PolyBenchPyTorch.linear_algebra.blas.syr2k.syr2k")
+ksyrk    = importlib.import_module("benches.PolyBenchPyTorch.linear_algebra.blas.syrk.syrk")
+ktrmm    = importlib.import_module("benches.PolyBenchPyTorch.linear_algebra.blas.trmm.trmm")
 
 
 def save_mlir_output(kernel_name, model, *init_args):
     """Compile kernel to MLIR (TOSA dialect) and write to output/."""
     from torch_mlir import torchscript  # type: ignore
     mlir_module = torchscript.compile(model, init_args, output_type="tosa", use_tracing=True)
-    output_dir = os.path.join(repo_root, "output")
+    output_dir = os.path.join(OUTPUT_ROOT, "output")
     os.makedirs(output_dir, exist_ok=True)
     output_path = os.path.join(output_dir, f"{kernel_name}_tosa.mlir")
     with open(output_path, "w", encoding="utf-8") as f:

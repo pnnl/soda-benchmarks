@@ -60,8 +60,12 @@ class TestInit:
 
         # All six files present
         for fname in [
-            "torchscript.py", "flow.py", "Makefile",
-            "transform.mlir", "README.md", ".gitignore",
+            "torchscript.py",
+            "flow.py",
+            "Makefile",
+            "transform.mlir",
+            "README.md",
+            ".gitignore",
         ]:
             assert (exp_dir / fname).exists(), f"Missing: {fname}"
 
@@ -142,6 +146,7 @@ class TestInit:
         assert exp_dir.parent == base / "experiments"
         # Timestamp dirs match YYYY_MM_DD_HH_MM_SS pattern
         import re
+
         assert re.match(r"\d{4}_\d{2}_\d{2}_\d{2}_\d{2}_\d{2}", exp_dir.name)
 
     def test_init_registry_appended(self, tmp_path: Path) -> None:
@@ -151,6 +156,7 @@ class TestInit:
         _run_scaffold(base, output_dir="exp_b")
 
         from sb_cli.registry import Registry
+
         reg = Registry(base)
         experiments = reg.load()
         assert "exp_a" in experiments
@@ -193,9 +199,7 @@ class TestInit:
         assert "generate_mlir" in ts
         assert "class MM" not in ts
 
-    def test_init_benchmark_name_imports_kernel_submodule(
-        self, tmp_path: Path
-    ) -> None:
+    def test_init_benchmark_name_imports_kernel_submodule(self, tmp_path: Path) -> None:
         """The generated import targets the kernel's implementation submodule.
 
         Kernel packages (e.g. `...blas.gemm`) have an empty `__init__.py`;
@@ -213,8 +217,66 @@ class TestInit:
 
         ts = (exp_dir / "torchscript.py").read_text()
         assert (
-            "from PolyBenchPyTorch.linear_algebra.blas.gemm.gemm "
+            "from benches.PolyBenchPyTorch.linear_algebra.blas.gemm.gemm "
             "import Gemm, init_array" in ts
+        )
+
+    def test_init_accepts_short_benchmark_name(self, tmp_path: Path) -> None:
+        """A catalog short name resolves to the same kernel as the long path."""
+        base = _make_base_dir(tmp_path)
+        short = _run_scaffold(base, output_dir="short_exp", benchmark_name="gemm")
+        long = _run_scaffold(
+            base,
+            output_dir="long_exp",
+            benchmark_name="PolyBenchPyTorch.linear_algebra.blas.gemm",
+        )
+
+        short_ts = (short / "torchscript.py").read_text()
+        assert "import Gemm, init_array" in short_ts
+        # Only the docstring header differs (it echoes benchmark_name verbatim)
+        assert "from benches.PolyBenchPyTorch" in short_ts
+        assert "from benches.PolyBenchPyTorch" in (long / "torchscript.py").read_text()
+
+    def test_generated_torchscript_imports_resolve_from_any_cwd(
+        self, tmp_path: Path
+    ) -> None:
+        """The generated torchscript.py imports must not depend on the cwd.
+
+        It is executed from experiments/<name>/ by the generated Makefile, so a
+        kernel path that only resolves inside benches/ fails at runtime with
+        ModuleNotFoundError. Runs the file's own import statements in a
+        subprocess from an unrelated directory.
+        """
+        import ast
+        import subprocess
+        import sys
+
+        base = _make_base_dir(tmp_path)
+        exp_dir = _run_scaffold(
+            base,
+            output_dir="cwd_exp",
+            benchmark_name="PolyBenchPyTorch.linear_algebra.blas.gemm",
+        )
+
+        source = (exp_dir / "torchscript.py").read_text()
+        tree = ast.parse(source)
+        imports = "\n".join(
+            ast.unparse(node)
+            for node in tree.body
+            if isinstance(node, ast.Import | ast.ImportFrom)
+        )
+        assert "benches" in imports, "generated imports are not fully qualified"
+
+        # Inherits the real environment (the repo is installed editable), so a
+        # failure here means the imports were cwd-dependent, nothing else.
+        result = subprocess.run(
+            [sys.executable, "-c", imports],
+            cwd=tmp_path,
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0, (
+            f"generated imports failed from cwd={tmp_path}:\n{result.stderr}"
         )
 
     def test_init_duplicate_output_dir_exits(self, tmp_path: Path) -> None:
@@ -391,8 +453,12 @@ class TestFork:
         fork_dir = symlink.resolve()
 
         for fname in [
-            "torchscript.py", "flow.py", "Makefile",
-            "transform.mlir", "README.md", ".gitignore",
+            "torchscript.py",
+            "flow.py",
+            "Makefile",
+            "transform.mlir",
+            "README.md",
+            ".gitignore",
         ]:
             assert (fork_dir / fname).exists(), f"Missing in fork: {fname}"
 

@@ -30,29 +30,14 @@ import argparse
 import torch
 import torch.nn as nn
 
-try:
-    from PolyBenchPyTorch.linear_algebra.utils import (
-        generate_mlir,
-        make_parser,
-        resolve_dtype,
-    )
-    from PolyBenchPyTorch.linear_algebra.utils import (
-        get_dataset_dimensions as _get_dataset_dimensions,
-    )
-except ImportError:
-    import importlib.util
-    import os as _os
-
-    _p = _os.path.abspath(
-        _os.path.join(_os.path.dirname(__file__), "..", "..", "utils.py")
-    )
-    _spec = importlib.util.spec_from_file_location("la_utils", _p)
-    _mod = importlib.util.module_from_spec(_spec)
-    _spec.loader.exec_module(_mod)
-    make_parser = _mod.make_parser
-    _get_dataset_dimensions = _mod.get_dataset_dimensions
-    resolve_dtype = _mod.resolve_dtype
-    generate_mlir = _mod.generate_mlir
+from benches.PolyBenchPyTorch.linear_algebra.utils import (
+    generate_mlir,
+    make_parser,
+    resolve_dtype,
+)
+from benches.PolyBenchPyTorch.linear_algebra.utils import (
+    get_dataset_dimensions as _get_dataset_dimensions,
+)
 
 
 def get_dataset_dimensions(dataset: str) -> dict:

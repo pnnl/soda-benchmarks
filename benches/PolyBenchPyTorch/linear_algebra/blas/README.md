@@ -28,10 +28,10 @@ Each kernel can be run directly to produce MLIR output:
 
 ```bash
 # Default: TOSA dialect, MINI dataset, float32
-python PolyBenchPyTorch/linear_algebra/blas/gemm/gemm.py output/gemm.mlir
+pixi run python -m benches.PolyBenchPyTorch.linear_algebra.blas.gemm.gemm output/gemm.mlir
 
 # With options
-python PolyBenchPyTorch/linear_algebra/blas/gemm/gemm.py output/gemm.mlir \
+pixi run python -m benches.PolyBenchPyTorch.linear_algebra.blas.gemm.gemm output/gemm.mlir \
     --dialect tosa --dataset SMALL --dtype float32
 ```
 

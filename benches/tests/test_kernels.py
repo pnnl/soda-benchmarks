@@ -24,13 +24,16 @@ def test_sb_cli_imports() -> None:
     importlib.import_module("sb_cli.collect")
     importlib.import_module("sb_cli.templates")
 
+
 # ---------------------------------------------------------------------------
 # Linear-algebra kernels
 # ---------------------------------------------------------------------------
 
 
 def test_2mm(dataset):
-    k = importlib.import_module("PolyBenchPyTorch.linear_algebra.kernels.twomm.twomm")
+    k = importlib.import_module(
+        "benches.PolyBenchPyTorch.linear_algebra.kernels.twomm.twomm"
+    )
     dims = k.get_dataset_dimensions(dataset)
     model = k.TwoMM(dims["ni"], dims["nj"], dims["nk"], dims["nl"])
     alpha, beta, A, B, C, D = k.init_array(
@@ -41,7 +44,9 @@ def test_2mm(dataset):
 
 
 def test_3mm(dataset):
-    k = importlib.import_module("PolyBenchPyTorch.linear_algebra.kernels.threemm.threemm")
+    k = importlib.import_module(
+        "benches.PolyBenchPyTorch.linear_algebra.kernels.threemm.threemm"
+    )
     dims = k.get_dataset_dimensions(dataset)
     model = k.ThreeMM(dims["ni"], dims["nj"], dims["nk"], dims["nl"], dims["nm"])
     A, B, C, D = k.init_array(
@@ -52,7 +57,9 @@ def test_3mm(dataset):
 
 
 def test_atax(dataset):
-    k = importlib.import_module("PolyBenchPyTorch.linear_algebra.kernels.atax.atax")
+    k = importlib.import_module(
+        "benches.PolyBenchPyTorch.linear_algebra.kernels.atax.atax"
+    )
     dims = k.get_dataset_dimensions(dataset)
     model = k.Atax(dims["m"], dims["n"])
     A, x = k.init_array(dims["m"], dims["n"])
@@ -61,7 +68,9 @@ def test_atax(dataset):
 
 
 def test_bicg(dataset):
-    k = importlib.import_module("PolyBenchPyTorch.linear_algebra.kernels.bicg.bicg")
+    k = importlib.import_module(
+        "benches.PolyBenchPyTorch.linear_algebra.kernels.bicg.bicg"
+    )
     dims = k.get_dataset_dimensions(dataset)
     model = k.Bicg(dims["m"], dims["n"])
     A, r, p = k.init_array(dims["m"], dims["n"])
@@ -72,7 +81,7 @@ def test_bicg(dataset):
 
 def test_doitgen(dataset):
     k = importlib.import_module(
-        "PolyBenchPyTorch.linear_algebra.kernels.doitgen.doitgen"
+        "benches.PolyBenchPyTorch.linear_algebra.kernels.doitgen.doitgen"
     )
     dims = k.get_dataset_dimensions(dataset)
     model = k.Doitgen(dims["nr"], dims["nq"], dims["np"])
@@ -82,7 +91,9 @@ def test_doitgen(dataset):
 
 
 def test_mvt(dataset):
-    k = importlib.import_module("PolyBenchPyTorch.linear_algebra.kernels.mvt.mvt")
+    k = importlib.import_module(
+        "benches.PolyBenchPyTorch.linear_algebra.kernels.mvt.mvt"
+    )
     dims = k.get_dataset_dimensions(dataset)
     model = k.Mvt(dims["n"])
     A, x1, x2, y_1, y_2 = k.init_array(dims["n"])
@@ -97,7 +108,9 @@ def test_mvt(dataset):
 
 
 def test_gemm(dataset):
-    k = importlib.import_module("PolyBenchPyTorch.linear_algebra.blas.gemm.gemm")
+    k = importlib.import_module(
+        "benches.PolyBenchPyTorch.linear_algebra.blas.gemm.gemm"
+    )
     dims = k.get_dataset_dimensions("gemm", dataset)
     model = k.Gemm(dims["ni"], dims["nj"], dims["nk"])
     alpha, beta, A, B, C = k.init_array(dims["ni"], dims["nj"], dims["nk"])
@@ -106,7 +119,9 @@ def test_gemm(dataset):
 
 
 def test_gemver(dataset):
-    k = importlib.import_module("PolyBenchPyTorch.linear_algebra.blas.gemver.gemver")
+    k = importlib.import_module(
+        "benches.PolyBenchPyTorch.linear_algebra.blas.gemver.gemver"
+    )
     dims = k.get_dataset_dimensions("gemver", dataset)
     model = k.Gemver(dims["n"])
     alpha, beta, A, u1, v1, u2, v2, x, y, z, w = k.init_array(dims["n"])
@@ -115,7 +130,9 @@ def test_gemver(dataset):
 
 
 def test_gesummv(dataset):
-    k = importlib.import_module("PolyBenchPyTorch.linear_algebra.blas.gesummv.gesummv")
+    k = importlib.import_module(
+        "benches.PolyBenchPyTorch.linear_algebra.blas.gesummv.gesummv"
+    )
     dims = k.get_dataset_dimensions("gesummv", dataset)
     model = k.Gesummv(dims["n"])
     alpha, beta, A, B, x = k.init_array(dims["n"])
@@ -124,7 +141,9 @@ def test_gesummv(dataset):
 
 
 def test_symm(dataset):
-    k = importlib.import_module("PolyBenchPyTorch.linear_algebra.blas.symm.symm")
+    k = importlib.import_module(
+        "benches.PolyBenchPyTorch.linear_algebra.blas.symm.symm"
+    )
     dims = k.get_dataset_dimensions("symm", dataset)
     model = k.Symm(dims["m"], dims["n"])
     alpha, beta, A, B, C = k.init_array(dims["m"], dims["n"])
@@ -133,7 +152,9 @@ def test_symm(dataset):
 
 
 def test_syr2k(dataset):
-    k = importlib.import_module("PolyBenchPyTorch.linear_algebra.blas.syr2k.syr2k")
+    k = importlib.import_module(
+        "benches.PolyBenchPyTorch.linear_algebra.blas.syr2k.syr2k"
+    )
     dims = k.get_dataset_dimensions("syr2k", dataset)
     model = k.Syr2k(dims["n"], dims["m"])
     alpha, beta, A, B, C = k.init_array(dims["n"], dims["m"])
@@ -142,7 +163,9 @@ def test_syr2k(dataset):
 
 
 def test_syrk(dataset):
-    k = importlib.import_module("PolyBenchPyTorch.linear_algebra.blas.syrk.syrk")
+    k = importlib.import_module(
+        "benches.PolyBenchPyTorch.linear_algebra.blas.syrk.syrk"
+    )
     dims = k.get_dataset_dimensions("syrk", dataset)
     model = k.Syrk(dims["n"], dims["m"])
     alpha, beta, A, C = k.init_array(dims["n"], dims["m"])
@@ -151,7 +174,9 @@ def test_syrk(dataset):
 
 
 def test_trmm(dataset):
-    k = importlib.import_module("PolyBenchPyTorch.linear_algebra.blas.trmm.trmm")
+    k = importlib.import_module(
+        "benches.PolyBenchPyTorch.linear_algebra.blas.trmm.trmm"
+    )
     dims = k.get_dataset_dimensions("trmm", dataset)
     model = k.Trmm(dims["m"], dims["n"])
     alpha, A, B = k.init_array(dims["m"], dims["n"])

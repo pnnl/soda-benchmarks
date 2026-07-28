@@ -47,7 +47,6 @@ make TARGET=output/bambu/baseline/06_verilog.v
 To create a variant (e.g., with a different transform.mlir):
 
 ```bash
-cd ../../..   # back to benches/
 sb-cli fork --from $experiment_name --output_dir ${experiment_name}_variant
 ```
 
@@ -65,7 +64,6 @@ After running, `output/` will contain:
 ## Collect Metrics
 
 ```bash
-cd ../../..   # back to benches/
 sb-cli collect --from $experiment_name
 cat output/metrics.json
 ```

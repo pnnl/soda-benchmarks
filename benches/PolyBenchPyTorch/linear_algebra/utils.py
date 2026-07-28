@@ -212,7 +212,8 @@ def get_dataset_dimensions(kernel: str, dataset: str) -> dict[str, int]:
 
     Args:
         kernel: Lowercase kernel name (e.g. 'gemm', 'twomm', 'atax').
-        dataset: Dataset size string — one of TEST, MINI, SMALL, MEDIUM, LARGE, EXTRALARGE.
+        dataset: Dataset size string — one of TEST, MINI, SMALL, MEDIUM,
+            LARGE, EXTRALARGE.
 
     Returns:
         Dictionary mapping dimension names to integer values.
