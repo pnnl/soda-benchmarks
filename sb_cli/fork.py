@@ -22,18 +22,21 @@ _TRACKED_FILES = [
 ]
 
 
-def fork_experiment(from_name_or_path: str, output_dir: str, base_dir: Path) -> Path:
+def fork_experiment(
+    from_name_or_path: str, output_dir: str | None, base_dir: Path
+) -> Path:
     """Fork an existing experiment into a new directory.
 
     Args:
         from_name_or_path: Registered experiment name or filesystem path.
-        output_dir: Logical name for the new experiment.
+        output_dir: Logical name for the new experiment. When None, it is
+            derived from the source name with a `-NNN` counter appended.
         base_dir: Base directory (benches/).
 
     Returns:
         Path to the new timestamped experiment directory.
     """
-    from sb_cli.init import _timestamp
+    from sb_cli.init import _timestamp, next_available_name
 
     registry = Registry(base_dir)
 
@@ -42,13 +45,21 @@ def fork_experiment(from_name_or_path: str, output_dir: str, base_dir: Path) -> 
 
     # Determine whether it was found in registry
     experiments = registry.load()
-    if from_name_or_path in experiments:
+    from_registry = from_name_or_path in experiments
+    if from_registry:
         print(
             f"[sb-cli] Forking from: {from_name_or_path} "
             f"(resolved via registry → {source_dir})"
         )
     else:
         print(f"[sb-cli] Forking from: {source_dir} (resolved via path)")
+
+    # Named after the source, so repeated forks of one experiment form a series.
+    # Done before anything is created, so a failure leaves no empty directory.
+    if output_dir is None:
+        stem = from_name_or_path if from_registry else source_dir.name
+        output_dir = next_available_name(stem, base_dir)
+        print(f"[sb-cli] Auto-named fork: {output_dir}")
 
     ts = _timestamp(base_dir)
     new_dir = base_dir / "experiments" / ts

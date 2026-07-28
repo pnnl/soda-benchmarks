@@ -39,8 +39,12 @@ def _add_init_parser(
     )
     p.add_argument(
         "--output_dir",
-        required=True,
-        help="Logical name for the experiment (symlink name)",
+        default=None,
+        help=(
+            "Logical name for the experiment (symlink name). Defaults to "
+            "<benchmark>-<dataset>-<dtype>, with a -NNN counter appended if "
+            "that name is taken; requires --benchmark_name"
+        ),
     )
     p.add_argument(
         "--benchmark_name",
@@ -72,8 +76,11 @@ def _add_fork_parser(
     )
     p.add_argument(
         "--output_dir",
-        required=True,
-        help="Logical name for the new experiment",
+        default=None,
+        help=(
+            "Logical name for the new experiment. Defaults to the --from name "
+            "with the first free -NNN counter appended"
+        ),
     )
 
 

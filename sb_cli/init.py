@@ -7,6 +7,7 @@ the experiment in experiments/registry.py.
 
 from __future__ import annotations
 
+import re
 from datetime import datetime
 from pathlib import Path
 
@@ -24,6 +25,111 @@ _GENERATED_FILES = [
     "README.md",
     ".gitignore",
 ]
+
+
+# Trailing "-000" style counter appended to auto-generated experiment names
+_COUNTER_SUFFIX = re.compile(r"-\d{3}$")
+_MAX_COUNTER = 1000
+
+
+def default_experiment_name(config: ExperimentConfig, bench: catalog.Benchmark) -> str:
+    """Return the auto-generated name for an experiment, e.g. `gemm-MINI-float32`.
+
+    Args:
+        config: ExperimentConfig supplying dataset and dtype.
+        bench: Resolved benchmark, whose `name` is already the short kernel name.
+
+    Returns:
+        The `<benchmark>-<dataset>-<dtype>` name.
+    """
+    return f"{bench.name}-{config.dataset}-{config.dtype}"
+
+
+def name_is_free(name: str, base_dir: Path) -> bool:
+    """Return True if `name` is claimed by neither the registry nor experiments/.
+
+    Both are checked because they can disagree: a registry entry may outlive its
+    directory, and `experiments/<name>` may be a symlink whose target is gone.
+
+    Args:
+        name: Candidate experiment name.
+        base_dir: Base directory (benches/).
+
+    Returns:
+        True if the name is available.
+    """
+    path = base_dir / "experiments" / name
+    if path.exists() or path.is_symlink():
+        return False
+    return name not in Registry(base_dir).load()
+
+
+def next_available_name(stem: str, base_dir: Path) -> str:
+    """Return `<stem>-NNN` with the first free three-digit counter.
+
+    Any counter already on `stem` is stripped first, so forking a fork continues
+    one flat series (`foo-000` -> `foo-001`) instead of nesting (`foo-000-000`).
+
+    Args:
+        stem: Base name to append the counter to.
+        base_dir: Base directory (benches/).
+
+    Returns:
+        The first available `<stem>-NNN` name.
+
+    Raises:
+        SystemExit: If every counter from 000 to 999 is taken.
+    """
+    stem = _COUNTER_SUFFIX.sub("", stem)
+    for counter in range(_MAX_COUNTER):
+        candidate = f"{stem}-{counter:03d}"
+        if name_is_free(candidate, base_dir):
+            return candidate
+    print(
+        f"[sb-cli] ERROR: no free name for '{stem}': all counters "
+        f"000-{_MAX_COUNTER - 1:03d} are taken. Pass --output_dir explicitly."
+    )
+    raise SystemExit(1)
+
+
+def _resolve_output_dir(
+    output_dir: str | None,
+    config: ExperimentConfig,
+    bench: catalog.Benchmark | None,
+    base_dir: Path,
+) -> str:
+    """Return the experiment name, deriving one when --output_dir was omitted.
+
+    An explicit name is passed through untouched, so a collision still fails in
+    `_create_symlink`. A derived name falls back to a counter suffix instead,
+    which is what makes repeated automated runs work.
+
+    Args:
+        output_dir: Value of --output_dir, or None.
+        config: ExperimentConfig supplying dataset and dtype.
+        bench: Resolved benchmark, or None if --benchmark_name was omitted.
+        base_dir: Base directory (benches/).
+
+    Returns:
+        The name to use for the symlink and registry entry.
+
+    Raises:
+        SystemExit: If no name was given and none can be derived.
+    """
+    if output_dir is not None:
+        return output_dir
+    if bench is None:
+        print(
+            "[sb-cli] ERROR: --output_dir is required when --benchmark_name "
+            "is not given (there is no benchmark to name the experiment after)."
+        )
+        raise SystemExit(1)
+
+    name = default_experiment_name(config, bench)
+    if not name_is_free(name, base_dir):
+        name = next_available_name(name, base_dir)
+    print(f"[sb-cli] Auto-named experiment: {name}")
+    return name
 
 
 def _timestamp(base_dir: Path) -> str:
@@ -102,21 +208,24 @@ def _resolve_benchmark(benchmark_name: str) -> catalog.Benchmark:
     return bench
 
 
-def scaffold(config: ExperimentConfig, output_dir: str, base_dir: Path) -> Path:
+def scaffold(config: ExperimentConfig, output_dir: str | None, base_dir: Path) -> Path:
     """Create a complete experiment folder from config.
 
     Args:
         config: ExperimentConfig with all hardware and benchmark parameters.
-        output_dir: Logical name for the experiment (symlink name).
+        output_dir: Logical name for the experiment (symlink name). When None,
+            it is derived as `<benchmark>-<dataset>-<dtype>`, with a `-NNN`
+            counter appended if that name is taken.
         base_dir: Base directory (benches/).
 
     Returns:
         Path to the new timestamped experiment directory.
     """
-    # Resolve the benchmark before creating any files
+    # Resolve the benchmark and the name before creating any files
     bench: catalog.Benchmark | None = None
     if config.benchmark_name is not None:
         bench = _resolve_benchmark(config.benchmark_name)
+    output_dir = _resolve_output_dir(output_dir, config, bench, base_dir)
 
     ts = _timestamp(base_dir)
     exp_dir = _create_experiment_dir(ts, base_dir)

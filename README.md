@@ -59,6 +59,22 @@ cd benches/experiments/gemm_mini_test
 pixi run make
 ```
 
+`--output_dir` is optional. When omitted, `init` names the experiment
+`<benchmark>-<dataset>-<dtype>` (here, `gemm-MINI-float32`) and `fork` names it
+after its source, both appending the first free `-000`, `-001`, ... counter if
+that name is taken. That makes repeated runs safe to script — each one lands in
+a fresh directory instead of failing on a name collision:
+
+```bash
+pixi run sb-cli init --benchmark_name gemm        # → gemm-MINI-float32
+pixi run sb-cli fork --from gemm-MINI-float32     # → gemm-MINI-float32-000
+pixi run sb-cli fork --from gemm-MINI-float32     # → gemm-MINI-float32-001
+```
+
+An explicitly passed `--output_dir` still fails on a collision, so nothing is
+ever silently overwritten. Deriving a name for `init` requires
+`--benchmark_name`; without it, pass `--output_dir`.
+
 
 ## Project Structure
 

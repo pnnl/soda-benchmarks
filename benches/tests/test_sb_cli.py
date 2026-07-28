@@ -22,7 +22,7 @@ def _make_base_dir(tmp_path: Path) -> Path:
 
 def _run_scaffold(
     tmp_path: Path,
-    output_dir: str = "test_exp",
+    output_dir: str | None = "test_exp",
     benchmark_name: str | None = None,
     dataset: str = "MINI",
     dtype: str = "float32",
@@ -297,6 +297,95 @@ class TestInit:
 
 
 # ---------------------------------------------------------------------------
+# Auto-naming: --output_dir is optional for init and fork
+# ---------------------------------------------------------------------------
+
+
+class TestInitAutoName:
+    def test_init_auto_name_from_benchmark(self, tmp_path: Path) -> None:
+        """Omitting output_dir names the experiment <bench>-<dataset>-<dtype>."""
+        from sb_cli.registry import Registry
+
+        base = _make_base_dir(tmp_path)
+        exp_dir = _run_scaffold(base, output_dir=None, benchmark_name="gemm")
+
+        symlink = base / "experiments" / "gemm-MINI-float32"
+        assert symlink.is_symlink()
+        assert symlink.resolve() == exp_dir.resolve()
+        assert "gemm-MINI-float32" in Registry(base).load()
+
+    def test_init_auto_name_uses_dataset_and_dtype(self, tmp_path: Path) -> None:
+        """dataset and dtype are part of the auto-generated name."""
+        base = _make_base_dir(tmp_path)
+        _run_scaffold(
+            base,
+            output_dir=None,
+            benchmark_name="gemm",
+            dataset="MEDIUM",
+            dtype="float16",
+        )
+
+        assert (base / "experiments" / "gemm-MEDIUM-float16").is_symlink()
+
+    def test_init_auto_name_collision_appends_suffix(self, tmp_path: Path) -> None:
+        """Repeated auto-named inits fall back to an incrementing -NNN counter."""
+        from sb_cli.registry import Registry
+
+        base = _make_base_dir(tmp_path)
+        dirs = [
+            _run_scaffold(base, output_dir=None, benchmark_name="gemm")
+            for _ in range(3)
+        ]
+
+        names = ["gemm-MINI-float32", "gemm-MINI-float32-000", "gemm-MINI-float32-001"]
+        experiments = Registry(base).load()
+        for name, exp_dir in zip(names, dirs, strict=True):
+            symlink = base / "experiments" / name
+            assert symlink.is_symlink(), f"Missing symlink: {name}"
+            assert symlink.resolve() == exp_dir.resolve()
+            assert name in experiments
+        # Each run got its own timestamped directory
+        assert len({d.name for d in dirs}) == 3
+
+    def test_init_auto_name_requires_benchmark(self, tmp_path: Path) -> None:
+        """Without benchmark_name there is nothing to derive a name from."""
+        base = _make_base_dir(tmp_path)
+        with pytest.raises(SystemExit):
+            _run_scaffold(base, output_dir=None, benchmark_name=None)
+
+    def test_next_available_name_fills_gap(self, tmp_path: Path) -> None:
+        """next_available_name returns the first free counter, not the last + 1."""
+        from sb_cli.init import next_available_name
+
+        base = _make_base_dir(tmp_path)
+        (base / "experiments" / "foo-000").mkdir()
+        (base / "experiments" / "foo-002").mkdir()
+
+        assert next_available_name("foo", base) == "foo-001"
+
+    def test_next_available_name_strips_existing_counter(self, tmp_path: Path) -> None:
+        """A stem that already ends in -NNN continues the series, not nests."""
+        from sb_cli.init import next_available_name
+
+        base = _make_base_dir(tmp_path)
+        (base / "experiments" / "foo-000").mkdir()
+
+        assert next_available_name("foo-000", base) == "foo-001"
+
+    def test_next_available_name_skips_registry_only_entry(
+        self, tmp_path: Path
+    ) -> None:
+        """A registered name with no directory on disk still counts as taken."""
+        from sb_cli.init import next_available_name
+        from sb_cli.registry import Registry
+
+        base = _make_base_dir(tmp_path)
+        Registry(base).append("foo-000", "experiments/2026_01_01_00_00_00")
+
+        assert next_available_name("foo", base) == "foo-001"
+
+
+# ---------------------------------------------------------------------------
 # Registry tests
 # ---------------------------------------------------------------------------
 
@@ -517,6 +606,76 @@ class TestFork:
         base = _make_base_dir(tmp_path)
         with pytest.raises(SystemExit):
             fork_experiment("no_such_name", "irrelevant", base)
+
+
+class TestForkAutoName:
+    def test_fork_auto_name_series(self, tmp_path: Path) -> None:
+        """Repeated forks of one source produce -000, -001, ..."""
+        from sb_cli.fork import fork_experiment
+        from sb_cli.registry import Registry
+
+        base = _make_base_dir(tmp_path)
+        _run_scaffold(base, output_dir=None, benchmark_name="gemm")
+
+        first = fork_experiment("gemm-MINI-float32", None, base)
+        second = fork_experiment("gemm-MINI-float32", None, base)
+
+        experiments = Registry(base).load()
+        for name, fork_dir in [
+            ("gemm-MINI-float32-000", first),
+            ("gemm-MINI-float32-001", second),
+        ]:
+            symlink = base / "experiments" / name
+            assert symlink.is_symlink(), f"Missing symlink: {name}"
+            assert symlink.resolve() == fork_dir.resolve()
+            assert name in experiments
+            assert (fork_dir / "Makefile").exists()
+
+    def test_fork_auto_name_continues_series(self, tmp_path: Path) -> None:
+        """Forking a fork continues the flat series instead of nesting -000-000."""
+        from sb_cli.fork import fork_experiment
+
+        base = _make_base_dir(tmp_path)
+        _run_scaffold(base, output_dir=None, benchmark_name="gemm")
+        fork_experiment("gemm-MINI-float32", None, base)
+
+        fork_experiment("gemm-MINI-float32-000", None, base)
+
+        assert (base / "experiments" / "gemm-MINI-float32-001").is_symlink()
+        assert not (base / "experiments" / "gemm-MINI-float32-000-000").exists()
+
+    def test_fork_auto_name_from_path(self, tmp_path: Path) -> None:
+        """A path source falls back to the source directory's name as the stem."""
+        from sb_cli.fork import fork_experiment
+
+        base = _make_base_dir(tmp_path)
+        src_dir = _run_scaffold(base, output_dir="path_src")
+
+        fork_dir = fork_experiment(str(src_dir), None, base)
+
+        symlink = base / "experiments" / f"{src_dir.name}-000"
+        assert symlink.is_symlink()
+        assert symlink.resolve() == fork_dir.resolve()
+        assert (fork_dir / "Makefile").exists()
+
+    def test_fork_auto_name_unresolved_source_creates_nothing(
+        self, tmp_path: Path
+    ) -> None:
+        """A missing source exits before any directory is created."""
+        from sb_cli.fork import fork_experiment
+
+        base = _make_base_dir(tmp_path)
+        with pytest.raises(SystemExit):
+            fork_experiment("no_such_name", None, base)
+
+        # Resolving reads registry.py (and byte-compiles it); no experiment
+        # directory or symlink may have been left behind.
+        leftovers = {
+            p.name
+            for p in (base / "experiments").iterdir()
+            if p.name not in {"registry.py", "__pycache__"}
+        }
+        assert leftovers == set()
 
 
 # ---------------------------------------------------------------------------
