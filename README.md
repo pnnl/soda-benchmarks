@@ -38,6 +38,11 @@ folder, and for the `sb-cli` experiment scaffolding tool, see
 docs, `sb-cli`) are managed with [pixi](https://pixi.sh) via the root
 [`pixi.toml`](pixi.toml) — run `pixi run <task>` from the repo root.
 
+`pixi install` installs this repo editable, which is what makes `benches` and
+`sb_cli` importable and puts the `sb-cli` command on `PATH` — inside the
+environment you can call `sb-cli` directly as well as `pixi run sb-cli`. Both
+work from any directory. List the available kernels with `pixi run sb-cli list`.
+
 To scaffold and run a synthesis experiment for a PolyBenchPyTorch kernel:
 
 ```bash
