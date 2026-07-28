@@ -17,7 +17,7 @@
     },
     // Allow container to stop. See: https://github.com/microsoft/vscode-remote-release/issues/3512#issuecomment-1267053890
     // "overrideCommand": false,
-    // "postCreateCommand": "pip install -r requirements.txt",
+    "postCreateCommand": "bash .devcontainer/postCreateCommand.sh",
     "customizations": {
         "vscode": {
             "extensions": [
