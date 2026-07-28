@@ -33,7 +33,9 @@
                 "ms-vscode.makefile-tools",
                 "llvm-vs-code-extensions.vscode-mlir",
                 "vadimcn.vscode-lldb",
-                "tintinweb.graphviz-interactive-preview"
+                "tintinweb.graphviz-interactive-preview",
+                "renan-r-santos.pixi-code",
+                "tamasfe.even-better-toml"
             ]
         },
         "settings": {
