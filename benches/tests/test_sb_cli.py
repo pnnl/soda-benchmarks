@@ -29,7 +29,9 @@ def _run_scaffold(
     device: str = "nangate45",
     clock_period: float = 5.0,
     memory_policy: str = "",
-    target: str = "verilog",
+    flow: str = "baseline",
+    backend: str = "bambu",
+    stage: str = "verilog",
 ) -> Path:
     """Run scaffold() with given args and return the experiment dir."""
     from sb_cli.flow import ExperimentConfig
@@ -42,9 +44,102 @@ def _run_scaffold(
         device=device,
         clock_period=clock_period,
         memory_policy=memory_policy,
-        target=target,
+        flow=flow,
+        backend=backend,
+        stage=stage,
     )
     return scaffold(config, output_dir, tmp_path)
+
+
+# ---------------------------------------------------------------------------
+# Target resolution: flow x backend x stage
+# ---------------------------------------------------------------------------
+
+
+_GDS_TAIL = "HLS_output/Synthesis/bash_flow/openroad/results/nangate45"
+
+
+class TestResolveTarget:
+    @pytest.mark.parametrize("flow", ["baseline", "optimized", "transformed"])
+    @pytest.mark.parametrize(
+        ("stage", "expected"),
+        [
+            ("llvm", "$(ODIR)/05_llvm_{flow}.ll"),
+            ("verilog", "$(ODIR)/bambu/{flow}/06_verilog.v"),
+            ("simulation", "$(ODIR)/bambu/{flow}/07_results.txt"),
+            (
+                "gds",
+                "$(ODIR)/bambu/{flow}/"
+                + _GDS_TAIL
+                + "/forward_kernel/base/6_final.gds",
+            ),
+        ],
+    )
+    def test_every_flow_stage_pair(self, flow: str, stage: str, expected: str) -> None:
+        """All 12 (flow, stage) combinations resolve to the mkinc rule paths."""
+        from sb_cli.flow import resolve_target
+
+        got = resolve_target(flow, "bambu", stage, device="nangate45")
+        assert got == expected.format(flow=flow)
+
+    def test_gds_platform_strips_corner_suffix(self) -> None:
+        """Bambu corner suffixes are not part of the OpenROAD results path."""
+        from sb_cli.flow import gds_platform
+
+        assert gds_platform("asap7-BC") == "asap7"
+        assert gds_platform("nangate45") == "nangate45"
+
+    def test_gds_path_uses_device_platform(self) -> None:
+        """The gds target follows --device rather than hardcoding nangate45."""
+        from sb_cli.flow import resolve_target
+
+        got = resolve_target("baseline", "bambu", "gds", device="asap7-BC")
+        assert "/openroad/results/asap7/" in got
+
+    @pytest.mark.parametrize(
+        ("flow", "backend", "stage"),
+        [
+            ("nonsense", "bambu", "verilog"),
+            ("baseline", "nonsense", "verilog"),
+            ("baseline", "bambu", "nonsense"),
+        ],
+    )
+    def test_unknown_axis_value_raises(
+        self, flow: str, backend: str, stage: str
+    ) -> None:
+        """An unknown value on any axis is rejected with the legal choices."""
+        from sb_cli.flow import resolve_target
+
+        with pytest.raises(ValueError, match="nonsense"):
+            resolve_target(flow, backend, stage, device="nangate45")
+
+    def test_removed_target_flag_errors(self, capsys: pytest.CaptureFixture) -> None:
+        """The removed --target flag fails loudly and names its replacements."""
+        import sys
+        from unittest.mock import patch
+
+        from sb_cli.__main__ import main
+
+        argv = ["sb-cli", "init", "--output_dir", "x", "--target", "transformed"]
+        with patch.object(sys, "argv", argv), pytest.raises(SystemExit) as exc:
+            main()
+
+        assert exc.value.code != 0
+        err = capsys.readouterr().err
+        assert "--flow" in err and "--stage" in err
+
+    def test_unsupported_pair_raises(self) -> None:
+        """A legal backend with no template for a legal stage is rejected."""
+        from sb_cli import flow as flow_mod
+
+        # Simulate a future backend that only reaches llvm.
+        original = flow_mod.BACKENDS
+        flow_mod.BACKENDS = (*original, "cpu")
+        try:
+            with pytest.raises(ValueError, match="does not support stage 'gds'"):
+                flow_mod.resolve_target("baseline", "cpu", "gds", device="nangate45")
+        finally:
+            flow_mod.BACKENDS = original
 
 
 # ---------------------------------------------------------------------------
@@ -104,7 +199,7 @@ class TestInit:
     def test_init_target_verilog(self, tmp_path: Path) -> None:
         """TARGET in Makefile matches the verilog target path."""
         base = _make_base_dir(tmp_path)
-        exp_dir = _run_scaffold(base, output_dir="vlog_exp", target="verilog")
+        exp_dir = _run_scaffold(base, output_dir="vlog_exp", stage="verilog")
 
         mk = (exp_dir / "Makefile").read_text()
         assert "bambu/baseline/06_verilog.v" in mk
@@ -115,10 +210,46 @@ class TestInit:
     def test_init_target_gds(self, tmp_path: Path) -> None:
         """TARGET in Makefile matches the gds target path."""
         base = _make_base_dir(tmp_path)
-        exp_dir = _run_scaffold(base, output_dir="gds_exp", target="gds")
+        exp_dir = _run_scaffold(base, output_dir="gds_exp", stage="gds")
 
         mk = (exp_dir / "Makefile").read_text()
         assert "6_final.gds" in mk
+
+    def test_init_gds_honors_flow(self, tmp_path: Path) -> None:
+        """The gds TARGET follows --flow instead of being pinned to baseline.
+
+        Regression test: the old TARGET_MAP["gds"] hardcoded bambu/baseline,
+        so a transformed experiment silently synthesized the baseline design.
+        """
+        base = _make_base_dir(tmp_path)
+        exp_dir = _run_scaffold(
+            base, output_dir="gds_xfm", flow="transformed", stage="gds"
+        )
+
+        mk = (exp_dir / "Makefile").read_text()
+        assert "bambu/transformed/" in mk
+        assert "bambu/baseline/" not in mk
+
+    def test_init_stage_llvm_is_flow_aware(self, tmp_path: Path) -> None:
+        """--stage llvm resolves to 05_llvm_<flow>.ll, never the tosa 04_llvm.ll."""
+        base = _make_base_dir(tmp_path)
+        exp_dir = _run_scaffold(
+            base, output_dir="llvm_opt", flow="optimized", stage="llvm"
+        )
+
+        mk = (exp_dir / "Makefile").read_text()
+        assert "TARGET=$(ODIR)/05_llvm_optimized.ll" in mk
+        assert "04_llvm.ll" not in mk
+
+    def test_init_stage_simulation(self, tmp_path: Path) -> None:
+        """--stage simulation reaches the 07_results.txt rule."""
+        base = _make_base_dir(tmp_path)
+        exp_dir = _run_scaffold(
+            base, output_dir="sim_exp", flow="transformed", stage="simulation"
+        )
+
+        mk = (exp_dir / "Makefile").read_text()
+        assert "bambu/transformed/07_results.txt" in mk
 
     def test_init_transform_mlir_is_noop(self, tmp_path: Path) -> None:
         """transform.mlir is generated as a no-op boilerplate."""
@@ -471,7 +602,7 @@ class TestGeneratedFlow:
             device="asap7-BC",
             clock_period=3.5,
             memory_policy="NO_BRAM",
-            target="verilog",
+            stage="verilog",
         )
 
         # Dynamically import the generated flow.py

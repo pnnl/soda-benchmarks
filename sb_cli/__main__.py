@@ -14,10 +14,30 @@ import argparse
 from pathlib import Path
 
 import benches
+from sb_cli.flow import BACKENDS, FLOWS, STAGES
 
 _DATASET_CHOICES = ["MINI", "SMALL", "MEDIUM", "LARGE", "EXTRALARGE"]
 _DTYPE_CHOICES = ["float16", "float32", "float64"]
-_TARGET_CHOICES = ["verilog", "optimized", "transformed", "gds", "llvm"]
+
+# --target conflated the flow and stage axes; see .specs/target-fix/README.md.
+# Old values are rejected rather than aliased: `--target gds` always meant
+# baseline, so quietly remapping it would preserve that bug.
+_TARGET_MIGRATION = """--target has been split into --flow and --stage.
+  --target verilog      ->  --flow baseline    --stage verilog
+  --target optimized    ->  --flow optimized   --stage verilog
+  --target transformed  ->  --flow transformed --stage verilog
+  --target llvm         ->  --flow <flow>      --stage llvm
+  --target gds          ->  --flow <flow>      --stage gds
+Flows: {flows}. Stages: {stages}.""".format(
+    flows=", ".join(FLOWS), stages=", ".join(STAGES)
+)
+
+
+class _TargetRemoved(argparse.Action):
+    """Reject the removed --target flag with a migration message."""
+
+    def __call__(self, parser, namespace, values, option_string=None):  # noqa: ANN001
+        parser.error(_TARGET_MIGRATION)
 
 
 def _common_parser() -> argparse.ArgumentParser:
@@ -59,7 +79,25 @@ def _add_init_parser(
     p.add_argument("--device", default="nangate45")
     p.add_argument("--clock_period", default=5.0, type=float)
     p.add_argument("--memory_policy", default="")
-    p.add_argument("--target", default="verilog", choices=_TARGET_CHOICES)
+    p.add_argument(
+        "--flow",
+        default="baseline",
+        choices=FLOWS,
+        help="Transformation flow: how the MLIR is optimized",
+    )
+    p.add_argument(
+        "--backend",
+        default="bambu",
+        choices=BACKENDS,
+        help="Backend that consumes the LLVM IR",
+    )
+    p.add_argument(
+        "--stage",
+        default="verilog",
+        choices=STAGES,
+        help="How far down the compilation path to build",
+    )
+    p.add_argument("--target", action=_TargetRemoved, nargs="?", help=argparse.SUPPRESS)
 
 
 def _add_fork_parser(
@@ -158,7 +196,9 @@ def main() -> None:
             device=args.device,
             clock_period=args.clock_period,
             memory_policy=args.memory_policy,
-            target=args.target,
+            flow=args.flow,
+            backend=args.backend,
+            stage=args.stage,
         )
         scaffold(config, args.output_dir, base_dir)
 

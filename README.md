@@ -52,7 +52,8 @@ pixi run sb-cli init \
     --dtype float32 \
     --device nangate45 \
     --clock_period 5 \
-    --target llvm \
+    --flow baseline \
+    --stage llvm \
     --output_dir gemm_mini_test
 
 cd benches/experiments/gemm_mini_test

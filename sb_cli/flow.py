@@ -1,26 +1,103 @@
-"""Flow configuration dataclass and TARGET_MAP for sb-cli.
+"""Flow configuration dataclass and target resolution for sb-cli.
 
-Defines the ExperimentConfig dataclass (used by init/fork) and the
-TARGET_MAP mapping human-readable target names to Makefile TARGET paths.
+A build target is described by three orthogonal axes rather than a single
+opaque name:
+
+* **flow** — how the MLIR is optimized (baseline, optimized, transformed)
+* **backend** — what consumes the LLVM IR (bambu today; cpu/gpu reserved)
+* **stage** — how far down the compilation path to go (llvm, verilog,
+  simulation, gds)
+
+`resolve_target` turns a triple into the Makefile TARGET path, which mirrors
+the directory layout the mkinc rules already use (`bambu/<flow>/<artifact>`).
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 
-# Maps human-readable target names to Makefile TARGET path values.
-# The $(ODIR) prefix is not expanded here; it is substituted literally
-# into the Makefile template as the ODIR variable is defined there.
-TARGET_MAP: dict[str, str] = {
-    "verilog": "$(ODIR)/bambu/baseline/06_verilog.v",
-    "optimized": "$(ODIR)/bambu/optimized/06_verilog.v",
-    "transformed": "$(ODIR)/bambu/transformed/06_verilog.v",
-    "gds": (
-        "$(ODIR)/bambu/baseline/HLS_output/Synthesis/bash_flow"
-        "/openroad/results/nangate45/forward_kernel/base/6_final.gds"
+FLOWS: tuple[str, ...] = ("baseline", "optimized", "transformed")
+BACKENDS: tuple[str, ...] = ("bambu",)  # "cpu", "gpu" reserved for future use
+STAGES: tuple[str, ...] = ("llvm", "verilog", "simulation", "gds")
+
+# Default Bambu top function name. It is also baked into ll_to_verilog.sh and
+# the soda_to_llvm_*.sh scripts, so it is a default here rather than a knob.
+DEFAULT_TOP_FNAME = "forward_kernel"
+
+# Makefile TARGET path per (backend, stage). The $(ODIR) prefix is not expanded
+# here; it is substituted literally into the Makefile template, where ODIR is
+# defined. Only the gds path uses {platform} and {top_fname}.
+_TARGET_TEMPLATES: dict[tuple[str, str], str] = {
+    ("bambu", "llvm"): "$(ODIR)/05_llvm_{flow}.ll",
+    ("bambu", "verilog"): "$(ODIR)/bambu/{flow}/06_verilog.v",
+    ("bambu", "simulation"): "$(ODIR)/bambu/{flow}/07_results.txt",
+    ("bambu", "gds"): (
+        "$(ODIR)/bambu/{flow}/HLS_output/Synthesis/bash_flow"
+        "/openroad/results/{platform}/{top_fname}/base/6_final.gds"
     ),
-    "llvm": "$(ODIR)/04_llvm.ll",
 }
+
+
+def gds_platform(device: str) -> str:
+    """Return the OpenROAD PDK directory name for a Bambu device.
+
+    Bambu device names may carry a corner suffix (`asap7-BC`) that the OpenROAD
+    results directory does not use, so the suffix is stripped.
+
+    Args:
+        device: Bambu device name, e.g. `nangate45` or `asap7-BC`.
+
+    Returns:
+        The bare PDK name used as a path component under `openroad/results/`.
+    """
+    return device.split("-")[0]
+
+
+def _supported_stages(backend: str) -> list[str]:
+    """Return the stages `backend` has a target template for, in STAGES order."""
+    return [s for s in STAGES if (backend, s) in _TARGET_TEMPLATES]
+
+
+def resolve_target(
+    flow: str,
+    backend: str,
+    stage: str,
+    *,
+    device: str,
+    top_fname: str = DEFAULT_TOP_FNAME,
+) -> str:
+    """Return the Makefile TARGET path for a (flow, backend, stage) triple.
+
+    Args:
+        flow: One of FLOWS.
+        backend: One of BACKENDS.
+        stage: One of STAGES.
+        device: Bambu device name, used to derive the gds PDK directory.
+        top_fname: Bambu top function name, used in the gds path.
+
+    Returns:
+        The TARGET path, with `$(ODIR)` left unexpanded.
+
+    Raises:
+        ValueError: If an axis value is unknown, or if the backend does not
+            support the requested stage.
+    """
+    if flow not in FLOWS:
+        raise ValueError(f"Unknown flow: '{flow}'. Choose from {list(FLOWS)}")
+    if backend not in BACKENDS:
+        raise ValueError(f"Unknown backend: '{backend}'. Choose from {list(BACKENDS)}")
+    if stage not in STAGES:
+        raise ValueError(f"Unknown stage: '{stage}'. Choose from {list(STAGES)}")
+
+    template = _TARGET_TEMPLATES.get((backend, stage))
+    if template is None:
+        raise ValueError(
+            f"Backend '{backend}' does not support stage '{stage}'. "
+            f"Supported stages for '{backend}': {_supported_stages(backend)}"
+        )
+    return template.format(
+        flow=flow, platform=gds_platform(device), top_fname=top_fname
+    )
 
 
 @dataclass
@@ -33,12 +110,15 @@ class ExperimentConfig:
     device: str
     clock_period: float
     memory_policy: str
-    target: str  # human name — resolved via TARGET_MAP
+    flow: str
+    backend: str
+    stage: str
+
+    @property
+    def target_name(self) -> str:
+        """Return the human-readable target triple, e.g. `bambu/baseline/verilog`."""
+        return f"{self.backend}/{self.flow}/{self.stage}"
 
     def target_path(self) -> str:
-        """Return the Makefile TARGET path for this config's target name."""
-        if self.target not in TARGET_MAP:
-            raise ValueError(
-                f"Unknown target: '{self.target}'. Choose from {list(TARGET_MAP)}"
-            )
-        return TARGET_MAP[self.target]
+        """Return the Makefile TARGET path for this config."""
+        return resolve_target(self.flow, self.backend, self.stage, device=self.device)

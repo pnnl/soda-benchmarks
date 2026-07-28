@@ -243,7 +243,10 @@ def scaffold(config: ExperimentConfig, output_dir: str | None, base_dir: Path) -
         "device": config.device,
         "clock_period": config.clock_period,
         "memory_policy": config.memory_policy,
-        "target_name": config.target,
+        "flow": config.flow,
+        "backend": config.backend,
+        "stage": config.stage,
+        "target_name": config.target_name,
         "target_path": target_path,
         "created_at": created_at,
     }

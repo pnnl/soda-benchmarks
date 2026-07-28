@@ -149,7 +149,8 @@ pixi run sb-cli init \
   --dtype float32 \
   --device nangate45 \
   --clock_period 5 \
-  --target verilog \
+  --flow baseline \
+  --stage verilog \
   --output_dir gemm_medium_baseline
 ```
 
