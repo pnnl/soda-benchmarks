@@ -10,7 +10,7 @@ format = "ruff format benches/PolyBenchPyTorch benches/tests sb_cli"
 test = "pytest"
 test-mlir = "pytest -m slow"
 test-fast = "pytest -m 'not slow'"
-sb-cli = "python -m sb_cli"
+sb-cli = { cmd = "PYTHONPATH=..:$PYTHONPATH python -m sb_cli", cwd = "benches" }
 docs-serve = "mkdocs serve"
 docs-build = "mkdocs build"
 
@@ -22,15 +22,6 @@ pytest = ">=8.0,<9"
 pytest-cov = ">=6.0,<7"
 mkdocs = "*"
 mkdocs-material = "*"
-ipykernel = "*"
 
-# The repo itself, installed editable: this is what makes `benches` and `sb_cli`
-# importable. Both live in the one distribution declared by pyproject.toml.
-[pypi-dependencies]
-soda-benchmarks = { path = ".", editable = true }
-
-# PYTHONPATH is only for dependencies installed outside this environment (torch
-# and the MLIR/SODA bindings built into the container). Project code must never
-# be added here — it comes from the editable install above.
 [activation.env]
-PYTHONPATH = "/opt/llvm-project/python_packages/mlir_core:/opt/torch-mlir/python_packages/torch_mlir:/opt/soda-opt/python_packages/soda:/workspaces/soda/builds/llvm-project/install/python_packages/mlir_core:/usr/local/lib/python3.11/site-packages"
+PYTHONPATH = "/workspaces/soda-benchmarks:/workspaces/soda-benchmarks/benches:/opt/llvm-project/python_packages/mlir_core:/opt/torch-mlir/python_packages/torch_mlir:/opt/soda-opt/python_packages/soda:/workspaces/soda/builds/llvm-project/install/python_packages/mlir_core:/usr/local/lib/python3.11/site-packages"

@@ -46,6 +46,7 @@ static func::FuncOp ensureIssueAPERequestDeclaration(ModuleOp module) {
   MLIRContext *ctx = module.getContext();
 
   auto i32Type = moduleBuilder.getI32Type();
+  auto i64Type = moduleBuilder.getI64Type();
   auto i1Type = moduleBuilder.getI1Type();
   auto indexType = moduleBuilder.getIndexType();
 
@@ -58,7 +59,12 @@ static func::FuncOp ensureIssueAPERequestDeclaration(ModuleOp module) {
       indexType, // i2
       indexType, // i3
       i1Type,    // is_write
-      i32Type,   // prefetch_ahead
+      i64Type,   // element_bytes
+      i64Type,   // rank
+      i64Type,   // dim0
+      i64Type,   // dim1
+      i64Type,   // dim2
+      i1Type,    // column_major_access
   };
 
   auto fnType = FunctionType::get(ctx, inputs, TypeRange{});
@@ -104,14 +110,6 @@ static int32_t inferContiguousVectorLength(MemRefType memrefType,
   return static_cast<int32_t>(std::max<int64_t>(1, std::min(last, elemsPerChunk)));
 }
 
-static int32_t inferPrefetchDistance(StringRef accessKind) {
-  if (accessKind == "write")
-    return 1;
-  if (accessKind == "readwrite")
-    return 2;
-  return 2;
-}
-
 static DictionaryAttr buildTensorInfoDict(Builder &b, int32_t tensorId,
                                           StringRef accessKind,
                                           StringRef role,
@@ -135,7 +133,6 @@ static DictionaryAttr buildTensorInfoDict(Builder &b, int32_t tensorId,
   }
 
   int32_t contiguousVecLen = inferContiguousVectorLength(memrefType, elemBytes);
-  int32_t prefetchDistance = inferPrefetchDistance(accessKind);
 
   std::string elementTypeStr;
   {
@@ -155,8 +152,6 @@ static DictionaryAttr buildTensorInfoDict(Builder &b, int32_t tensorId,
       b.getNamedAttr("indexing_map", b.getStringAttr(indexingMapText)),
       b.getNamedAttr("contiguous_vector_len",
                      b.getI32IntegerAttr(contiguousVecLen)),
-      b.getNamedAttr("suggested_prefetch_distance",
-                     b.getI32IntegerAttr(prefetchDistance)),
   });
 }
 
@@ -215,7 +210,6 @@ static bool operandUsesIV(AffineMap map, ValueRange mapOperands, Value iv,
 struct TensorMetadata {
   int32_t tensorId = -1;
   int32_t contiguousVectorLen = 1;
-  int32_t suggestedPrefetchDistance = 1;
 };
 
 static std::optional<TensorMetadata> readTensorMetadata(Value memref,
@@ -230,9 +224,6 @@ static std::optional<TensorMetadata> readTensorMetadata(Value memref,
     if (auto vecLen =
             dyn_cast_or_null<IntegerAttr>(info.get("contiguous_vector_len")))
       md.contiguousVectorLen = static_cast<int32_t>(vecLen.getInt());
-    if (auto prefetch =
-            dyn_cast_or_null<IntegerAttr>(info.get("suggested_prefetch_distance")))
-      md.suggestedPrefetchDistance = static_cast<int32_t>(prefetch.getInt());
   };
 
   if (auto blockArg = dyn_cast<BlockArgument>(memref)) {
@@ -268,6 +259,11 @@ static Value getZeroIndex(OpBuilder &builder, Location loc) {
 static Value getI32Const(OpBuilder &builder, Location loc, int32_t value) {
   return builder.create<arith::ConstantOp>(loc, builder.getI32Type(),
                                            builder.getI32IntegerAttr(value));
+}
+
+static Value getI64Const(OpBuilder &builder, Location loc, int64_t value) {
+  return builder.create<arith::ConstantOp>(loc, builder.getI64Type(),
+                                           builder.getI64IntegerAttr(value));
 }
 
 static Value getI1Const(OpBuilder &builder, Location loc, bool value) {
@@ -334,9 +330,7 @@ public:
         auto tensorInfo = b.getDictionaryAttr(
             {b.getNamedAttr("tensor_id", b.getI32IntegerAttr(tensorId)),
              b.getNamedAttr("contiguous_vector_len",
-                            info.get("contiguous_vector_len")),
-             b.getNamedAttr("suggested_prefetch_distance",
-                            info.get("suggested_prefetch_distance"))});
+                  info.get("contiguous_vector_len"))});
         if (auto blockArg = dyn_cast<BlockArgument>(v)) {
           if (blockArg.getOwner() == &funcOp.getBody().front() &&
               !funcOp.getArgAttr(blockArg.getArgNumber(), kAPETensorInfoAttr)) {
@@ -523,10 +517,38 @@ public:
                 dyn_cast_or_null<IntegerAttr>(operandInfo.get("contiguous_vector_len")))
           contiguousVecLen = static_cast<int32_t>(vecLen.getInt());
 
-        int32_t prefetchAhead = 1;
-        if (auto prefetch = dyn_cast_or_null<IntegerAttr>(
-                operandInfo.get("suggested_prefetch_distance")))
-          prefetchAhead = static_cast<int32_t>(prefetch.getInt());
+        int64_t elementBytes = 4;
+        if (auto elementBytesAttr =
+          dyn_cast_or_null<IntegerAttr>(operandInfo.get("element_bytes")))
+          elementBytes = std::max<int64_t>(1, elementBytesAttr.getInt());
+
+        int64_t rank = 1;
+        int64_t dim0 = 1;
+        int64_t dim1 = 1;
+        int64_t dim2 = 1;
+        if (auto shape = dyn_cast_or_null<ArrayAttr>(operandInfo.get("shape"))) {
+          rank = static_cast<int64_t>(shape.size());
+          auto readDim = [&](int64_t idx) -> int64_t {
+            if (idx < 0 || idx >= static_cast<int64_t>(shape.size()))
+              return 1;
+            auto dimAttr = dyn_cast<IntegerAttr>(shape[static_cast<size_t>(idx)]);
+            if (!dimAttr)
+              return 1;
+            int64_t dim = dimAttr.getInt();
+            return dim > 0 ? dim : 1;
+          };
+          dim0 = readDim(0);
+          dim1 = readDim(1);
+          dim2 = readDim(2);
+        }
+
+        bool columnMajorAccess = false;
+        if (rank == 2) {
+          if (auto indexingMap =
+                  dyn_cast_or_null<StringAttr>(operandInfo.get("indexing_map"))) {
+            columnMajorAccess = indexingMap.getValue().contains("(d1, d0)");
+          }
+        }
 
         int32_t strategy = contiguousVecLen > 1 ? 0 : 1;
         Value baseAddr = getZeroIndex(builder, loc);
@@ -537,14 +559,20 @@ public:
         Value tensorId = getI32Const(builder, loc, tensorIdValue);
         Value strategyVal = getI32Const(builder, loc, strategy);
         Value isWriteVal = getI1Const(builder, loc, false);
-        Value prefetchAheadVal = getI32Const(builder, loc, prefetchAhead);
+        Value elementBytesVal = getI64Const(builder, loc, elementBytes);
+        Value rankVal = getI64Const(builder, loc, rank);
+        Value dim0Val = getI64Const(builder, loc, dim0);
+        Value dim1Val = getI64Const(builder, loc, dim1);
+        Value dim2Val = getI64Const(builder, loc, dim2);
+        Value columnMajorVal = getI1Const(builder, loc, columnMajorAccess);
 
         auto call = builder.create<func::CallOp>(
             loc, TypeRange{}, SymbolRefAttr::get(builder.getContext(),
                                                  kIssueAPERequest),
             ValueRange{baseAddr, tensorId, strategyVal, ivPayload[0],
-                       ivPayload[1], ivPayload[2], ivPayload[3], isWriteVal,
-                       prefetchAheadVal});
+                 ivPayload[1], ivPayload[2], ivPayload[3], isWriteVal,
+                elementBytesVal, rankVal, dim0Val, dim1Val, dim2Val,
+                 columnMajorVal});
         call->setAttr("ape.insertion_reason",
                       builder.getStringAttr(
                           "inserted from pre_issue_APE_request metadata"));

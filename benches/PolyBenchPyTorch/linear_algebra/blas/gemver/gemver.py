@@ -101,7 +101,7 @@ def init_array(n: int, dtype: torch.dtype = torch.float32):
         x[i] = 0.0
         w[i] = 0.0
 
-    return alpha, beta, A, u1, v1, u2, v2, x, y, z, w
+    return alpha, beta, A, u1, v1, u2, v2, x, y, z
 
 
 def parse_args() -> argparse.Namespace:

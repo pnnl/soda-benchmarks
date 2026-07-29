@@ -52,6 +52,7 @@ std::unordered_map<std::string, std::unordered_map<int64_t, int64_t>>
 std::vector<int64_t> gActiveLoopStack;
 bool gAtExitRegistered = false;
 int64_t gCurrentGroupId = -1;
+constexpr int64_t kCacheLineSizeElements = 4;
 
 const char *linalgOperandKindName(int64_t operandKind) {
   switch (operandKind) {
@@ -95,6 +96,66 @@ const char *dynamicCounterName(int64_t counterId) {
         return names[counterId];
     }
     return "unknown";
+}
+
+int64_t clampPositive(int64_t value) {
+  return value > 0 ? value : 1;
+}
+
+bool isFirstIssueForLoopNest(int64_t i0, int64_t i1, int64_t i2, int64_t i3) {
+  return i0 == 0 && i1 == 0 && i2 == 0 && i3 == 0;
+}
+
+void printAddr1D(uint64_t baseAddr, int64_t m, int64_t step,
+                 int64_t elementBytes) {
+  for (int64_t i = 0; i < m; i += step) {
+    uint64_t addr =
+        baseAddr + static_cast<uint64_t>(i) * static_cast<uint64_t>(elementBytes);
+    std::cout << "0x" << std::hex << addr << std::dec << "\t matrix[" << i
+              << "]" << std::endl;
+  }
+}
+
+void printAddr2DRowMajor(uint64_t baseAddr, int64_t m, int64_t n,
+                         int64_t step, int64_t elementBytes) {
+  int64_t size = m * n;
+  for (int64_t i = 0; i < size; i += step) {
+    uint64_t addr =
+        baseAddr + static_cast<uint64_t>(i) * static_cast<uint64_t>(elementBytes);
+    int64_t a = i / n;
+    int64_t b = i % n;
+    std::cout << "0x" << std::hex << addr << std::dec << "\t matrix[" << a
+              << "][" << b << "]" << std::endl;
+  }
+}
+
+void printAddr2DColumnMajorOverRowMajorStorage(uint64_t baseAddr, int64_t m,
+                                               int64_t n, int64_t step,
+                                               int64_t elementBytes) {
+  int64_t size = m * n;
+  for (int64_t i = 0; i < size; i += step) {
+    int64_t a = i % m;
+    int64_t b = i / m;
+    int64_t elementOffset = a * n + b;
+    uint64_t addr = baseAddr + static_cast<uint64_t>(elementOffset) *
+                                   static_cast<uint64_t>(elementBytes);
+    std::cout << "0x" << std::hex << addr << std::dec << "\t matrix[" << a
+              << "][" << b << "]" << std::endl;
+  }
+}
+
+void printAddr3D(uint64_t baseAddr, int64_t m, int64_t n, int64_t k,
+                 int64_t step, int64_t elementBytes) {
+  int64_t size = m * n * k;
+  for (int64_t i = 0; i < size; i += step) {
+    uint64_t addr =
+        baseAddr + static_cast<uint64_t>(i) * static_cast<uint64_t>(elementBytes);
+    int64_t a = i / (n * k);
+    int64_t b = (i / k) % n;
+    int64_t c = i % k;
+    std::cout << "0x" << std::hex << addr << std::dec << "\t matrix[" << a
+              << "][" << b << "][" << c << "]" << std::endl;
+  }
 }
 
 
@@ -203,6 +264,47 @@ void printAllCounterSummaries() {
   printDynamicCounterSummaries();
 }
 } // namespace
+
+extern "C" void pre_issue_APE_request() {}
+
+extern "C" void issue_APE_request(int64_t baseAddr, int32_t tensorId,
+                                   int32_t strategy, int64_t i0, int64_t i1,
+                                   int64_t i2, int64_t i3, bool isWrite,
+                                   int64_t elementBytes, int64_t rank,
+                                   int64_t dim0, int64_t dim1, int64_t dim2,
+                                   bool columnMajorAccess) {
+  (void)tensorId;
+  (void)strategy;
+  if (isWrite)
+    return;
+
+  // Match addr_gen behavior by emitting one dense trace per request site.
+  if (!isFirstIssueForLoopNest(i0, i1, i2, i3))
+    return;
+
+  int64_t step = kCacheLineSizeElements;
+  int64_t elemBytes = clampPositive(elementBytes);
+  int64_t m = clampPositive(dim0);
+  int64_t n = clampPositive(dim1);
+  int64_t k = clampPositive(dim2);
+  uint64_t base = static_cast<uint64_t>(baseAddr);
+
+  if (rank <= 1) {
+    printAddr1D(base, m, step, elemBytes);
+    return;
+  }
+
+  if (rank == 2) {
+    if (columnMajorAccess) {
+      printAddr2DColumnMajorOverRowMajorStorage(base, m, n, step, elemBytes);
+    } else {
+      printAddr2DRowMajor(base, m, n, step, elemBytes);
+    }
+    return;
+  }
+
+  printAddr3D(base, m, n, k, step, elemBytes);
+}
 
 extern "C" void sodaInstrCollectOpCounts(int64_t run, int64_t loopId,
                                           int64_t loads, int64_t stores,
