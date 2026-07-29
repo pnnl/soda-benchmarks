@@ -35,6 +35,7 @@ namespace mlir::sodap {
 namespace {
 
 constexpr llvm::StringLiteral kIssueAPERequest = "issue_APE_request";
+constexpr llvm::StringLiteral kPreIssueAPERequest = "pre_issue_APE_request";
 constexpr llvm::StringLiteral kAPETensorInfoAttr = "ape.tensor_info";
 
 static func::FuncOp ensureIssueAPERequestDeclaration(ModuleOp module) {
@@ -63,6 +64,19 @@ static func::FuncOp ensureIssueAPERequestDeclaration(ModuleOp module) {
   auto fnType = FunctionType::get(ctx, inputs, TypeRange{});
   auto fn = moduleBuilder.create<func::FuncOp>(module.getLoc(), kIssueAPERequest,
                                                fnType);
+  fn.setPrivate();
+  return fn;
+}
+
+static func::FuncOp ensurePreIssueAPERequestDeclaration(ModuleOp module) {
+  if (auto existing = module.lookupSymbol<func::FuncOp>(kPreIssueAPERequest))
+    return existing;
+
+  OpBuilder moduleBuilder(module.getBodyRegion());
+  MLIRContext *ctx = module.getContext();
+  auto fnType = FunctionType::get(ctx, TypeRange{}, TypeRange{});
+  auto fn = moduleBuilder.create<func::FuncOp>(
+      module.getLoc(), kPreIssueAPERequest, fnType);
   fn.setPrivate();
   return fn;
 }
@@ -146,22 +160,6 @@ static DictionaryAttr buildTensorInfoDict(Builder &b, int32_t tensorId,
   });
 }
 
-static void attachTensorInfoToValue(Value value, DictionaryAttr info,
-                                    func::FuncOp funcOp) {
-  if (auto blockArg = dyn_cast<BlockArgument>(value)) {
-    if (blockArg.getOwner() == &funcOp.getBody().front())
-      funcOp.setArgAttr(blockArg.getArgNumber(), kAPETensorInfoAttr, info);
-    return;
-  }
-
-  Operation *def = value.getDefiningOp();
-  if (!def)
-    return;
-
-  // For non-argument values, keep the metadata on the defining op.
-  def->setAttr(kAPETensorInfoAttr, info);
-}
-
 static std::optional<int64_t> getConstantTripCount(affine::AffineForOp loop) {
   if (!loop.hasConstantLowerBound() || !loop.hasConstantUpperBound())
     return std::nullopt;
@@ -220,9 +218,8 @@ struct TensorMetadata {
   int32_t suggestedPrefetchDistance = 1;
 };
 
-static TensorMetadata readTensorMetadata(Value memref, func::FuncOp funcOp,
-                                         DenseMap<Value, int32_t> &fallbackIds,
-                                         int32_t &nextFallbackId) {
+static std::optional<TensorMetadata> readTensorMetadata(Value memref,
+                                                        func::FuncOp funcOp) {
   TensorMetadata md;
 
   auto readFromDict = [&](DictionaryAttr info) {
@@ -248,15 +245,8 @@ static TensorMetadata readTensorMetadata(Value memref, func::FuncOp funcOp,
     readFromDict(dyn_cast_or_null<DictionaryAttr>(def->getAttr(kAPETensorInfoAttr)));
   }
 
-  if (md.tensorId < 0) {
-    auto it = fallbackIds.find(memref);
-    if (it == fallbackIds.end()) {
-      fallbackIds[memref] = nextFallbackId;
-      md.tensorId = nextFallbackId++;
-    } else {
-      md.tensorId = it->second;
-    }
-  }
+  if (md.tensorId < 0)
+    return std::nullopt;
 
   return md;
 }
@@ -302,8 +292,10 @@ public:
       return;
 
     ensureIssueAPERequestDeclaration(funcOp->getParentOfType<ModuleOp>());
+    ensurePreIssueAPERequestDeclaration(funcOp->getParentOfType<ModuleOp>());
 
     Builder b(funcOp.getContext());
+    OpBuilder callBuilder(funcOp.getContext());
     DenseMap<Value, int32_t> tensorIds;
     int32_t nextTensorId = 0;
 
@@ -335,7 +327,26 @@ public:
         DictionaryAttr info = buildTensorInfoDict(b, tensorId, accessKind, role,
                                                   memrefTy, mapText);
         perOperandInfos.push_back(info);
-        attachTensorInfoToValue(v, info, funcOp);
+
+        // Attach compact per-tensor metadata to the value source so later
+        // passes can recover a memref from tensor_id even after linalg is
+        // lowered away.
+        auto tensorInfo = b.getDictionaryAttr(
+            {b.getNamedAttr("tensor_id", b.getI32IntegerAttr(tensorId)),
+             b.getNamedAttr("contiguous_vector_len",
+                            info.get("contiguous_vector_len")),
+             b.getNamedAttr("suggested_prefetch_distance",
+                            info.get("suggested_prefetch_distance"))});
+        if (auto blockArg = dyn_cast<BlockArgument>(v)) {
+          if (blockArg.getOwner() == &funcOp.getBody().front() &&
+              !funcOp.getArgAttr(blockArg.getArgNumber(), kAPETensorInfoAttr)) {
+            funcOp.setArgAttr(blockArg.getArgNumber(), kAPETensorInfoAttr,
+                              tensorInfo);
+          }
+        } else if (Operation *def = v.getDefiningOp()) {
+          if (!def->getAttr(kAPETensorInfoAttr))
+            def->setAttr(kAPETensorInfoAttr, tensorInfo);
+        }
       };
 
       for (auto [idx, input] : llvm::enumerate(linalgOp.getDpsInputs())) {
@@ -351,11 +362,18 @@ public:
       }
 
       if (!perOperandInfos.empty()) {
-        linalgOp->setAttr(kAPETensorInfoAttr, b.getDictionaryAttr({
-                                               b.getNamedAttr(
-                                                   "operands",
-                                                   b.getArrayAttr(perOperandInfos)),
-                                           }));
+        DictionaryAttr opInfo = b.getDictionaryAttr(
+            {b.getNamedAttr("operands", b.getArrayAttr(perOperandInfos))});
+        linalgOp->setAttr(kAPETensorInfoAttr, opInfo);
+
+        // Keep one compact marker right before each linalg op so the metadata
+        // survives lowering without adding per-operand noise.
+        callBuilder.setInsertionPoint(linalgOp);
+        auto preIssue = callBuilder.create<func::CallOp>(
+            linalgOp.getLoc(), TypeRange{},
+            SymbolRefAttr::get(callBuilder.getContext(), kPreIssueAPERequest),
+            ValueRange{});
+        preIssue->setAttr("ape.pre_issue_info", opInfo);
       }
     });
   }
@@ -406,52 +424,49 @@ public:
     ensureIssueAPERequestDeclaration(funcOp->getParentOfType<ModuleOp>());
 
     OpBuilder builder(funcOp.getContext());
-    DenseSet<InsertionKey, InsertionKeyInfo> seen;
-    DenseMap<Value, int32_t> fallbackIds;
-    int32_t nextFallbackId = 100000;
+    llvm::DenseSet<std::pair<Operation *, int32_t>> seen;
+    DenseMap<int32_t, Value> tensorIdToMemref;
 
-    auto emitForAccess = [&](Operation *memOp, Value memref, AffineMap map,
-                             ValueRange mapOperands, bool isWrite) {
-      SmallVector<affine::AffineForOp, 6> loops = getEnclosingAffineLoops(memOp);
-      if (loops.empty())
+    for (BlockArgument arg : funcOp.getArguments()) {
+      if (!isa<MemRefType>(arg.getType()))
+        continue;
+      if (auto md = readTensorMetadata(arg, funcOp))
+        tensorIdToMemref.try_emplace(md->tensorId, arg);
+    }
+
+    funcOp.walk([&](Operation *op) {
+      for (Value result : op->getResults()) {
+        if (!isa<MemRefType>(result.getType()))
+          continue;
+        if (auto md = readTensorMetadata(result, funcOp))
+          tensorIdToMemref.try_emplace(md->tensorId, result);
+      }
+    });
+
+    auto getNextAffineFor = [&](Operation *op) -> affine::AffineForOp {
+      for (Operation *cur = op->getNextNode(); cur; cur = cur->getNextNode()) {
+        if (auto forOp = dyn_cast<affine::AffineForOp>(cur))
+          return forOp;
+      }
+      return {};
+    };
+
+    funcOp.walk([&](func::CallOp preIssueCall) {
+      if (preIssueCall.getCallee() != kPreIssueAPERequest)
         return;
 
-      affine::AffineForOp innermost = loops.back();
-      Value innerIV = innermost.getInductionVar();
+      auto info = dyn_cast_or_null<DictionaryAttr>(
+          preIssueCall->getAttr("ape.pre_issue_info"));
+      if (!info)
+        return;
 
-      bool usesInnerIV = operandUsesIV(map, mapOperands, innerIV,
-                                       /*onlyLastResult=*/false);
-      bool contiguousInner = operandUsesIV(map, mapOperands, innerIV,
-                                           /*onlyLastResult=*/true);
+      auto operandsAttr = dyn_cast_or_null<ArrayAttr>(info.get("operands"));
+      if (!operandsAttr || operandsAttr.empty())
+        return;
 
-      // Hoist to the parent loop when the current access does not vary with the
-      // innermost induction variable; this avoids over-issuing requests.
-      affine::AffineForOp insertionLoop = innermost;
-      if (!usesInnerIV && loops.size() >= 2)
-        insertionLoop = loops[loops.size() - 2];
-
-      std::optional<int64_t> innerTripCount = getConstantTripCount(innermost);
-
-      TensorMetadata md =
-          readTensorMetadata(memref, funcOp, fallbackIds, nextFallbackId);
-
-      int32_t strategy = 0;
-      int32_t issueCount = 1;
-      int32_t chunk = std::max<int32_t>(1, md.contiguousVectorLen);
-
-      if (isWrite) {
-        strategy = 2;
-        issueCount = 1;
-      } else if (usesInnerIV && contiguousInner) {
-        strategy = 0;
-        if (innerTripCount && *innerTripCount > 0) {
-          issueCount = static_cast<int32_t>((*innerTripCount + chunk - 1) / chunk);
-        }
-      } else if (usesInnerIV) {
-        strategy = 1;
-        if (innerTripCount && *innerTripCount > 0)
-          issueCount = static_cast<int32_t>(*innerTripCount);
-      }
+      affine::AffineForOp insertionLoop = getNextAffineFor(preIssueCall);
+      if (!insertionLoop)
+        return;
 
       Location loc = insertionLoop.getLoc();
       builder.setInsertionPointToStart(insertionLoop.getBody());
@@ -475,23 +490,53 @@ public:
       while (ivPayload.size() < 4)
         ivPayload.push_back(getZeroIndex(builder, loc));
 
-      Value baseAddr = getBaseAddrAsIndex(builder, loc, memref);
-      Value tensorId = getI32Const(builder, loc, md.tensorId);
-      Value strategyVal = getI32Const(builder, loc, strategy);
-      Value isWriteVal = getI1Const(builder, loc, isWrite);
+      // We currently issue requests only for read/readwrite operands because
+      // the immediate goal is prefetching incoming matrices.
+      for (Attribute operandAttr : operandsAttr) {
+        auto operandInfo = dyn_cast<DictionaryAttr>(operandAttr);
+        if (!operandInfo)
+          continue;
 
-      for (int32_t req = 0; req < issueCount; ++req) {
-        InsertionKey key{insertionLoop.getOperation(), memref, isWrite, req};
+        auto accessKindAttr =
+            dyn_cast_or_null<StringAttr>(operandInfo.get("access_kind"));
+        if (!accessKindAttr)
+          continue;
+        StringRef accessKind = accessKindAttr.getValue();
+        bool isWrite = (accessKind == "write");
+        if (isWrite)
+          continue;
+
+        auto tensorIdAttr =
+            dyn_cast_or_null<IntegerAttr>(operandInfo.get("tensor_id"));
+        if (!tensorIdAttr)
+          continue;
+        int32_t tensorIdValue = static_cast<int32_t>(tensorIdAttr.getInt());
+
+        std::pair<Operation *, int32_t> key{insertionLoop.getOperation(),
+                                            tensorIdValue};
         if (seen.contains(key))
           continue;
         seen.insert(key);
 
-        int32_t prefetchAhead = md.suggestedPrefetchDistance;
-        if (strategy == 0)
-          prefetchAhead += req * chunk;
-        else if (strategy == 1)
-          prefetchAhead += req;
+        int32_t contiguousVecLen = 1;
+        if (auto vecLen =
+                dyn_cast_or_null<IntegerAttr>(operandInfo.get("contiguous_vector_len")))
+          contiguousVecLen = static_cast<int32_t>(vecLen.getInt());
 
+        int32_t prefetchAhead = 1;
+        if (auto prefetch = dyn_cast_or_null<IntegerAttr>(
+                operandInfo.get("suggested_prefetch_distance")))
+          prefetchAhead = static_cast<int32_t>(prefetch.getInt());
+
+        int32_t strategy = contiguousVecLen > 1 ? 0 : 1;
+        Value baseAddr = getZeroIndex(builder, loc);
+        if (auto it = tensorIdToMemref.find(tensorIdValue);
+            it != tensorIdToMemref.end()) {
+          baseAddr = getBaseAddrAsIndex(builder, loc, it->second);
+        }
+        Value tensorId = getI32Const(builder, loc, tensorIdValue);
+        Value strategyVal = getI32Const(builder, loc, strategy);
+        Value isWriteVal = getI1Const(builder, loc, false);
         Value prefetchAheadVal = getI32Const(builder, loc, prefetchAhead);
 
         auto call = builder.create<func::CallOp>(
@@ -500,29 +545,10 @@ public:
             ValueRange{baseAddr, tensorId, strategyVal, ivPayload[0],
                        ivPayload[1], ivPayload[2], ivPayload[3], isWriteVal,
                        prefetchAheadVal});
-
-        // Keep human-readable insertion rationale on the call op for debugging
-        // and tuning of APE request placement heuristics.
         call->setAttr("ape.insertion_reason",
                       builder.getStringAttr(
-                          strategy == 0
-                              ? "contiguous innermost access, chunked prefetch"
-                              : (strategy == 1
-                                     ? "strided/unaligned innermost access"
-                                     : "write/accumulator access, single issue")));
+                          "inserted from pre_issue_APE_request metadata"));
       }
-    };
-
-    funcOp.walk([&](affine::AffineLoadOp loadOp) {
-      emitForAccess(loadOp.getOperation(), loadOp.getMemRef(),
-                    loadOp.getAffineMap(), loadOp.getMapOperands(),
-                    /*isWrite=*/false);
-    });
-
-    funcOp.walk([&](affine::AffineStoreOp storeOp) {
-      emitForAccess(storeOp.getOperation(), storeOp.getMemRef(),
-                    storeOp.getAffineMap(), storeOp.getMapOperands(),
-                    /*isWrite=*/true);
     });
   }
 };
