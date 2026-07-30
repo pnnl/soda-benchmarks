@@ -20,8 +20,8 @@ Usage:
     # Import as module
     from kernel_bicg import Bicg, init_array
     model = Bicg(m=1900, n=2100)
-    A, r, p = init_array(1900, 2100)
-    s, q = model(A, r, p)
+    inputs = init_array(1900, 2100)  # (A, p, r)
+    s, q = model(*inputs)
 """
 
 import argparse
@@ -65,8 +65,8 @@ class Bicg(nn.Module):
     def forward(
         self,
         A: torch.Tensor,
-        r: torch.Tensor,
         p: torch.Tensor,
+        r: torch.Tensor,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         """
         Execute bicg kernel computation.
@@ -77,8 +77,8 @@ class Bicg(nn.Module):
 
         Args:
             A: Input matrix (n, m)
-            r: Input vector (n,)
             p: Input vector (m,)
+            r: Input vector (n,)
 
         Returns:
             Tuple of (s, q):
@@ -93,8 +93,8 @@ class Bicg(nn.Module):
             assert A.shape == (self.n, self.m), (
                 f"A shape mismatch: {A.shape} != ({self.n}, {self.m})"
             )
-            assert r.shape == (self.n,), f"r shape mismatch: {r.shape} != ({self.n},)"
             assert p.shape == (self.m,), f"p shape mismatch: {p.shape} != ({self.m},)"
+            assert r.shape == (self.n,), f"r shape mismatch: {r.shape} != ({self.n},)"
 
         # Computation: s := A^T * r, q := A * p
         s = torch.matmul(A.T, r)  # (m,)
@@ -120,10 +120,10 @@ def init_array(
         dtype: Tensor data type (default: torch.float32)
 
     Returns:
-        Tuple of (A, r, p):
+        Tuple of (A, p, r), matching kernel_bicg() in the C reference:
             A (Tensor): (n, m) initialized matrix
-            r (Tensor): (n,) initialized vector
             p (Tensor): (m,) initialized vector
+            r (Tensor): (n,) initialized vector
     """
     # Initialize p (m,)
     p = torch.zeros(m, dtype=dtype)
@@ -141,7 +141,7 @@ def init_array(
         for j in range(m):
             A[i, j] = (i * (j + 1) % n) / n
 
-    return A, r, p
+    return A, p, r
 
 
 def parse_args() -> argparse.Namespace:
@@ -163,10 +163,10 @@ def main() -> None:
     dtype = resolve_dtype(args.dtype)
 
     model = Bicg(m, n)
-    A, r, p = init_array(m, n, dtype=dtype)
+    inputs = init_array(m, n, dtype=dtype)
 
     print(f"Compiling bicg kernel to MLIR dialect: {args.dialect}")
-    generate_mlir(model, (A, r, p), args.out_mlir_path, args.dialect)
+    generate_mlir(model, inputs, args.out_mlir_path, args.dialect)
 
 
 if __name__ == "__main__":

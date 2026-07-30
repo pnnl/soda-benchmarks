@@ -21,7 +21,7 @@ class Syrk(nn.Module):
         self.m = m
 
     def forward(
-        self, alpha: torch.Tensor, A: torch.Tensor, beta: torch.Tensor, C: torch.Tensor
+        self, alpha: torch.Tensor, beta: torch.Tensor, C: torch.Tensor, A: torch.Tensor
     ) -> torch.Tensor:
         if not torch.jit.is_tracing():
             assert A.shape == (self.n, self.m)
@@ -33,6 +33,7 @@ class Syrk(nn.Module):
 
 
 def init_array(n: int, m: int, dtype: torch.dtype = torch.float32):
+    """Returns (alpha, beta, C, A)."""
     alpha = torch.tensor(1.5, dtype=dtype)
     beta = torch.tensor(1.2, dtype=dtype)
     C = torch.zeros((n, n), dtype=dtype)
@@ -44,7 +45,7 @@ def init_array(n: int, m: int, dtype: torch.dtype = torch.float32):
         for j in range(m):
             A[i, j] = ((i * j + 1) % n) / float(n)
 
-    return alpha, beta, A, C
+    return alpha, beta, C, A
 
 
 def parse_args() -> argparse.Namespace:
@@ -64,10 +65,10 @@ def main() -> None:
     dtype = resolve_dtype(args.dtype)
 
     model = Syrk(n, m)
-    alpha, beta, A, C = init_array(n, m, dtype=dtype)
+    inputs = init_array(n, m, dtype=dtype)
 
     print(f"Compiling SYRK kernel to MLIR dialect: {args.dialect}")
-    generate_mlir(model, (alpha, A, beta, C), args.out_mlir_path, args.dialect)
+    generate_mlir(model, inputs, args.out_mlir_path, args.dialect)
 
 
 if __name__ == "__main__":

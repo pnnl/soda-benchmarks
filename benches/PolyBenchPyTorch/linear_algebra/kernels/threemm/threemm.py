@@ -22,8 +22,8 @@ Usage:
     # Import as module
     from kernel_3mm import ThreeMM, init_array
     model = ThreeMM(ni=800, nj=900, nk=1000, nl=1100, nm=1200)
-    A, B, C, D = init_array(800, 900, 1000, 1100, 1200)
-    result = model(A, B, C, D)
+    inputs = init_array(800, 900, 1000, 1100, 1200)
+    result = model(*inputs)
 """
 
 import argparse
@@ -203,10 +203,10 @@ def main() -> None:
     dtype = resolve_dtype(args.dtype)
 
     model = ThreeMM(ni, nj, nk, nl, nm)
-    A, B, C, D = init_array(ni, nj, nk, nl, nm, dtype=dtype)
+    inputs = init_array(ni, nj, nk, nl, nm, dtype=dtype)
 
     print(f"Compiling threemm kernel to MLIR dialect: {args.dialect}")
-    generate_mlir(model, (A, B, C, D), args.out_mlir_path, args.dialect)
+    generate_mlir(model, inputs, args.out_mlir_path, args.dialect)
 
 
 if __name__ == "__main__":

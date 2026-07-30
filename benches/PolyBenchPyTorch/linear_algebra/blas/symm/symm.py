@@ -25,10 +25,10 @@ class Symm(nn.Module):
     def forward(
         self,
         alpha: torch.Tensor,
-        A: torch.Tensor,
-        B: torch.Tensor,
         beta: torch.Tensor,
         C: torch.Tensor,
+        A: torch.Tensor,
+        B: torch.Tensor,
     ) -> torch.Tensor:
         if not torch.jit.is_tracing():
             assert A.shape == (self.m, self.m)
@@ -42,6 +42,7 @@ class Symm(nn.Module):
 
 
 def init_array(m: int, n: int, dtype: torch.dtype = torch.float32):
+    """Returns (alpha, beta, C, A, B)."""
     alpha = torch.tensor(1.5, dtype=dtype)
     beta = torch.tensor(1.2, dtype=dtype)
     C = torch.zeros((m, n), dtype=dtype)
@@ -57,7 +58,7 @@ def init_array(m: int, n: int, dtype: torch.dtype = torch.float32):
         for j in range(i + 1, m):
             A[i, j] = -999
 
-    return alpha, beta, A, B, C
+    return alpha, beta, C, A, B
 
 
 def parse_args() -> argparse.Namespace:
@@ -77,10 +78,10 @@ def main() -> None:
     dtype = resolve_dtype(args.dtype)
 
     model = Symm(m, n)
-    alpha, beta, A, B, C = init_array(m, n, dtype=dtype)
+    inputs = init_array(m, n, dtype=dtype)
 
     print(f"Compiling SYMM kernel to MLIR dialect: {args.dialect}")
-    generate_mlir(model, (alpha, A, B, beta, C), args.out_mlir_path, args.dialect)
+    generate_mlir(model, inputs, args.out_mlir_path, args.dialect)
 
 
 if __name__ == "__main__":

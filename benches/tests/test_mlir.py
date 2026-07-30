@@ -131,8 +131,7 @@ def test_gemver_mlir(dataset):
     )
     dims = k.get_dataset_dimensions("gemver", dataset)
     model = k.Gemver(dims["n"])
-    alpha, beta, A, u1, v1, u2, v2, x, y, z, w = k.init_array(dims["n"])
-    inputs = (alpha, beta, A, u1, v1, u2, v2, x, y, z)  # w is output, not input
+    inputs = k.init_array(dims["n"])
     _assert_valid_mlir(_compile(model, inputs))
 
 
@@ -154,8 +153,7 @@ def test_symm_mlir(dataset):
     )
     dims = k.get_dataset_dimensions("symm", dataset)
     model = k.Symm(dims["m"], dims["n"])
-    alpha, beta, A, B, C = k.init_array(dims["m"], dims["n"])
-    inputs = (alpha, A, B, beta, C)
+    inputs = k.init_array(dims["m"], dims["n"])
     _assert_valid_mlir(_compile(model, inputs))
 
 
@@ -166,8 +164,7 @@ def test_syr2k_mlir(dataset):
     )
     dims = k.get_dataset_dimensions("syr2k", dataset)
     model = k.Syr2k(dims["n"], dims["m"])
-    alpha, beta, A, B, C = k.init_array(dims["n"], dims["m"])
-    inputs = (alpha, A, B, beta, C)
+    inputs = k.init_array(dims["n"], dims["m"])
     _assert_valid_mlir(_compile(model, inputs))
 
 
@@ -178,8 +175,7 @@ def test_syrk_mlir(dataset):
     )
     dims = k.get_dataset_dimensions("syrk", dataset)
     model = k.Syrk(dims["n"], dims["m"])
-    alpha, beta, A, C = k.init_array(dims["n"], dims["m"])
-    inputs = (alpha, A, beta, C)
+    inputs = k.init_array(dims["n"], dims["m"])
     _assert_valid_mlir(_compile(model, inputs))
 
 

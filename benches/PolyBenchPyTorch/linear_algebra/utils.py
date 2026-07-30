@@ -318,7 +318,7 @@ def gemm_init_array(
         dtype: Tensor data type (default: torch.float32).
 
     Returns:
-        Tuple (alpha, beta, A, B, C) where alpha and beta are 0-dimensional
+        Tuple (alpha, beta, C, A, B), where alpha and beta are 0-dimensional
         tensors as required by torch-mlir.
     """
     alpha = torch.tensor(1.5, dtype=dtype)
@@ -339,4 +339,4 @@ def gemm_init_array(
         for j in range(nj):
             B[i, j] = ((i * (j + 2)) % nj) / float(nj)
 
-    return alpha, beta, A, B, C
+    return alpha, beta, C, A, B

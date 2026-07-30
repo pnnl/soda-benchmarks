@@ -73,10 +73,10 @@ def main() -> None:
     dtype = resolve_dtype(args.dtype)
 
     model = Gesummv(n)
-    alpha, beta, A, B, x = init_array(n, dtype=dtype)
+    inputs = init_array(n, dtype=dtype)
 
     print(f"Compiling GESUMMV kernel to MLIR dialect: {args.dialect}")
-    generate_mlir(model, (alpha, beta, A, B, x), args.out_mlir_path, args.dialect)
+    generate_mlir(model, inputs, args.out_mlir_path, args.dialect)
 
 
 if __name__ == "__main__":

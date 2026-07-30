@@ -42,9 +42,9 @@ class Gemm(nn.Module):
         self,
         alpha: torch.Tensor,
         beta: torch.Tensor,
+        C: torch.Tensor,
         A: torch.Tensor,
         B: torch.Tensor,
-        C: torch.Tensor,
     ) -> torch.Tensor:
         # Shape assertions
         if not torch.jit.is_tracing():
@@ -70,8 +70,7 @@ def init_array(
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     """Initialize arrays for GEMM following data-model.md formulas.
 
-    Returns (alpha, beta, A, B, C)
-    alpha and beta are 0-dim torch tensors as required for torch-mlir.
+    Returns (alpha, beta, C, A, B).
     """
     alpha = torch.tensor(1.5, dtype=dtype)
     beta = torch.tensor(1.2, dtype=dtype)
@@ -91,7 +90,7 @@ def init_array(
         for j in range(nj):
             B[i, j] = ((i * (j + 2)) % nj) / float(nj)
 
-    return alpha, beta, A, B, C
+    return alpha, beta, C, A, B
 
 
 def parse_args() -> argparse.Namespace:
@@ -113,10 +112,10 @@ def main() -> None:
     dtype = resolve_dtype(args.dtype)
 
     model = Gemm(ni, nj, nk)
-    alpha, beta, A, B, C = init_array(ni, nj, nk, dtype=dtype)
+    inputs = init_array(ni, nj, nk, dtype=dtype)
 
     print(f"Compiling GEMM kernel to MLIR dialect: {args.dialect}")
-    generate_mlir(model, (alpha, beta, A, B, C), args.out_mlir_path, args.dialect)
+    generate_mlir(model, inputs, args.out_mlir_path, args.dialect)
 
 
 if __name__ == "__main__":

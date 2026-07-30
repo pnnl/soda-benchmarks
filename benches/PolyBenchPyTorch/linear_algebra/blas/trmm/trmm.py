@@ -68,10 +68,10 @@ def main() -> None:
     dtype = resolve_dtype(args.dtype)
 
     model = Trmm(m, n)
-    alpha, A, B = init_array(m, n, dtype=dtype)
+    inputs = init_array(m, n, dtype=dtype)
 
     print(f"Compiling TRMM kernel to MLIR dialect: {args.dialect}")
-    generate_mlir(model, (alpha, A, B), args.out_mlir_path, args.dialect)
+    generate_mlir(model, inputs, args.out_mlir_path, args.dialect)
 
 
 if __name__ == "__main__":

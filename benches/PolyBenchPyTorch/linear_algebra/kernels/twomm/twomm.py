@@ -21,8 +21,8 @@ Usage:
     # Import as module
     from kernel_2mm import TwoMM, init_array
     model = TwoMM(ni=800, nj=900, nk=1100, nl=1200)
-    alpha, beta, A, B, C, D = init_array(800, 900, 1100, 1200)
-    result = model(alpha, beta, A, B, C, D)
+    inputs = init_array(800, 900, 1100, 1200) # (alpha, beta, A, B, C, D)
+    result = model(*inputs)
 """
 
 import argparse
@@ -206,10 +206,10 @@ def main() -> None:
     dtype = resolve_dtype(args.dtype)
 
     model = TwoMM(ni, nj, nk, nl)
-    alpha, beta, A, B, C, D = init_array(ni, nj, nk, nl, dtype=dtype)
+    inputs = init_array(ni, nj, nk, nl, dtype=dtype)
 
     print(f"Compiling twomm kernel to MLIR dialect: {args.dialect}")
-    generate_mlir(model, (alpha, beta, A, B, C, D), args.out_mlir_path, args.dialect)
+    generate_mlir(model, inputs, args.out_mlir_path, args.dialect)
 
 
 if __name__ == "__main__":

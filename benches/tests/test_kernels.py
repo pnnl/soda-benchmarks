@@ -36,10 +36,8 @@ def test_2mm(dataset):
     )
     dims = k.get_dataset_dimensions(dataset)
     model = k.TwoMM(dims["ni"], dims["nj"], dims["nk"], dims["nl"])
-    alpha, beta, A, B, C, D = k.init_array(
-        dims["ni"], dims["nj"], dims["nk"], dims["nl"]
-    )
-    result = model(alpha, beta, A, B, C, D)
+    inputs = k.init_array(dims["ni"], dims["nj"], dims["nk"], dims["nl"])
+    result = model(*inputs)
     assert result.shape == (dims["ni"], dims["nl"])
 
 
@@ -49,10 +47,8 @@ def test_3mm(dataset):
     )
     dims = k.get_dataset_dimensions(dataset)
     model = k.ThreeMM(dims["ni"], dims["nj"], dims["nk"], dims["nl"], dims["nm"])
-    A, B, C, D = k.init_array(
-        dims["ni"], dims["nj"], dims["nk"], dims["nl"], dims["nm"]
-    )
-    result = model(A, B, C, D)
+    inputs = k.init_array(dims["ni"], dims["nj"], dims["nk"], dims["nl"], dims["nm"])
+    result = model(*inputs)
     assert result.shape == (dims["ni"], dims["nl"])
 
 
@@ -62,8 +58,8 @@ def test_atax(dataset):
     )
     dims = k.get_dataset_dimensions(dataset)
     model = k.Atax(dims["m"], dims["n"])
-    A, x = k.init_array(dims["m"], dims["n"])
-    result = model(A, x)
+    inputs = k.init_array(dims["m"], dims["n"])
+    result = model(*inputs)
     assert result.shape == (dims["n"],)
 
 
@@ -73,8 +69,8 @@ def test_bicg(dataset):
     )
     dims = k.get_dataset_dimensions(dataset)
     model = k.Bicg(dims["m"], dims["n"])
-    A, r, p = k.init_array(dims["m"], dims["n"])
-    s, q = model(A, r, p)
+    inputs = k.init_array(dims["m"], dims["n"])
+    s, q = model(*inputs)
     assert s.shape == (dims["m"],)
     assert q.shape == (dims["n"],)
 
@@ -85,8 +81,8 @@ def test_doitgen(dataset):
     )
     dims = k.get_dataset_dimensions(dataset)
     model = k.Doitgen(dims["nr"], dims["nq"], dims["np"])
-    A, C4 = k.init_array(dims["nr"], dims["nq"], dims["np"])
-    result = model(A, C4)
+    inputs = k.init_array(dims["nr"], dims["nq"], dims["np"])
+    result = model(*inputs)
     assert result.shape == (dims["nr"], dims["nq"], dims["np"])
 
 
@@ -96,8 +92,8 @@ def test_mvt(dataset):
     )
     dims = k.get_dataset_dimensions(dataset)
     model = k.Mvt(dims["n"])
-    A, x1, x2, y_1, y_2 = k.init_array(dims["n"])
-    x1_out, x2_out = model(A, x1, x2, y_1, y_2)
+    inputs = k.init_array(dims["n"])
+    x1_out, x2_out = model(*inputs)
     assert x1_out.shape == (dims["n"],)
     assert x2_out.shape == (dims["n"],)
 
@@ -113,8 +109,8 @@ def test_gemm(dataset):
     )
     dims = k.get_dataset_dimensions("gemm", dataset)
     model = k.Gemm(dims["ni"], dims["nj"], dims["nk"])
-    alpha, beta, A, B, C = k.init_array(dims["ni"], dims["nj"], dims["nk"])
-    out = model(alpha, beta, A, B, C)
+    inputs = k.init_array(dims["ni"], dims["nj"], dims["nk"])
+    out = model(*inputs)
     assert out.shape == (dims["ni"], dims["nj"])
 
 
@@ -124,8 +120,8 @@ def test_gemver(dataset):
     )
     dims = k.get_dataset_dimensions("gemver", dataset)
     model = k.Gemver(dims["n"])
-    alpha, beta, A, u1, v1, u2, v2, x, y, z, w = k.init_array(dims["n"])
-    out = model(alpha, beta, A, u1, v1, u2, v2, x, y, z)
+    inputs = k.init_array(dims["n"])
+    out = model(*inputs)
     assert out.shape == (dims["n"],)
 
 
@@ -135,8 +131,8 @@ def test_gesummv(dataset):
     )
     dims = k.get_dataset_dimensions("gesummv", dataset)
     model = k.Gesummv(dims["n"])
-    alpha, beta, A, B, x = k.init_array(dims["n"])
-    out = model(alpha, beta, A, B, x)
+    inputs = k.init_array(dims["n"])
+    out = model(*inputs)
     assert out.shape == (dims["n"],)
 
 
@@ -146,8 +142,8 @@ def test_symm(dataset):
     )
     dims = k.get_dataset_dimensions("symm", dataset)
     model = k.Symm(dims["m"], dims["n"])
-    alpha, beta, A, B, C = k.init_array(dims["m"], dims["n"])
-    out = model(alpha, A, B, beta, C)
+    inputs = k.init_array(dims["m"], dims["n"])
+    out = model(*inputs)
     assert out.shape == (dims["m"], dims["n"])
 
 
@@ -157,8 +153,8 @@ def test_syr2k(dataset):
     )
     dims = k.get_dataset_dimensions("syr2k", dataset)
     model = k.Syr2k(dims["n"], dims["m"])
-    alpha, beta, A, B, C = k.init_array(dims["n"], dims["m"])
-    out = model(alpha, A, B, beta, C)
+    inputs = k.init_array(dims["n"], dims["m"])
+    out = model(*inputs)
     assert out.shape == (dims["n"], dims["n"])
 
 
@@ -168,8 +164,8 @@ def test_syrk(dataset):
     )
     dims = k.get_dataset_dimensions("syrk", dataset)
     model = k.Syrk(dims["n"], dims["m"])
-    alpha, beta, A, C = k.init_array(dims["n"], dims["m"])
-    out = model(alpha, A, beta, C)
+    inputs = k.init_array(dims["n"], dims["m"])
+    out = model(*inputs)
     assert out.shape == (dims["n"], dims["n"])
 
 
@@ -179,6 +175,6 @@ def test_trmm(dataset):
     )
     dims = k.get_dataset_dimensions("trmm", dataset)
     model = k.Trmm(dims["m"], dims["n"])
-    alpha, A, B = k.init_array(dims["m"], dims["n"])
-    out = model(alpha, A, B)
+    inputs = k.init_array(dims["m"], dims["n"])
+    out = model(*inputs)
     assert out.shape == (dims["m"], dims["n"])

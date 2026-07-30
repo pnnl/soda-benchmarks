@@ -21,8 +21,8 @@ Usage:
     # Import as module
     from kernel_atax import Atax, init_array
     model = Atax(m=1900, n=2100)
-    A, x = init_array(1900, 2100)
-    result = model(A, x)
+    inputs = init_array(1900, 2100)
+    result = model(*inputs)
 """
 
 import argparse
@@ -152,10 +152,10 @@ def main() -> None:
     dtype = resolve_dtype(args.dtype)
 
     model = Atax(m, n)
-    A, x = init_array(m, n, dtype=dtype)
+    inputs = init_array(m, n, dtype=dtype)
 
     print(f"Compiling atax kernel to MLIR dialect: {args.dialect}")
-    generate_mlir(model, (A, x), args.out_mlir_path, args.dialect)
+    generate_mlir(model, inputs, args.out_mlir_path, args.dialect)
 
 
 if __name__ == "__main__":

@@ -19,8 +19,8 @@ Usage:
     # Import as module
     from kernel_doitgen import Doitgen, init_array
     model = Doitgen(nr=150, nq=140, np=160)
-    A, C4 = init_array(150, 140, 160)
-    result = model(A, C4)
+    inputs = init_array(150, 140, 160)
+    result = model(*inputs)
 """
 
 import argparse
@@ -159,10 +159,10 @@ def main() -> None:
     dtype = resolve_dtype(args.dtype)
 
     model = Doitgen(nr, nq, np)
-    A, C4 = init_array(nr, nq, np, dtype=dtype)
+    inputs = init_array(nr, nq, np, dtype=dtype)
 
     print(f"Compiling doitgen kernel to MLIR dialect: {args.dialect}")
-    generate_mlir(model, (A, C4), args.out_mlir_path, args.dialect)
+    generate_mlir(model, inputs, args.out_mlir_path, args.dialect)
 
 
 if __name__ == "__main__":

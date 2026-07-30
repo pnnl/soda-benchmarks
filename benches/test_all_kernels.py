@@ -44,10 +44,10 @@ ksyrk    = importlib.import_module("benches.PolyBenchPyTorch.linear_algebra.blas
 ktrmm    = importlib.import_module("benches.PolyBenchPyTorch.linear_algebra.blas.trmm.trmm")
 
 
-def save_mlir_output(kernel_name, model, *init_args):
+def save_mlir_output(kernel_name, model, inputs):
     """Compile kernel to MLIR (TOSA dialect) and write to output/."""
     from torch_mlir import torchscript  # type: ignore
-    mlir_module = torchscript.compile(model, init_args, output_type="tosa", use_tracing=True)
+    mlir_module = torchscript.compile(model, inputs, output_type="tosa", use_tracing=True)
     output_dir = os.path.join(OUTPUT_ROOT, "output")
     os.makedirs(output_dir, exist_ok=True)
     output_path = os.path.join(output_dir, f"{kernel_name}_tosa.mlir")
@@ -63,63 +63,63 @@ def save_mlir_output(kernel_name, model, *init_args):
 def test_2mm():
     dims = k2mm.get_dataset_dimensions(DATASET)
     model = k2mm.TwoMM(dims["ni"], dims["nj"], dims["nk"], dims["nl"])
-    alpha, beta, A, B, C, D = k2mm.init_array(dims["ni"], dims["nj"], dims["nk"], dims["nl"])
-    result = model(alpha, beta, A, B, C, D)
+    inputs = k2mm.init_array(dims["ni"], dims["nj"], dims["nk"], dims["nl"])
+    result = model(*inputs)
     assert result.shape == (dims["ni"], dims["nl"]), f"Unexpected shape: {result.shape}"
     print(f"✓ twomm: result shape {result.shape}, dtype {result.dtype}")
-    save_mlir_output("twomm", model, alpha, beta, A, B, C, D)
+    save_mlir_output("twomm", model, inputs)
 
 
 def test_3mm():
     dims = k3mm.get_dataset_dimensions(DATASET)
     model = k3mm.ThreeMM(dims["ni"], dims["nj"], dims["nk"], dims["nl"], dims["nm"])
-    A, B, C, D = k3mm.init_array(dims["ni"], dims["nj"], dims["nk"], dims["nl"], dims["nm"])
-    result = model(A, B, C, D)
+    inputs = k3mm.init_array(dims["ni"], dims["nj"], dims["nk"], dims["nl"], dims["nm"])
+    result = model(*inputs)
     assert result.shape == (dims["ni"], dims["nl"]), f"Unexpected shape: {result.shape}"
     print(f"✓ threemm: result shape {result.shape}, dtype {result.dtype}")
-    save_mlir_output("threemm", model, A, B, C, D)
+    save_mlir_output("threemm", model, inputs)
 
 
 def test_atax():
     dims = katax.get_dataset_dimensions(DATASET)
     model = katax.Atax(dims["m"], dims["n"])
-    A, x = katax.init_array(dims["m"], dims["n"])
-    result = model(A, x)
+    inputs = katax.init_array(dims["m"], dims["n"])
+    result = model(*inputs)
     assert result.shape == (dims["n"],), f"Unexpected shape: {result.shape}"
     print(f"✓ atax: result shape {result.shape}, dtype {result.dtype}")
-    save_mlir_output("atax", model, A, x)
+    save_mlir_output("atax", model, inputs)
 
 
 def test_bicg():
     dims = kbicg.get_dataset_dimensions(DATASET)
     model = kbicg.Bicg(dims["m"], dims["n"])
-    A, r, p = kbicg.init_array(dims["m"], dims["n"])
-    s, q = model(A, r, p)
+    inputs = kbicg.init_array(dims["m"], dims["n"])
+    s, q = model(*inputs)
     assert s.shape == (dims["m"],), f"Unexpected s shape: {s.shape}"
     assert q.shape == (dims["n"],), f"Unexpected q shape: {q.shape}"
     print(f"✓ bicg: s shape {s.shape}, q shape {q.shape}, dtype {s.dtype}")
-    save_mlir_output("bicg", model, A, r, p)
+    save_mlir_output("bicg", model, inputs)
 
 
 def test_doitgen():
     dims = kdoit.get_dataset_dimensions(DATASET)
     model = kdoit.Doitgen(dims["nr"], dims["nq"], dims["np"])
-    A, C4 = kdoit.init_array(dims["nr"], dims["nq"], dims["np"])
-    result = model(A, C4)
+    inputs = kdoit.init_array(dims["nr"], dims["nq"], dims["np"])
+    result = model(*inputs)
     assert result.shape == (dims["nr"], dims["nq"], dims["np"]), f"Unexpected shape: {result.shape}"
     print(f"✓ doitgen: result shape {result.shape}, dtype {result.dtype}")
-    save_mlir_output("doitgen", model, A, C4)
+    save_mlir_output("doitgen", model, inputs)
 
 
 def test_mvt():
     dims = kmvt.get_dataset_dimensions(DATASET)
     model = kmvt.Mvt(dims["n"])
-    A, x1, x2, y_1, y_2 = kmvt.init_array(dims["n"])
-    x1_out, x2_out = model(A, x1, x2, y_1, y_2)
+    inputs = kmvt.init_array(dims["n"])
+    x1_out, x2_out = model(*inputs)
     assert x1_out.shape == (dims["n"],), f"Unexpected x1_out shape: {x1_out.shape}"
     assert x2_out.shape == (dims["n"],), f"Unexpected x2_out shape: {x2_out.shape}"
     print(f"✓ mvt: x1_out shape {x1_out.shape}, x2_out shape {x2_out.shape}, dtype {x1_out.dtype}")
-    save_mlir_output("mvt", model, A, x1, x2, y_1, y_2)
+    save_mlir_output("mvt", model, inputs)
 
 
 # ---------------------------------------------------------------------------
@@ -129,71 +129,71 @@ def test_mvt():
 def test_gemm():
     dims = kgemm.get_dataset_dimensions("gemm", DATASET)
     model = kgemm.Gemm(dims["ni"], dims["nj"], dims["nk"])
-    alpha, beta, A, B, C = kgemm.init_array(dims["ni"], dims["nj"], dims["nk"])
-    out = model(alpha, beta, A, B, C)
+    inputs = kgemm.init_array(dims["ni"], dims["nj"], dims["nk"])
+    out = model(*inputs)
     assert out.shape == (dims["ni"], dims["nj"]), f"Unexpected shape: {out.shape}"
     print(f"✓ gemm: result shape {out.shape}, dtype {out.dtype}")
-    save_mlir_output("gemm", model, alpha, beta, A, B, C)
+    save_mlir_output("gemm", model, inputs)
 
 
 def test_gemver():
     dims = kgemver.get_dataset_dimensions("gemver", DATASET)
     model = kgemver.Gemver(dims["n"])
-    alpha, beta, A, u1, v1, u2, v2, x, y, z, w = kgemver.init_array(dims["n"])
-    out = model(alpha, beta, A, u1, v1, u2, v2, x, y, z)
+    inputs = kgemver.init_array(dims["n"])
+    out = model(*inputs)
     assert out.shape == (dims["n"],), f"Unexpected shape: {out.shape}"
     print(f"✓ gemver: result shape {out.shape}, dtype {out.dtype}")
-    save_mlir_output("gemver", model, alpha, beta, A, u1, v1, u2, v2, x, y, z)
+    save_mlir_output("gemver", model, inputs)
 
 
 def test_gesummv():
     dims = kgesummv.get_dataset_dimensions("gesummv", DATASET)
     model = kgesummv.Gesummv(dims["n"])
-    alpha, beta, A, B, x = kgesummv.init_array(dims["n"])
-    out = model(alpha, beta, A, B, x)
+    inputs = kgesummv.init_array(dims["n"])
+    out = model(*inputs)
     assert out.shape == (dims["n"],), f"Unexpected shape: {out.shape}"
     print(f"✓ gesummv: result shape {out.shape}, dtype {out.dtype}")
-    save_mlir_output("gesummv", model, alpha, beta, A, B, x)
+    save_mlir_output("gesummv", model, inputs)
 
 
 def test_symm():
     dims = ksymm.get_dataset_dimensions("symm", DATASET)
     model = ksymm.Symm(dims["m"], dims["n"])
-    alpha, beta, A, B, C = ksymm.init_array(dims["m"], dims["n"])
-    out = model(alpha, A, B, beta, C)
+    inputs = ksymm.init_array(dims["m"], dims["n"])
+    out = model(*inputs)
     assert out.shape == (dims["m"], dims["n"]), f"Unexpected shape: {out.shape}"
     print(f"✓ symm: result shape {out.shape}, dtype {out.dtype}")
-    save_mlir_output("symm", model, alpha, A, B, beta, C)
+    save_mlir_output("symm", model, inputs)
 
 
 def test_syr2k():
     dims = ksyr2k.get_dataset_dimensions("syr2k", DATASET)
     model = ksyr2k.Syr2k(dims["n"], dims["m"])
-    alpha, beta, A, B, C = ksyr2k.init_array(dims["n"], dims["m"])
-    out = model(alpha, A, B, beta, C)
+    inputs = ksyr2k.init_array(dims["n"], dims["m"])
+    out = model(*inputs)
     assert out.shape == (dims["n"], dims["n"]), f"Unexpected shape: {out.shape}"
     print(f"✓ syr2k: result shape {out.shape}, dtype {out.dtype}")
-    save_mlir_output("syr2k", model, alpha, A, B, beta, C)
+    save_mlir_output("syr2k", model, inputs)
 
 
 def test_syrk():
     dims = ksyrk.get_dataset_dimensions("syrk", DATASET)
     model = ksyrk.Syrk(dims["n"], dims["m"])
-    alpha, beta, A, C = ksyrk.init_array(dims["n"], dims["m"])
-    out = model(alpha, A, beta, C)
+    inputs = ksyrk.init_array(dims["n"], dims["m"])
+    out = model(*inputs)
     assert out.shape == (dims["n"], dims["n"]), f"Unexpected shape: {out.shape}"
     print(f"✓ syrk: result shape {out.shape}, dtype {out.dtype}")
-    save_mlir_output("syrk", model, alpha, A, beta, C)
+    save_mlir_output("syrk", model, inputs)
 
 
 def test_trmm():
     dims = ktrmm.get_dataset_dimensions("trmm", DATASET)
     model = ktrmm.Trmm(dims["m"], dims["n"])
-    alpha, A, B = ktrmm.init_array(dims["m"], dims["n"])
-    out = model(alpha, A, B)
+    inputs = ktrmm.init_array(dims["m"], dims["n"])
+    out = model(*inputs)
     assert out.shape == (dims["m"], dims["n"]), f"Unexpected shape: {out.shape}"
     print(f"✓ trmm: result shape {out.shape}, dtype {out.dtype}")
-    save_mlir_output("trmm", model, alpha, A, B)
+    save_mlir_output("trmm", model, inputs)
 
 
 # ---------------------------------------------------------------------------
