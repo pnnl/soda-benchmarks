@@ -39,6 +39,7 @@ class Gemver(nn.Module):
         v1: torch.Tensor,
         u2: torch.Tensor,
         v2: torch.Tensor,
+        w: torch.Tensor,
         x: torch.Tensor,
         y: torch.Tensor,
         z: torch.Tensor,
@@ -50,6 +51,7 @@ class Gemver(nn.Module):
             assert v1.shape == (self.n,)
             assert u2.shape == (self.n,)
             assert v2.shape == (self.n,)
+            assert w.shape == (self.n,)
             assert x.shape == (self.n,)
             assert y.shape == (self.n,)
             assert z.shape == (self.n,)
@@ -63,8 +65,8 @@ class Gemver(nn.Module):
         # Step 3: x := x + z
         x = x + z
 
-        # Step 4: w := alpha * A * x
-        w = alpha * torch.mv(A, x)
+        # Step 4: w := w + alpha * A * x
+        w = w + alpha * torch.mv(A, x)
 
         return w
 
@@ -72,7 +74,7 @@ class Gemver(nn.Module):
 def init_array(n: int, dtype: torch.dtype = torch.float32):
     """Initialize arrays for GEMVER according to data-model.md
 
-    Returns (alpha, beta, A, u1, v1, u2, v2, x, y, z, w)
+    Returns (alpha, beta, A, u1, v1, u2, v2, w, x, y, z).
     """
     alpha = torch.tensor(1.5, dtype=dtype)
     beta = torch.tensor(1.2, dtype=dtype)
@@ -101,7 +103,7 @@ def init_array(n: int, dtype: torch.dtype = torch.float32):
         x[i] = 0.0
         w[i] = 0.0
 
-    return alpha, beta, A, u1, v1, u2, v2, x, y, z, w
+    return alpha, beta, A, u1, v1, u2, v2, w, x, y, z
 
 
 def parse_args() -> argparse.Namespace:
@@ -119,15 +121,10 @@ def main() -> None:
     dtype = resolve_dtype(args.dtype)
 
     model = Gemver(n)
-    alpha, beta, A, u1, v1, u2, v2, x, y, z, w = init_array(n, dtype=dtype)
+    inputs = init_array(n, dtype=dtype)
 
     print(f"Compiling GEMVER kernel to MLIR dialect: {args.dialect}")
-    generate_mlir(
-        model,
-        (alpha, beta, A, u1, v1, u2, v2, x, y, z),
-        args.out_mlir_path,
-        args.dialect,
-    )
+    generate_mlir(model, inputs, args.out_mlir_path, args.dialect)
 
 
 if __name__ == "__main__":
