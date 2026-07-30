@@ -19,7 +19,6 @@ __all__ = [
     "get_dataset_dimensions",
     "resolve_dtype",
     "generate_mlir",
-    "gemm_init_array",
 ]
 
 # ---------------------------------------------------------------------------
@@ -297,46 +296,3 @@ def generate_mlir(
         f.write(str(mlir_module))
 
     print(f"MLIR written to {out_path}")
-
-
-def gemm_init_array(
-    ni: int,
-    nj: int,
-    nk: int,
-    dtype: torch.dtype = torch.float32,
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
-    """Initialize arrays for the GEMM kernel following PolyBenchC formulas.
-
-    Moved from PolyBenchPyTorch/linear_algebra/blas/utils.py.
-    Kept here for backwards compatibility with callers that import it from
-    either location.
-
-    Args:
-        ni: Rows in A and C.
-        nj: Columns in B and C.
-        nk: Columns in A, rows in B.
-        dtype: Tensor data type (default: torch.float32).
-
-    Returns:
-        Tuple (alpha, beta, C, A, B), where alpha and beta are 0-dimensional
-        tensors as required by torch-mlir.
-    """
-    alpha = torch.tensor(1.5, dtype=dtype)
-    beta = torch.tensor(1.2, dtype=dtype)
-
-    C = torch.zeros((ni, nj), dtype=dtype)
-    for i in range(ni):
-        for j in range(nj):
-            C[i, j] = ((i * j + 1) % ni) / float(ni)
-
-    A = torch.zeros((ni, nk), dtype=dtype)
-    for i in range(ni):
-        for j in range(nk):
-            A[i, j] = ((i * (j + 1)) % nk) / float(nk)
-
-    B = torch.zeros((nk, nj), dtype=dtype)
-    for i in range(nk):
-        for j in range(nj):
-            B[i, j] = ((i * (j + 2)) % nj) / float(nj)
-
-    return alpha, beta, C, A, B

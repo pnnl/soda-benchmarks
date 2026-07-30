@@ -7,8 +7,7 @@ continues to work without modification.
 """
 
 from benches.PolyBenchPyTorch.linear_algebra.utils import (  # noqa: F401
-    gemm_init_array,
     get_dataset_dimensions,
 )
 
-__all__ = ["get_dataset_dimensions", "gemm_init_array"]
+__all__ = ["get_dataset_dimensions"]
