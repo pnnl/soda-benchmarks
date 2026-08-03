@@ -22,6 +22,9 @@
 
 #include <cstdint>
 #include <optional>
+#include <string>
+
+#include "mlir/Dialect/Utils/StructuredOpsUtils.h"
 
 #include "sodap/SODAPPasses.h"
 
@@ -37,6 +40,14 @@ namespace {
 constexpr llvm::StringLiteral kIssueAPERequest = "issue_APE_request";
 constexpr llvm::StringLiteral kPreIssueAPERequest = "pre_issue_APE_request";
 constexpr llvm::StringLiteral kAPETensorInfoAttr = "ape.tensor_info";
+
+// addr_gen2.py C runtime entry points
+constexpr llvm::StringLiteral kApeIncomplete  = "ape_incomplete";
+constexpr llvm::StringLiteral kApeBroadcast   = "ape_broadcast";
+constexpr llvm::StringLiteral kApeGather      = "ape_gather_from_memref";
+constexpr llvm::StringLiteral kApeElementwise = "ape_elementwise_trace";
+
+constexpr int64_t CACHE_CAPACITY = 20; //32 * 1024; // 32KB L1 cache
 
 static func::FuncOp ensureIssueAPERequestDeclaration(ModuleOp module) {
   if (auto existing = module.lookupSymbol<func::FuncOp>(kIssueAPERequest))
@@ -54,17 +65,12 @@ static func::FuncOp ensureIssueAPERequestDeclaration(ModuleOp module) {
       indexType, // base_addr
       i32Type,   // tensor_id
       i32Type,   // strategy
-      indexType, // i0
-      indexType, // i1
-      indexType, // i2
-      indexType, // i3
       i1Type,    // is_write
       i64Type,   // element_bytes
+      i64Type,   // total_elements
       i64Type,   // rank
-      i64Type,   // dim0
-      i64Type,   // dim1
-      i64Type,   // dim2
-      i1Type,    // column_major_access
+      indexType, // shape_desc_ptr
+      indexType, // strides_desc_ptr
   };
 
   auto fnType = FunctionType::get(ctx, inputs, TypeRange{});
@@ -81,8 +87,55 @@ static func::FuncOp ensurePreIssueAPERequestDeclaration(ModuleOp module) {
   OpBuilder moduleBuilder(module.getBodyRegion());
   MLIRContext *ctx = module.getContext();
   auto fnType = FunctionType::get(ctx, TypeRange{}, TypeRange{});
-  auto fn = moduleBuilder.create<func::FuncOp>(
-      module.getLoc(), kPreIssueAPERequest, fnType);
+  auto fn = moduleBuilder.create<func::FuncOp>(module.getLoc(),
+                                               kPreIssueAPERequest, fnType);
+  fn.setPrivate();
+  return fn;
+}
+
+static func::FuncOp ensureApeIncompleteDecl(ModuleOp module) {
+  if (auto f = module.lookupSymbol<func::FuncOp>(kApeIncomplete)) return f;
+  OpBuilder b(module.getBodyRegion());
+  auto fn = b.create<func::FuncOp>(module.getLoc(), kApeIncomplete,
+      FunctionType::get(module.getContext(), TypeRange{}, TypeRange{}));
+  fn.setPrivate();
+  return fn;
+}
+
+static func::FuncOp ensureApeBroadcastDecl(ModuleOp module) {
+  if (auto f = module.lookupSymbol<func::FuncOp>(kApeBroadcast)) return f;
+  OpBuilder b(module.getBodyRegion());
+  MLIRContext *ctx = module.getContext();
+  // (aligned, offset, s0, s1, str0, str1, elem_bytes) — all i64
+  SmallVector<Type, 7> args(7, IntegerType::get(ctx, 64));
+  auto fn = b.create<func::FuncOp>(module.getLoc(), kApeBroadcast,
+      FunctionType::get(ctx, args, TypeRange{}));
+  fn.setPrivate();
+  return fn;
+}
+
+static func::FuncOp ensureApeGatherDecl(ModuleOp module) {
+  if (auto f = module.lookupSymbol<func::FuncOp>(kApeGather)) return f;
+  OpBuilder b(module.getBodyRegion());
+  MLIRContext *ctx = module.getContext();
+  // 3 memrefs × (aligned,offset,s0,s1,str0,str1) + L1_cache_size + elem_bytes = 20 i64
+  SmallVector<Type, 20> args(20, IntegerType::get(ctx, 64));
+  auto fn = b.create<func::FuncOp>(module.getLoc(), kApeGather,
+      FunctionType::get(ctx, args, TypeRange{}));
+  fn.setPrivate();
+  return fn;
+}
+
+static func::FuncOp ensureApeElementwiseDecl(ModuleOp module) {
+  if (auto f = module.lookupSymbol<func::FuncOp>(kApeElementwise)) return f;
+  OpBuilder b(module.getBodyRegion());
+  MLIRContext *ctx = module.getContext();
+  // (n_operands: i64, L1_cache_size: i64, elem_bytes: i64, desc_ptr: index)
+  SmallVector<Type, 4> args = {
+      IntegerType::get(ctx, 64), IntegerType::get(ctx, 64),
+      IntegerType::get(ctx, 64), IndexType::get(ctx)};
+  auto fn = b.create<func::FuncOp>(module.getLoc(), kApeElementwise,
+      FunctionType::get(ctx, args, TypeRange{}));
   fn.setPrivate();
   return fn;
 }
@@ -110,11 +163,124 @@ static int32_t inferContiguousVectorLength(MemRefType memrefType,
   return static_cast<int32_t>(std::max<int64_t>(1, std::min(last, elemsPerChunk)));
 }
 
+static StringRef classifyAccessPattern(AffineMap indexingMap) {
+  if (indexingMap.getNumResults() == 0)
+    return "unknown";
+
+  // Constant-indexed dimensions indicate broadcast-style access.
+  for (AffineExpr e : indexingMap.getResults()) {
+    if (isa<AffineConstantExpr>(e))
+      return "broadcast";
+  }
+
+  bool allDimExpr = true;
+  llvm::DenseSet<unsigned> usedDims;
+  SmallVector<unsigned, 8> dimOrder;
+  for (AffineExpr e : indexingMap.getResults()) {
+    auto dim = dyn_cast<AffineDimExpr>(e);
+    if (!dim) {
+      allDimExpr = false;
+      break;
+    }
+    unsigned pos = dim.getPosition();
+    usedDims.insert(pos);
+    dimOrder.push_back(pos);
+  }
+
+  if (!allDimExpr)
+    return "strided";
+
+  if (usedDims.size() != indexingMap.getNumResults())
+    return "strided";
+
+  bool isIdentity = true;
+  for (unsigned i = 0; i < dimOrder.size(); ++i) {
+    if (dimOrder[i] != i) {
+      isIdentity = false;
+      break;
+    }
+  }
+
+  if (isIdentity)
+    return dimOrder.size() == 1 ? "linear" : "identity";
+
+  return "permuted";
+}
+
+static bool isDenseAccessPattern(StringRef accessPattern) {
+  return accessPattern == "linear" || accessPattern == "identity";
+}
+
+static int32_t inferPrefetchStrategy(StringRef accessPattern,
+                                     int32_t contiguousVecLen) {
+  // 0 = dense/sequential access, 1 = non-contiguous or gather-like access.
+  bool dense = isDenseAccessPattern(accessPattern);
+  return (dense && contiguousVecLen > 1) ? 0 : 1;
+}
+
+static int64_t inferTotalElements(MemRefType memrefType) {
+  if (!memrefType.hasRank() || memrefType.getRank() == 0)
+    return 1;
+
+  int64_t total = 1;
+  for (int64_t dim : memrefType.getShape()) {
+    if (ShapedType::isDynamic(dim))
+      return 1;
+    total *= std::max<int64_t>(1, dim);
+  }
+  return std::max<int64_t>(1, total);
+}
+
+// Classify a linalg op into the addr_gen2.py dispatch category.
+static StringRef classifyLinalgOpKind(linalg::LinalgOp linalgOp) {
+  // Named matmul ops → gather pattern (A×B→C with reduction over K)
+  if (isa<linalg::MatmulOp, linalg::BatchMatmulOp>(linalgOp.getOperation()))
+    return "gather";
+
+  // Any reduction iterator → not handled by elementwise/broadcast
+  auto iterTypes = linalgOp.getIteratorTypesArray();
+  bool hasReduction = llvm::any_of(iterTypes, [](utils::IteratorType t) {
+    return t == utils::IteratorType::reduction;
+  });
+  if (hasReduction)
+    return "incomplete";
+
+  SmallVector<AffineMap, 4> maps = linalgOp.getIndexingMapsArray();
+  int inputCount = linalgOp.getNumDpsInputs();
+  int broadcastInputs = 0;
+  bool anyUnsupported = false;
+
+  for (int i = 0; i < static_cast<int>(maps.size()); ++i) {
+    StringRef pat = classifyAccessPattern(maps[i]);
+    if (pat == "broadcast") {
+      if (i < inputCount) ++broadcastInputs;
+    } else if (pat != "identity" && pat != "linear") {
+      anyUnsupported = true;
+      break;
+    }
+  }
+  if (anyUnsupported)
+    return "incomplete";
+
+  // Single input with broadcast map + identity output → broadcast_op
+  if (inputCount == 1 && broadcastInputs == 1 &&
+      linalgOp.getNumDpsInits() == 1) {
+    StringRef outPat = classifyAccessPattern(maps[static_cast<size_t>(inputCount)]);
+    if (outPat == "identity" || outPat == "linear")
+      return "broadcast_op";
+  }
+
+  if (broadcastInputs == 0)
+    return "elementwise";
+
+  return "incomplete"; // mixed broadcast + non-broadcast (e.g. outer product)
+}
+
 static DictionaryAttr buildTensorInfoDict(Builder &b, int32_t tensorId,
                                           StringRef accessKind,
                                           StringRef role,
                                           MemRefType memrefType,
-                                          StringRef indexingMapText) {
+                                          AffineMap indexingMap) {
   SmallVector<Attribute, 8> shapeAttrs;
   SmallVector<Attribute, 8> strideAttrs;
 
@@ -133,6 +299,10 @@ static DictionaryAttr buildTensorInfoDict(Builder &b, int32_t tensorId,
   }
 
   int32_t contiguousVecLen = inferContiguousVectorLength(memrefType, elemBytes);
+  int64_t rank = memrefType.getRank();
+  StringRef accessPattern = classifyAccessPattern(indexingMap);
+  int32_t issueStrategy = inferPrefetchStrategy(accessPattern, contiguousVecLen);
+  int64_t issueTotalElements = inferTotalElements(memrefType);
 
   std::string elementTypeStr;
   {
@@ -146,12 +316,30 @@ static DictionaryAttr buildTensorInfoDict(Builder &b, int32_t tensorId,
       b.getNamedAttr("access_kind", b.getStringAttr(accessKind)),
       b.getNamedAttr("element_type", b.getStringAttr(elementTypeStr)),
       b.getNamedAttr("element_bytes", b.getI64IntegerAttr(elemBytes)),
-      b.getNamedAttr("rank", b.getI64IntegerAttr(memrefType.getRank())),
+      b.getNamedAttr("rank", b.getI64IntegerAttr(rank)),
       b.getNamedAttr("shape", b.getArrayAttr(shapeAttrs)),
       b.getNamedAttr("strides", b.getArrayAttr(strideAttrs)),
-      b.getNamedAttr("indexing_map", b.getStringAttr(indexingMapText)),
+      b.getNamedAttr("access_pattern", b.getStringAttr(accessPattern)),
       b.getNamedAttr("contiguous_vector_len",
                      b.getI32IntegerAttr(contiguousVecLen)),
+      // Precompute all request-level fields at linalg time so affine insertion
+      // can emit calls without reconstructing memref/indexing details.
+      b.getNamedAttr("issue_strategy", b.getI32IntegerAttr(issueStrategy)),
+      b.getNamedAttr("issue_total_elements",
+                     b.getI64IntegerAttr(issueTotalElements)),
+  });
+}
+
+// Compact per-operand attribute for pre_issue_APE_request calls.
+static DictionaryAttr buildCompactOperandInfo(Builder &b, int32_t tensorId,
+                                               StringRef accessKind,
+                                               StringRef accessPattern,
+                                               int64_t elementBytes) {
+  return b.getDictionaryAttr({
+      b.getNamedAttr("tensor_id",      b.getI32IntegerAttr(tensorId)),
+      b.getNamedAttr("access_kind",    b.getStringAttr(accessKind)),
+      b.getNamedAttr("access_pattern", b.getStringAttr(accessPattern)),
+      b.getNamedAttr("element_bytes",  b.getI64IntegerAttr(elementBytes)),
   });
 }
 
@@ -275,6 +463,35 @@ static Value getBaseAddrAsIndex(OpBuilder &builder, Location loc, Value memref) 
   return builder.create<memref::ExtractAlignedPointerAsIndexOp>(loc, memref);
 }
 
+static Value materializeI64DescriptorPtr(OpBuilder &builder, Location loc,
+                                         ArrayAttr values) {
+  int64_t size = values ? static_cast<int64_t>(values.size()) : int64_t{0};
+  size = std::max<int64_t>(1, size);
+  auto bufferType = MemRefType::get({size}, builder.getI64Type());
+  Value buffer = builder.create<memref::AllocaOp>(loc, bufferType);
+
+  auto emitAt = [&](int64_t idx, int64_t value) {
+    Value idxVal = builder.create<arith::ConstantIndexOp>(loc, idx);
+    Value val = getI64Const(builder, loc, value);
+    builder.create<memref::StoreOp>(loc, val, buffer, ValueRange{idxVal});
+  };
+
+  if (!values || values.empty()) {
+    emitAt(0, 1);
+    return getBaseAddrAsIndex(builder, loc, buffer);
+  }
+
+  for (int64_t i = 0; i < static_cast<int64_t>(values.size()); ++i) {
+    int64_t value = 1;
+    if (auto intAttr = dyn_cast<IntegerAttr>(values[static_cast<size_t>(i)]))
+      value = intAttr.getInt();
+    if (value <= 0)
+      value = 1;
+    emitAt(i, value);
+  }
+  return getBaseAddrAsIndex(builder, loc, buffer);
+}
+
 class LinalgAPEAnalysis
     : public impl::LinalgAPEAnalysisBase<LinalgAPEAnalysis> {
 public:
@@ -288,6 +505,7 @@ public:
       return;
 
     ensureIssueAPERequestDeclaration(funcOp->getParentOfType<ModuleOp>());
+
     ensurePreIssueAPERequestDeclaration(funcOp->getParentOfType<ModuleOp>());
 
     Builder b(funcOp.getContext());
@@ -296,7 +514,9 @@ public:
     int32_t nextTensorId = 0;
 
     funcOp.walk([&](linalg::LinalgOp linalgOp) {
-      SmallVector<Attribute, 8> perOperandInfos;
+      SmallVector<Attribute, 8> perOperandInfos;  // full info → linalg op attr
+      SmallVector<Attribute, 8> compactInfos;      // compact info → call attr
+      SmallVector<Value, 8> operandValues;  // Add this
 
       auto processOperand = [&](OpOperand *operand, StringRef role,
                                 StringRef accessKind, AffineMap indexingMap) {
@@ -314,15 +534,17 @@ public:
           tensorId = it->second;
         }
 
-        std::string mapText;
-        {
-          llvm::raw_string_ostream os(mapText);
-          indexingMap.print(os);
-        }
-
         DictionaryAttr info = buildTensorInfoDict(b, tensorId, accessKind, role,
-                                                  memrefTy, mapText);
+                                                  memrefTy, indexingMap);
         perOperandInfos.push_back(info);
+
+        // Build compact call attribute: only fields needed at issue time.
+        // Shape, strides, rank are omitted — derivable from the memref arg.
+        int64_t elemBytes = getElementByteWidth(memrefTy.getElementType());
+        StringRef accessPattern = classifyAccessPattern(indexingMap);
+        compactInfos.push_back(buildCompactOperandInfo(
+            b, tensorId, accessKind, accessPattern, elemBytes));
+        operandValues.push_back(v);
 
         // Attach compact per-tensor metadata to the value source so later
         // passes can recover a memref from tensor_id even after linalg is
@@ -355,51 +577,25 @@ public:
         processOperand(linalgOp.getDpsInitOperand(idx), "output", "write", map);
       }
 
-      if (!perOperandInfos.empty()) {
+      if (!compactInfos.empty()) {
+        // Attach full info to the linalg op for downstream reference.
         DictionaryAttr opInfo = b.getDictionaryAttr(
             {b.getNamedAttr("operands", b.getArrayAttr(perOperandInfos))});
         linalgOp->setAttr(kAPETensorInfoAttr, opInfo);
 
-        // Keep one compact marker right before each linalg op so the metadata
-        // survives lowering without adding per-operand noise.
+        StringRef opKind = classifyLinalgOpKind(linalgOp);
+        DictionaryAttr callInfo = b.getDictionaryAttr({
+            b.getNamedAttr("op_kind",   b.getStringAttr(opKind)),
+            b.getNamedAttr("operands",  b.getArrayAttr(compactInfos))});
+
         callBuilder.setInsertionPoint(linalgOp);
         auto preIssue = callBuilder.create<func::CallOp>(
             linalgOp.getLoc(), TypeRange{},
             SymbolRefAttr::get(callBuilder.getContext(), kPreIssueAPERequest),
             ValueRange{});
-        preIssue->setAttr("ape.pre_issue_info", opInfo);
+        preIssue->setAttr("ape.pre_issue_info", callInfo);
       }
     });
-  }
-};
-
-struct InsertionKey {
-  Operation *loopOp = nullptr;
-  Value memref;
-  bool isWrite = false;
-  int32_t requestOrdinal = 0;
-
-  bool operator==(const InsertionKey &other) const {
-    return loopOp == other.loopOp && memref == other.memref &&
-           isWrite == other.isWrite && requestOrdinal == other.requestOrdinal;
-  }
-};
-
-struct InsertionKeyInfo : llvm::DenseMapInfo<InsertionKey> {
-  static InsertionKey getEmptyKey() {
-    return {llvm::DenseMapInfo<Operation *>::getEmptyKey(),
-            llvm::DenseMapInfo<Value>::getEmptyKey(), false, -1};
-  }
-  static InsertionKey getTombstoneKey() {
-    return {llvm::DenseMapInfo<Operation *>::getTombstoneKey(),
-            llvm::DenseMapInfo<Value>::getTombstoneKey(), false, -2};
-  }
-  static unsigned getHashValue(const InsertionKey &k) {
-    return llvm::hash_combine(k.loopOp, k.memref.getAsOpaquePointer(), k.isWrite,
-                              k.requestOrdinal);
-  }
-  static bool isEqual(const InsertionKey &a, const InsertionKey &b) {
-    return a == b;
   }
 };
 
@@ -415,19 +611,23 @@ public:
     if (funcOp.isExternal() || funcOp.getBody().empty())
       return;
 
-    ensureIssueAPERequestDeclaration(funcOp->getParentOfType<ModuleOp>());
+    ModuleOp module = funcOp->getParentOfType<ModuleOp>();
+    ensureApeIncompleteDecl(module);
+    ensureApeBroadcastDecl(module);
+    ensureApeGatherDecl(module);
+    ensureApeElementwiseDecl(module);
 
-    OpBuilder builder(funcOp.getContext());
-    llvm::DenseSet<std::pair<Operation *, int32_t>> seen;
+    MLIRContext *ctx = funcOp.getContext();
+    OpBuilder builder(ctx);
     DenseMap<int32_t, Value> tensorIdToMemref;
 
+    // Build tensor_id → live SSA memref map from annotated block args and ops.
     for (BlockArgument arg : funcOp.getArguments()) {
       if (!isa<MemRefType>(arg.getType()))
         continue;
       if (auto md = readTensorMetadata(arg, funcOp))
         tensorIdToMemref.try_emplace(md->tensorId, arg);
     }
-
     funcOp.walk([&](Operation *op) {
       for (Value result : op->getResults()) {
         if (!isa<MemRefType>(result.getType()))
@@ -437,12 +637,40 @@ public:
       }
     });
 
-    auto getNextAffineFor = [&](Operation *op) -> affine::AffineForOp {
-      for (Operation *cur = op->getNextNode(); cur; cur = cur->getNextNode()) {
-        if (auto forOp = dyn_cast<affine::AffineForOp>(cur))
-          return forOp;
-      }
-      return {};
+    // Extract (aligned_i64, offset_i64, s0_i64, s1_i64, str0_i64, str1_i64)
+    // from a live memref SSA value. `firstDim` lets us skip batch dims on rank-3.
+    auto extractMemrefArgs =
+        [&](OpBuilder &b, Location loc, Value memrefVal,
+            int firstDim) -> SmallVector<Value, 6> {
+      auto ty = cast<MemRefType>(memrefVal.getType());
+      auto shape = ty.getShape();
+      int rank = static_cast<int>(shape.size());
+
+      SmallVector<int64_t, 4> strides;
+      int64_t offset = 0;
+      getStridesAndOffset(ty, strides, offset);
+
+      Value alignedIdx =
+          b.create<memref::ExtractAlignedPointerAsIndexOp>(loc, memrefVal);
+      Value aligned_i64 =
+          b.create<arith::IndexCastOp>(loc, b.getI64Type(), alignedIdx);
+
+      int d0 = firstDim, d1 = firstDim + 1;
+      auto safeShape = [&](int d) -> int64_t {
+        if (d < 0 || d >= rank) return 1;
+        return ShapedType::isDynamic(shape[d]) ? 1 : shape[d];
+      };
+      auto safeStride = [&](int d) -> int64_t {
+        if (d < 0 || d >= static_cast<int>(strides.size())) return 0;
+        return ShapedType::isDynamic(strides[d]) ? 0 : strides[d];
+      };
+
+      return {aligned_i64,
+              getI64Const(b, loc, offset),
+              getI64Const(b, loc, safeShape(d0)),
+              getI64Const(b, loc, safeShape(d1)),
+              getI64Const(b, loc, safeStride(d0)),
+              getI64Const(b, loc, safeStride(d1))};
     };
 
     funcOp.walk([&](func::CallOp preIssueCall) {
@@ -454,129 +682,109 @@ public:
       if (!info)
         return;
 
+      auto opKindAttr = dyn_cast_or_null<StringAttr>(info.get("op_kind"));
+      StringRef opKind = opKindAttr ? opKindAttr.getValue() : "incomplete";
+
       auto operandsAttr = dyn_cast_or_null<ArrayAttr>(info.get("operands"));
-      if (!operandsAttr || operandsAttr.empty())
+      if (!operandsAttr)
         return;
 
-      affine::AffineForOp insertionLoop = getNextAffineFor(preIssueCall);
-      if (!insertionLoop)
+      // Collect element_bytes from the first operand (all same element type).
+      int64_t elemBytes = 4;
+      if (!operandsAttr.empty())
+        if (auto first = dyn_cast<DictionaryAttr>(operandsAttr[0]))
+          if (auto eb = dyn_cast_or_null<IntegerAttr>(first.get("element_bytes")))
+            elemBytes = std::max<int64_t>(1, eb.getInt());
+
+      // Collect live memref SSA values in operand order (inputs then outputs).
+      SmallVector<Value, 4> memrefs;
+      bool missingMemref = false;
+      for (Attribute opAttr : operandsAttr) {
+        auto opDict = dyn_cast<DictionaryAttr>(opAttr);
+        if (!opDict) { missingMemref = true; break; }
+        auto tidAttr = dyn_cast_or_null<IntegerAttr>(opDict.get("tensor_id"));
+        if (!tidAttr) { missingMemref = true; break; }
+        auto it = tensorIdToMemref.find(static_cast<int32_t>(tidAttr.getInt()));
+        if (it == tensorIdToMemref.end()) { missingMemref = true; break; }
+        memrefs.push_back(it->second);
+      }
+
+      // TODO: KIM change call insertion level — currently inserted right before
+      // pre_issue_APE_request (outermost scope, not inside any affine loop).
+      Location loc = preIssueCall.getLoc();
+      builder.setInsertionPoint(preIssueCall);
+
+      auto emitIncomplete = [&]() {
+        builder.create<func::CallOp>(loc, TypeRange{},
+            SymbolRefAttr::get(ctx, kApeIncomplete), ValueRange{});
+      };
+
+      if (missingMemref || opKind == "incomplete") {
+        emitIncomplete();
         return;
-
-      Location loc = insertionLoop.getLoc();
-      builder.setInsertionPointToStart(insertionLoop.getBody());
-
-      // Build IV payload from loops in scope at insertion point. We keep up to
-      // 4 dimensions and pad the rest with zero as required by the ABI.
-      SmallVector<affine::AffineForOp, 6> loopsInScope;
-      for (Operation *cur = insertionLoop.getOperation(); cur;
-           cur = cur->getParentOp()) {
-        if (auto loop = dyn_cast<affine::AffineForOp>(cur))
-          loopsInScope.push_back(loop);
       }
-      llvm::reverse(loopsInScope);
 
-      SmallVector<Value, 4> ivPayload;
-      for (affine::AffineForOp loop : loopsInScope) {
-        ivPayload.push_back(loop.getInductionVar());
-        if (ivPayload.size() == 4)
-          break;
-      }
-      while (ivPayload.size() < 4)
-        ivPayload.push_back(getZeroIndex(builder, loc));
-
-      // We currently issue requests only for read/readwrite operands because
-      // the immediate goal is prefetching incoming matrices.
-      for (Attribute operandAttr : operandsAttr) {
-        auto operandInfo = dyn_cast<DictionaryAttr>(operandAttr);
-        if (!operandInfo)
-          continue;
-
-        auto accessKindAttr =
-            dyn_cast_or_null<StringAttr>(operandInfo.get("access_kind"));
-        if (!accessKindAttr)
-          continue;
-        StringRef accessKind = accessKindAttr.getValue();
-        bool isWrite = (accessKind == "write");
-        if (isWrite)
-          continue;
-
-        auto tensorIdAttr =
-            dyn_cast_or_null<IntegerAttr>(operandInfo.get("tensor_id"));
-        if (!tensorIdAttr)
-          continue;
-        int32_t tensorIdValue = static_cast<int32_t>(tensorIdAttr.getInt());
-
-        std::pair<Operation *, int32_t> key{insertionLoop.getOperation(),
-                                            tensorIdValue};
-        if (seen.contains(key))
-          continue;
-        seen.insert(key);
-
-        int32_t contiguousVecLen = 1;
-        if (auto vecLen =
-                dyn_cast_or_null<IntegerAttr>(operandInfo.get("contiguous_vector_len")))
-          contiguousVecLen = static_cast<int32_t>(vecLen.getInt());
-
-        int64_t elementBytes = 4;
-        if (auto elementBytesAttr =
-          dyn_cast_or_null<IntegerAttr>(operandInfo.get("element_bytes")))
-          elementBytes = std::max<int64_t>(1, elementBytesAttr.getInt());
-
-        int64_t rank = 1;
-        int64_t dim0 = 1;
-        int64_t dim1 = 1;
-        int64_t dim2 = 1;
-        if (auto shape = dyn_cast_or_null<ArrayAttr>(operandInfo.get("shape"))) {
-          rank = static_cast<int64_t>(shape.size());
-          auto readDim = [&](int64_t idx) -> int64_t {
-            if (idx < 0 || idx >= static_cast<int64_t>(shape.size()))
-              return 1;
-            auto dimAttr = dyn_cast<IntegerAttr>(shape[static_cast<size_t>(idx)]);
-            if (!dimAttr)
-              return 1;
-            int64_t dim = dimAttr.getInt();
-            return dim > 0 ? dim : 1;
-          };
-          dim0 = readDim(0);
-          dim1 = readDim(1);
-          dim2 = readDim(2);
+      // --- gather: matmul / batch_matmul --- operands: [A, B, C]
+      if (opKind == "gather") {
+        if (memrefs.size() < 3) { emitIncomplete(); return; }
+        SmallVector<Value> callArgs;
+        for (int oi = 0; oi < 3; ++oi) {
+          Value mv = memrefs[static_cast<size_t>(oi)];
+          int r = cast<MemRefType>(mv.getType()).getRank();
+          auto args = extractMemrefArgs(builder, loc, mv, r == 3 ? 1 : 0);
+          callArgs.append(args.begin(), args.end());
         }
+        callArgs.push_back(getI64Const(builder, loc, CACHE_CAPACITY)); // TODO: KIM pass L1 cache size
+        callArgs.push_back(getI64Const(builder, loc, elemBytes));
+        builder.create<func::CallOp>(loc, TypeRange{},
+            SymbolRefAttr::get(ctx, kApeGather), callArgs);
+        return;
+      }
 
-        bool columnMajorAccess = false;
-        if (rank == 2) {
-          if (auto indexingMap =
-                  dyn_cast_or_null<StringAttr>(operandInfo.get("indexing_map"))) {
-            columnMajorAccess = indexingMap.getValue().contains("(d1, d0)");
+      // --- broadcast_op: single-input broadcast scan ---
+      if (opKind == "broadcast_op") {
+        if (memrefs.empty()) { emitIncomplete(); return; }
+        Value mv = memrefs[0];
+        int r = cast<MemRefType>(mv.getType()).getRank();
+        auto args = extractMemrefArgs(builder, loc, mv, r == 3 ? 1 : 0);
+        args.push_back(getI64Const(builder, loc, elemBytes));
+        builder.create<func::CallOp>(loc, TypeRange{},
+            SymbolRefAttr::get(ctx, kApeBroadcast), args);
+        return;
+      }
+
+      // --- elementwise: all-identity/linear ops ---
+      if (opKind == "elementwise") {
+        int64_t nOps = static_cast<int64_t>(memrefs.size());
+        constexpr int64_t kFields = 6; // fields per operand descriptor
+        int64_t bufSize = std::max<int64_t>(1, nOps * kFields);
+        auto bufType = MemRefType::get({bufSize}, builder.getI64Type());
+        Value buf = builder.create<memref::AllocaOp>(loc, bufType);
+
+        for (int64_t oi = 0; oi < nOps; ++oi) {
+          Value mv = memrefs[static_cast<size_t>(oi)];
+          int r = cast<MemRefType>(mv.getType()).getRank();
+          auto fields = extractMemrefArgs(builder, loc, mv, r == 3 ? 1 : 0);
+          for (int64_t fi = 0; fi < kFields; ++fi) {
+            Value idx = builder.create<arith::ConstantIndexOp>(
+                loc, oi * kFields + fi);
+            builder.create<memref::StoreOp>(
+                loc, fields[static_cast<size_t>(fi)], buf, ValueRange{idx});
           }
         }
 
-        int32_t strategy = contiguousVecLen > 1 ? 0 : 1;
-        Value baseAddr = getZeroIndex(builder, loc);
-        if (auto it = tensorIdToMemref.find(tensorIdValue);
-            it != tensorIdToMemref.end()) {
-          baseAddr = getBaseAddrAsIndex(builder, loc, it->second);
-        }
-        Value tensorId = getI32Const(builder, loc, tensorIdValue);
-        Value strategyVal = getI32Const(builder, loc, strategy);
-        Value isWriteVal = getI1Const(builder, loc, false);
-        Value elementBytesVal = getI64Const(builder, loc, elementBytes);
-        Value rankVal = getI64Const(builder, loc, rank);
-        Value dim0Val = getI64Const(builder, loc, dim0);
-        Value dim1Val = getI64Const(builder, loc, dim1);
-        Value dim2Val = getI64Const(builder, loc, dim2);
-        Value columnMajorVal = getI1Const(builder, loc, columnMajorAccess);
-
-        auto call = builder.create<func::CallOp>(
-            loc, TypeRange{}, SymbolRefAttr::get(builder.getContext(),
-                                                 kIssueAPERequest),
-            ValueRange{baseAddr, tensorId, strategyVal, ivPayload[0],
-                 ivPayload[1], ivPayload[2], ivPayload[3], isWriteVal,
-                elementBytesVal, rankVal, dim0Val, dim1Val, dim2Val,
-                 columnMajorVal});
-        call->setAttr("ape.insertion_reason",
-                      builder.getStringAttr(
-                          "inserted from pre_issue_APE_request metadata"));
+        Value descPtr =
+            builder.create<memref::ExtractAlignedPointerAsIndexOp>(loc, buf);
+        builder.create<func::CallOp>(loc, TypeRange{},
+            SymbolRefAttr::get(ctx, kApeElementwise),
+            ValueRange{getI64Const(builder, loc, nOps),
+                       getI64Const(builder, loc, CACHE_CAPACITY), // TODO: KIM pass L1 cache size
+                       getI64Const(builder, loc, elemBytes),
+                       descPtr});
+        return;
       }
+
+      emitIncomplete();
     });
   }
 };

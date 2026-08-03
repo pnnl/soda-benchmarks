@@ -17,6 +17,7 @@
 #include <sstream>
 #include <unordered_map>
 #include <vector>
+#include <limits>
 #include "llvm/ADT/ArrayRef.h"
 #include "mlir/ExecutionEngine/CRunnerUtils.h"
 #include <string>
@@ -102,60 +103,32 @@ int64_t clampPositive(int64_t value) {
   return value > 0 ? value : 1;
 }
 
-bool isFirstIssueForLoopNest(int64_t i0, int64_t i1, int64_t i2, int64_t i3) {
-  return i0 == 0 && i1 == 0 && i2 == 0 && i3 == 0;
-}
-
-void printAddr1D(uint64_t baseAddr, int64_t m, int64_t step,
-                 int64_t elementBytes) {
-  for (int64_t i = 0; i < m; i += step) {
+void printAddrLinear(uint64_t baseAddr, int64_t totalElements, int64_t step,
+                     int64_t elementBytes) {
+  for (int64_t i = 0; i < totalElements; i += step) {
     uint64_t addr =
         baseAddr + static_cast<uint64_t>(i) * static_cast<uint64_t>(elementBytes);
-    std::cout << "0x" << std::hex << addr << std::dec << "\t matrix[" << i
+    std::cout << "0x" << std::hex << addr << std::dec << "\t element[" << i
               << "]" << std::endl;
   }
 }
 
-void printAddr2DRowMajor(uint64_t baseAddr, int64_t m, int64_t n,
-                         int64_t step, int64_t elementBytes) {
-  int64_t size = m * n;
-  for (int64_t i = 0; i < size; i += step) {
-    uint64_t addr =
-        baseAddr + static_cast<uint64_t>(i) * static_cast<uint64_t>(elementBytes);
-    int64_t a = i / n;
-    int64_t b = i % n;
-    std::cout << "0x" << std::hex << addr << std::dec << "\t matrix[" << a
-              << "][" << b << "]" << std::endl;
+std::string formatI64Descriptor(uint64_t ptrAsInt, int64_t count) {
+  std::ostringstream os;
+  os << '[';
+  if (ptrAsInt == 0 || count <= 0) {
+    os << ']';
+    return os.str();
   }
-}
 
-void printAddr2DColumnMajorOverRowMajorStorage(uint64_t baseAddr, int64_t m,
-                                               int64_t n, int64_t step,
-                                               int64_t elementBytes) {
-  int64_t size = m * n;
-  for (int64_t i = 0; i < size; i += step) {
-    int64_t a = i % m;
-    int64_t b = i / m;
-    int64_t elementOffset = a * n + b;
-    uint64_t addr = baseAddr + static_cast<uint64_t>(elementOffset) *
-                                   static_cast<uint64_t>(elementBytes);
-    std::cout << "0x" << std::hex << addr << std::dec << "\t matrix[" << a
-              << "][" << b << "]" << std::endl;
+  const int64_t *data = reinterpret_cast<const int64_t *>(ptrAsInt);
+  for (int64_t i = 0; i < count; ++i) {
+    if (i != 0)
+      os << ", ";
+    os << data[i];
   }
-}
-
-void printAddr3D(uint64_t baseAddr, int64_t m, int64_t n, int64_t k,
-                 int64_t step, int64_t elementBytes) {
-  int64_t size = m * n * k;
-  for (int64_t i = 0; i < size; i += step) {
-    uint64_t addr =
-        baseAddr + static_cast<uint64_t>(i) * static_cast<uint64_t>(elementBytes);
-    int64_t a = i / (n * k);
-    int64_t b = (i / k) % n;
-    int64_t c = i % k;
-    std::cout << "0x" << std::hex << addr << std::dec << "\t matrix[" << a
-              << "][" << b << "][" << c << "]" << std::endl;
-  }
+  os << ']';
+  return os.str();
 }
 
 
@@ -267,43 +240,121 @@ void printAllCounterSummaries() {
 
 extern "C" void pre_issue_APE_request() {}
 
+// ---------- addr_gen2.py C implementations ----------
+
+extern "C" void ape_incomplete() {
+  std::cout << "APE_INCOMPLETE: unsupported linalg op" << std::endl;
+}
+
+extern "C" void ape_broadcast(int64_t aligned, int64_t offset,
+                               int64_t s0, int64_t s1,
+                               int64_t str0, int64_t str1,
+                               int64_t elem_bytes) {
+  int64_t eb = clampPositive(elem_bytes);
+  for (int64_t idx = 0; idx < s0 * s1; ++idx) {
+    int64_t i = idx / (s1 > 0 ? s1 : 1);
+    int64_t j = idx % (s1 > 0 ? s1 : 1);
+    uint64_t addr = static_cast<uint64_t>(aligned + (offset + i * str0 + j * str1) * eb);
+    std::cout << "APE_BROADCAST[" << idx << "]: 0x" << std::hex << addr
+              << std::dec << std::endl;
+  }
+}
+
+extern "C" void ape_gather_from_memref(
+    int64_t a_al, int64_t a_off, int64_t a_s0, int64_t a_s1,
+    int64_t a_str0, int64_t a_str1,
+    int64_t b_al, int64_t b_off, int64_t b_s0, int64_t b_s1,
+    int64_t b_str0, int64_t b_str1,
+    int64_t c_al, int64_t c_off, int64_t c_s0, int64_t c_s1,
+    int64_t c_str0, int64_t c_str1,
+    int64_t L1_cache_size, int64_t elem_bytes) {
+  int64_t M  = a_s0;
+  int64_t K  = a_s1;
+  int64_t N  = c_s1;
+  int64_t eb = clampPositive(elem_bytes);
+  int64_t total = M * N * (2 * K + 1);
+  int64_t steps = ((L1_cache_size / elem_bytes) > 0 && (L1_cache_size / elem_bytes) < total) ? (L1_cache_size / elem_bytes) : total;
+  for (int64_t index = 0; index < steps; ++index) {
+    int64_t ij    = index / (2 * K + 1);
+    int64_t i     = ij / N;
+    int64_t j     = ij % N;
+    int64_t step  = index % (2 * K + 1);
+    int64_t k     = step / 2;
+    int64_t r     = step % 2;
+    int64_t is_c  = (step == 2 * K) ? 1 : 0;
+    int64_t A_addr = a_al + (a_off + i * a_str0 + k * a_str1) * eb;
+    int64_t B_addr = b_al + (b_off + k * b_str0 + j * b_str1) * eb;
+    int64_t C_addr = c_al + (c_off + i * c_str0 + j * c_str1) * eb;
+    int64_t addr = (1 - is_c) * ((r == 0) * A_addr + (r == 1) * B_addr)
+                 + is_c * C_addr;
+    std::cout << "APE_GATHER[" << index << "]: 0x" << std::hex
+              << static_cast<uint64_t>(addr) << std::dec << std::endl;
+  }
+}
+
+// desc_ptr → flat buffer: n_operands × [aligned, offset, s0, s1, str0, str1]
+extern "C" void ape_elementwise_trace(int64_t n_operands, int64_t L1_cache_size,
+                                       int64_t elem_bytes, int64_t desc_ptr) {
+  if (n_operands <= 0 || desc_ptr == 0)
+    return;
+  const int64_t *descs =
+      reinterpret_cast<const int64_t *>(static_cast<uintptr_t>(desc_ptr));
+  constexpr int64_t kFields = 6; // aligned, offset, s0, s1, str0, str1
+  int64_t out_s0 = descs[(n_operands - 1) * kFields + 2];
+  int64_t out_s1 = descs[(n_operands - 1) * kFields + 3];
+  if (out_s1 <= 0) out_s1 = 1;
+  int64_t M  = out_s0;
+  int64_t N  = out_s1;
+  int64_t eb = clampPositive(elem_bytes);
+  int64_t total = M * N * n_operands;
+  int64_t steps = ((L1_cache_size/elem_bytes) > 0 && (L1_cache_size/elem_bytes) < total) ? (L1_cache_size/elem_bytes) : total;
+  for (int64_t index = 0; index < steps; ++index) {
+    int64_t element = index / n_operands;
+    int64_t operand = index % n_operands;
+    int64_t i       = element / N;
+    int64_t j       = element % N;
+    int64_t aligned = descs[operand * kFields + 0];
+    int64_t off     = descs[operand * kFields + 1];
+    int64_t str0    = descs[operand * kFields + 4];
+    int64_t str1    = descs[operand * kFields + 5];
+    uint64_t addr   = static_cast<uint64_t>(aligned + (off + i * str0 + j * str1) * eb);
+    std::cout << "APE_ELEMENTWISE[" << index << "]: 0x" << std::hex << addr
+              << std::dec << std::endl;
+  }
+}
+
+// ----------------------------------------------------
+
 extern "C" void issue_APE_request(int64_t baseAddr, int32_t tensorId,
-                                   int32_t strategy, int64_t i0, int64_t i1,
-                                   int64_t i2, int64_t i3, bool isWrite,
-                                   int64_t elementBytes, int64_t rank,
-                                   int64_t dim0, int64_t dim1, int64_t dim2,
-                                   bool columnMajorAccess) {
+                                   int32_t strategy, bool isWrite,
+                                   int64_t elementBytes,
+                                   int64_t totalElements, int64_t rank,
+                                   int64_t shapeDescPtr,
+                                   int64_t stridesDescPtr) {
   (void)tensorId;
   (void)strategy;
   if (isWrite)
     return;
 
-  // Match addr_gen behavior by emitting one dense trace per request site.
-  if (!isFirstIssueForLoopNest(i0, i1, i2, i3))
-    return;
-
   int64_t step = kCacheLineSizeElements;
   int64_t elemBytes = clampPositive(elementBytes);
-  int64_t m = clampPositive(dim0);
-  int64_t n = clampPositive(dim1);
-  int64_t k = clampPositive(dim2);
+  int64_t elementCount = clampPositive(totalElements);
   uint64_t base = static_cast<uint64_t>(baseAddr);
 
-  if (rank <= 1) {
-    printAddr1D(base, m, step, elemBytes);
-    return;
-  }
+  int64_t safeRank = rank > 0 ? rank : 1;
+  constexpr int64_t kMaxReasonableRank = 16;
+  safeRank = std::min<int64_t>(safeRank, kMaxReasonableRank);
 
-  if (rank == 2) {
-    if (columnMajorAccess) {
-      printAddr2DColumnMajorOverRowMajorStorage(base, m, n, step, elemBytes);
-    } else {
-      printAddr2DRowMajor(base, m, n, step, elemBytes);
-    }
-    return;
-  }
+  std::cout << "SODA_APE_DESC rank=" << safeRank
+            << " shape="
+            << formatI64Descriptor(static_cast<uint64_t>(shapeDescPtr),
+                                   safeRank)
+            << " strides="
+            << formatI64Descriptor(static_cast<uint64_t>(stridesDescPtr),
+                                   safeRank)
+            << std::endl;
 
-  printAddr3D(base, m, n, k, step, elemBytes);
+  printAddrLinear(base, elementCount, step, elemBytes);
 }
 
 extern "C" void sodaInstrCollectOpCounts(int64_t run, int64_t loopId,
