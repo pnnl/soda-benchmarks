@@ -27,6 +27,11 @@
 
 #include <cstdint>
 
+/// Debug print helper used by GenerateRankFunctionPass.
+extern "C" MLIR_SODAPINSTRRUNNERUTILS_EXPORT void print_rank(int32_t rank);
+
+// Print trace helper used by GenAddrFunctionPass.
+extern "C" MLIR_SODAPINSTRRUNNERUTILS_EXPORT void print_trace(const char* trace);
 /// Entry point emitted by soda-instr-dynamic-op-counts-at-loop-bounds.
 ///
 /// \\param run        Non-zero for loop-entry marker, zero for loop-exit marker.

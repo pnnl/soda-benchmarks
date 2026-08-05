@@ -10,6 +10,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cstdio>
 #include <cstdlib>
 #include <cstdint>
 #include <iomanip>
@@ -55,6 +56,13 @@ bool gAtExitRegistered = false;
 int64_t gCurrentGroupId = -1;
 constexpr int64_t kCacheLineSizeElements = 4;
 
+extern "C" MLIR_SODAPINSTRRUNNERUTILS_EXPORT void print_rank(int32_t rank) {
+  std::printf("linalg.generic rank = %d\n", rank);
+}
+
+extern "C" MLIR_SODAPINSTRRUNNERUTILS_EXPORT void print_trace(const char* trace) {
+  std::cout << "Gen addr: " << trace << std::endl;
+}
 const char *linalgOperandKindName(int64_t operandKind) {
   switch (operandKind) {
   case 0:

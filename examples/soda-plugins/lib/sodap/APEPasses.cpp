@@ -20,6 +20,15 @@
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/SmallVector.h"
 
+#include "mlir/IR/BuiltinOps.h"
+#include "mlir/IR/MLIRContext.h"
+#include "mlir/IR/TypeUtilities.h"
+#include "mlir/Pass/Pass.h"
+
+#include "llvm/ADT/Hashing.h"
+#include "llvm/ADT/StringExtras.h"
+
+#include <functional>
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -796,4 +805,522 @@ void populateAPE(OpPassManager &pm) {
   pm.addPass(createAffineAPEInsertion());
 }
 
-} // namespace mlir::sodap
+// } // namespace mlir::sodap
+
+// struct GenerateRankFunctionPass : public PassWrapper<GenerateRankFunctionPass, OperationPass<ModuleOp>> {
+//   MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(GenerateRankFunctionPass)
+//   StringRef getArgument() const final { return "generate-rank-function-pass"; }
+//   StringRef getDescription() const final {
+//     return "Generate rank-specific helper functions and inject calls before linalg.generic ops";
+//   }
+//    void runOnOperation() override {
+//     ModuleOp module = getOperation();
+//     MLIRContext *context = module.getContext();
+//     Location loc = module.getLoc();
+
+//     OpBuilder moduleBuilder(context);
+//     moduleBuilder.setInsertionPointToEnd(module.getBody());
+
+//     // Declare the external runtime printing function:
+//     //
+//     // func.func @print_rank(i32)
+//     //
+//     func::FuncOp printRankFunction =
+//         module.lookupSymbol<func::FuncOp>("print_rank");
+
+//     if (!printRankFunction) {
+//       auto i32Type = IntegerType::get(context, 32);
+//       auto printType =
+//           moduleBuilder.getFunctionType({i32Type}, {});
+
+//       printRankFunction = moduleBuilder.create<func::FuncOp>(
+//           loc,
+//           "print_rank",
+//           printType);
+//       printRankFunction.setPrivate();
+//     }
+//      // Keep one generated function per rank.
+//     llvm::DenseMap<unsigned, func::FuncOp> generatedFunctions;
+
+//     // First collect the linalg.generic operations.
+//     SmallVector<linalg::GenericOp> generics;
+
+//     module.walk([&](linalg::GenericOp genericOp) {
+//       generics.push_back(genericOp);
+//     });
+
+//      // Generate one function for each rank.
+//     for (linalg::GenericOp genericOp : generics) {
+//       unsigned rank = genericOp.getNumLoops();
+
+//       if (generatedFunctions.contains(rank))
+//         continue;
+
+//       std::string functionName =
+//           "generated_for_rank_" + std::to_string(rank);
+
+//       auto functionType =
+//           moduleBuilder.getFunctionType(/*inputs=*/{}, /*results=*/{});
+//       auto generatedFunction =
+//           moduleBuilder.create<func::FuncOp>(
+//               loc,
+//               functionName,
+//               functionType);
+
+//       generatedFunction.setPrivate();
+
+//       // Add the function entry block.
+//       Block *entryBlock = generatedFunction.addEntryBlock();
+
+//       OpBuilder bodyBuilder(entryBlock, entryBlock->begin());
+
+//       auto rankConstant =
+//           bodyBuilder.create<arith::ConstantIntOp>(
+//               loc,
+//               rank,
+//               32);
+      
+//       // func.call @print_rank(%rank) : (i32) -> ()
+//       bodyBuilder.create<func::CallOp>(
+//           loc,
+//           /*resultTypes=*/TypeRange{},
+//           SymbolRefAttr::get(context, "print_rank"),
+//           ValueRange{rankConstant});
+
+//       bodyBuilder.create<func::ReturnOp>(loc);
+
+//       generatedFunctions[rank] = generatedFunction;
+//     }
+
+//     // Insert calls to the generated functions before each linalg.generic.
+//     for (linalg::GenericOp genericOp : generics) {
+//       unsigned rank = genericOp.getNumLoops();
+//       func::FuncOp generatedFunction = generatedFunctions[rank];
+
+//       OpBuilder builder(genericOp);
+//       builder.setInsertionPoint(genericOp);
+
+//       builder.create<func::CallOp>(
+//           genericOp.getLoc(),
+//           /*resultTypes=*/TypeRange{},
+//           SymbolRefAttr::get(
+//               context,
+//               generatedFunction.getSymName()),
+//           /*operands=*/ValueRange{});
+//     }
+//   }
+// };
+
+// static PassRegistration<GenerateRankFunctionPass> registerGenerateRankFunctionPass;
+
+
+
+struct GenAddrFunctionPass: public PassWrapper<GenAddrFunctionPass, OperationPass<ModuleOp>> {
+  MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(GenAddrFunctionPass)
+
+  StringRef getArgument() const final {
+    return "gen-addr-function-pass";
+  }
+
+  StringRef getDescription() const final {
+    return "Generate memref-specific flattened-index address helpers";
+  }
+
+  void runOnOperation() override {
+    ModuleOp module = getOperation();
+    MLIRContext *context = module.getContext();
+    Location loc = module.getLoc();
+
+    OpBuilder moduleBuilder(context);
+    moduleBuilder.setInsertionPointToEnd(module.getBody());
+
+    //
+    // Declare:
+    //
+    //   func.func @format_address(i64) -> i64
+    //
+    // The implementation of this function must be supplied by the runtime.
+    //
+    func::FuncOp formatAddress =
+        module.lookupSymbol<func::FuncOp>("format_address");
+
+    auto i64Type = IntegerType::get(context, 64);
+    if (!formatAddress) {
+      auto formatType =
+          moduleBuilder.getFunctionType({i64Type}, {i64Type});
+
+      formatAddress = moduleBuilder.create<func::FuncOp>(
+          loc,
+          "format_address",
+          formatType);
+        //not supposed to mark private since it's an external delcaration
+      // Declarations without a body cannot be public at module scope.
+      formatAddress.setPrivate();
+    }
+
+    //
+    // Collect every distinct ranked memref type used by linalg.generic.
+    //
+    SmallVector<MemRefType> memrefTypes;
+    llvm::DenseMap<Type, bool> seenTypes;
+
+    module.walk([&](linalg::GenericOp genericOp) {
+      for (Value operand : genericOp->getOperands()) {
+        auto memrefType = operand.getType().dyn_cast<MemRefType>();
+        if (!memrefType)
+          continue;
+
+        if (!seenTypes.contains(memrefType)) {
+          seenTypes[memrefType] = true;
+          memrefTypes.push_back(memrefType);
+        }
+      }
+    });
+
+    //
+    // Keep the generated function for each exact memref type.
+    //
+    llvm::DenseMap<Type, func::FuncOp> generatedFunctions;
+
+    for (MemRefType memrefType : memrefTypes) {
+      func::FuncOp generatedFunction =
+          createAddressFunction(
+              module,
+              memrefType,
+              formatAddress);
+
+      generatedFunctions[memrefType] = generatedFunction;
+    }
+
+    //
+    // The functions are intentionally not called here.
+    //
+    // A later pass can find the generated function using:
+    //
+    //   generatedFunctions[memrefValue.getType()]
+    //
+    // or by reconstructing the same naming scheme.
+    //
+  }
+
+private:
+  //
+  // Compute a stable-ish name based on the complete printed memref type.
+  //
+  static std::string getFunctionName(MemRefType memrefType) {
+    std::string typeString;
+    llvm::raw_string_ostream stream(typeString);
+    memrefType.print(stream);
+    stream.flush();
+
+    std::size_t hashValue = std::hash<std::string>{}(typeString);
+
+    return "gen_addr_" + llvm::utohexstr(hashValue);
+  }
+
+  //
+  // Return the size of one element in bytes.
+  //
+  static FailureOr<int64_t> getElementSizeInBytes(
+      MLIRContext *context,
+      Type elementType) {
+    //
+    // This implementation handles common fixed-width integer,
+    // floating-point, index, and vector element types.
+    //
+    int64_t bitWidth = 0;
+
+    if (auto integerType = elementType.dyn_cast<IntegerType>()) {
+      bitWidth = integerType.getWidth();
+    } else if (auto floatType = elementType.dyn_cast<FloatType>()) {
+      bitWidth = floatType.getWidth();
+    } else if (elementType.isIndex()) {
+      //
+      // The actual index size is target-dependent. This example assumes
+      // 64-bit indexes.
+      //
+      bitWidth = 64;
+    } else if (auto vectorType = elementType.dyn_cast<VectorType>()) {
+      auto elementSize =
+          getElementSizeInBytes(context, vectorType.getElementType());
+
+      if (failed(elementSize))
+        return failure();
+
+      int64_t numberOfElements = vectorType.getNumElements();
+      return *elementSize * numberOfElements;
+    } else {
+      return failure();
+    }
+
+    if (bitWidth <= 0 || bitWidth % 8 != 0)
+      return failure();
+
+    return bitWidth / 8;
+  }
+
+  //
+  // Generate:
+  //
+  //   func.func @gen_addr_X(
+  //       i64 %flat_index,
+  //       memref<...> %arg
+  //   ) -> i64 {
+  //
+  // The address calculation is:
+  //
+  //   base_pointer
+  //       + element_size *
+  //         (offset + sum(coord[d] * stride[d]))
+  //
+  // where coord[] is reconstructed from the flattened index using the
+  // runtime memref sizes.
+  //
+  static func::FuncOp createAddressFunction(
+      ModuleOp module,
+      MemRefType memrefType,
+      func::FuncOp formatAddress) {
+    MLIRContext *context = module.getContext();
+    Location loc = module.getLoc();
+
+    OpBuilder moduleBuilder(context);
+    moduleBuilder.setInsertionPointToEnd(module.getBody());
+
+    std::string functionName = getFunctionName(memrefType);
+
+    //
+    // Avoid creating the same symbol twice if this pass is run more than
+    // once or if the symbol already exists.
+    //
+    if (auto existing =
+            module.lookupSymbol<func::FuncOp>(functionName)) {
+      return existing;
+    }
+
+    auto i64Type = IntegerType::get(context, 64);
+    auto functionType =
+        moduleBuilder.getFunctionType(
+            /*inputs=*/{i64Type, memrefType},
+        /*results=*/{i64Type});
+
+    func::FuncOp function =
+        moduleBuilder.create<func::FuncOp>(
+            loc,
+            functionName,
+            functionType);
+
+    function.setPrivate();
+
+    Block *entry = function.addEntryBlock();
+
+    OpBuilder builder(entry, entry->begin());
+
+    Value flatIndexI64 = entry->getArgument(0);
+    Value memref = entry->getArgument(1);
+
+    Type indexType = builder.getIndexType();
+
+    //
+    // Convert the flattened i64 index to MLIR index.
+    //
+    Value remainingIndex =
+        builder.create<arith::IndexCastOp>(
+            loc,
+            indexType,
+            flatIndexI64);
+
+    //
+    // Extract the runtime memref metadata:
+    //
+    //   baseBuffer
+    //   offset
+    //   sizes[]
+    //   strides[]
+    //
+    auto metadata =
+        builder.create<memref::ExtractStridedMetadataOp>(
+            loc,
+            memref);
+
+    Value offset = metadata.getOffset();
+    SmallVector<Value> sizes(metadata.getSizes().begin(),
+                             metadata.getSizes().end());
+    SmallVector<Value> strides(metadata.getStrides().begin(),
+                               metadata.getStrides().end());
+
+    int64_t rank = memrefType.getRank();
+
+    //
+    // Compute the element offset:
+    //
+    //   offset + coord[0] * stride[0]
+    //           + coord[1] * stride[1]
+    //           + ...
+    //
+    // The flattened index is interpreted in logical row-major order.
+    //
+    Value elementOffset = offset;
+
+    for (int64_t dimension = rank - 1; dimension >= 0; --dimension) {
+      Value coordinate;
+
+      if (dimension == 0) {
+        //
+        // The first dimension receives the remaining quotient.
+        //
+        coordinate = remainingIndex;
+      } else {
+        //
+        // coordinate[d] = remaining % size[d]
+        //
+        coordinate =
+            builder.create<arith::RemUIOp>(
+                loc,
+                remainingIndex,
+                sizes[dimension]);
+
+        //
+        // remaining /= size[d]
+        //
+        remainingIndex =
+            builder.create<arith::DivUIOp>(
+                loc,
+                remainingIndex,
+                sizes[dimension]);
+      }
+
+      Value scaledCoordinate =
+          builder.create<arith::MulIOp>(
+              loc,
+              coordinate,
+              strides[dimension]);
+
+      elementOffset =
+          builder.create<arith::AddIOp>(
+              loc,
+              elementOffset,
+              scaledCoordinate);
+    }
+
+    //
+    // Obtain the aligned base pointer as an integer index.
+    //
+    Value basePointerAsIndex =
+        builder.create<memref::ExtractAlignedPointerAsIndexOp>(
+            loc,
+            indexType,
+            memref);
+
+    //
+    // Convert element offset to bytes.
+    //
+    FailureOr<int64_t> elementSize =
+        getElementSizeInBytes(
+            context,
+            memrefType.getElementType());
+
+    if (failed(elementSize)) {
+      function.emitError()
+          << "cannot determine fixed byte size for memref element type "
+          << memrefType.getElementType();
+
+      function.erase();
+      return func::FuncOp();
+    }
+
+    Value elementSizeConstant =
+        builder.create<arith::ConstantIndexOp>(
+            loc,
+            *elementSize);
+
+    Value byteOffset =
+        builder.create<arith::MulIOp>(
+            loc,
+            elementOffset,
+            elementSizeConstant);
+
+    //
+    // Compute:
+    //
+    //   address_as_integer =
+    //       base_pointer_as_integer + byte_offset
+    //
+    Value addressAsIndex =
+        builder.create<arith::AddIOp>(
+            loc,
+            basePointerAsIndex,
+            byteOffset);
+
+    //
+    // Convert the address to i64 for the formatting runtime.
+    //
+    Value addressAsI64 =
+        builder.create<arith::IndexCastOp>(
+            loc,
+            i64Type,
+            addressAsIndex);
+
+    //
+    // Call:
+    //
+    //   %string = call @format_address(%address) :
+    //       (i64) -> i64
+    //
+    Value stringValue =
+        builder.create<func::CallOp>(
+            loc,
+        TypeRange{i64Type},
+            SymbolRefAttr::get(
+                context,
+                formatAddress.getSymName()),
+            ValueRange{addressAsI64})
+            .getResult(0);
+
+    builder.create<func::ReturnOp>(
+        loc,
+        ValueRange{stringValue});
+
+    return function;
+  }
+};
+
+static PassRegistration<GenAddrFunctionPass>
+    registerGenAddrFunctionPass;
+
+// } // namespace
+
+// static PassRegistration<GenAddrFunctionPass> registerGenAddrFunctionPass;
+} // namespace 
+
+
+
+
+// Address gen(base, i)
+
+// 2 x 3
+// 0-5
+// 0 = [0][0]
+// 1 = [0][1]
+// 2 = [0][2]
+// 3 = [1][0]
+// 4 = [1][1]
+// 5 = [1][2]
+
+
+// need to test:: does this work for traversal? with different rowmajor/colummajor
+
+// **a b matmul, where b is row major but being accessed as column major: can this be handeled??
+// **needs to vary depending on permutation and access patterns (not currently handled) 
+// **linalg loop layer, kernel module for weaving mod val, shapes for i evolving, 
+
+// ape iter always increases by 1, always want the next address
+// // for every instance of kernel execution, creates a new iterator
+// interweave func()
+//   for ape_iter in range
+//   0 1 2 3 4 5 6 7 8 9 
+//   (i,j,k) -> (i,k) (matrix a) 
+//   (i,j,k) -> (k,j) (matrix b) 
+//   (i,j,k) -> (i,j) (matrix c) 
+//     small_i = ape_iter mod 
+//     A = addr_gen(a, small i)
+//     B = addr...
