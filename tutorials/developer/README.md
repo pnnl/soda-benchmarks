@@ -62,18 +62,16 @@ PROJ_URL=https://github.com/ferrandi/PandA-bambu.git ./scripts/external/setup-ba
 
 After compilation is completed, build binaries will be available in the `builds/bambu/build/bin` folder or in the `builds/bambu/install/bin`.
 
-Now we can add one of these folders to the beginning of our `$PATH` variable:
+Now we can add one of these folders to the beginning of our `$PATH` variable.  Before running bambu for synthesis or simulation, source the installed environment script, which sets `BAMBU_HLS` and `BAMBU_HLS_BACKEND_PATH` (required by the backend flows):
 
 ```sh
-# In the devcontainer terminal
-# Note that you may need to rerun this command every time you start a new terminal session
-export PATH="/workspaces/soda-benchmarks/builds/bambu/install/bin:$PATH"
+source /workspaces/soda-benchmarks/builds/bambu/install/settings.sh
 ```
 
-If you want to make further changes to bambu, edit the files under `external/bambu/`. Then, to rebuild bambu, navigate to the `builds/bambu/build` directory and run:
+If you want to make further changes to bambu, edit the files under `external/bambu/`. Then, to rebuild bambu, run:
 
 ```sh
-make -j8 && make install
+cmake --build builds/bambu/build -j"$(nproc)" && cmake --install builds/bambu/build
 ```
 
 
