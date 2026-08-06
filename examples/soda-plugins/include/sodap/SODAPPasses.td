@@ -105,22 +105,6 @@ def InstrHWCounters : Pass<"soda-instr-hw-counters-at-loop-bounds"> {
 
 }
 
-def InstrDynamicOpCounts : Pass<"soda-instr-dynamic-op-counts-at-loop-bounds"> {
-  let summary = "Collect dynamic operation counts at SCF loop boundaries";
-  let description = [{
-    Instruments each `scf.for` loop with calls to `@sodaInstrCollectOpCounts`.
-    The generated calls collect dynamic counts at runtime for:
-
-    - `memref.load`
-    - `memref.store`
-    - `arith.addf`, `arith.mulf` for f32/f64
-    - `arith.addi`, `arith.muli` for i32/i64
-
-    A start marker is inserted at the beginning of each loop body and a stop
-    marker with per-iteration deltas is inserted before `scf.yield`.
-  }];
-}
-
 def InstrDynamicCounter : Pass<"soda-instr-dynamic-counter"> {
   let summary = "Insert fully dynamic per-op counters with configurable filters";
   let description = [{
@@ -141,11 +125,19 @@ def InstrDynamicCounter : Pass<"soda-instr-dynamic-counter"> {
     - `arith` (enables both int/float)
     - `scf`
     - `affine`
+
+    The pass tracks operation counts per top-level loop group and emits:
+    - per-loop-group summaries
+    - per-function totals (from loop-contained operations only)
+    - overall totals (including operations executed outside loops)
+
+    A top-level loop group is a set of loops that are not nested inside any
+    other loop.
   }];
   let options = [
     Option<"trackedKinds", "tracked-kinds", "std::string",
            /*default=*/"\"all\"",
-          "Counter kinds to track, separated by '+' or ',' (e.g. memref-load+memref-store+arith-float)">
+          "Counter kinds to track, separated by '+' or ',' (e.g. memref-load+memref-store+arith-float)">,
   ];
 }
 

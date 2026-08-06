@@ -46,4 +46,23 @@ sodaInstrCollectOpCounts(int64_t run, int64_t loopId, int64_t loads,
 extern "C" MLIR_SODAPINSTRRUNNERUTILS_EXPORT void
 sodaInstrDynamicCounter(int64_t counterId, int64_t delta);
 
+/// Start a new counter group (for per-loop-group tracking).
+///
+/// \param groupId    Group identifier (assigned by the pass).
+extern "C" MLIR_SODAPINSTRRUNNERUTILS_EXPORT void
+sodaInstrDynamicCounterStartGroup(int64_t groupId);
+
+/// Register function-name characters for a group header.
+///
+/// \param groupId    Group identifier (assigned by the pass).
+/// \param charCode   ASCII character code to append.
+extern "C" MLIR_SODAPINSTRRUNNERUTILS_EXPORT void
+sodaInstrDynamicCounterSetGroupFunctionName(int64_t groupId, int64_t charCode);
+
+/// Group counter flush entry point emitted by soda-instr-dynamic-counter.
+///
+/// \param groupId    Group identifier (assigned by the pass).
+extern "C" MLIR_SODAPINSTRRUNNERUTILS_EXPORT void
+sodaInstrDynamicCounterFlush(int64_t groupId);
+
 #endif // SODAP_EXECUTIONENGINE_DYNAMICOPCOUNTERRUNTIME_H

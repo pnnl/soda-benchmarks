@@ -69,6 +69,11 @@ func.func @main() {
   return
 }
 
+// CHECK: --- Dynamic Counter Totals By Function (SDCF=SODA_DYNAMIC_COUNTER_FUNCTION) ---
+// CHECK-DAG: SDCF function=main      name=memref.load        count=1536
+// CHECK-DAG: SDCF function=main      name=memref.store       count=2560
+// CHECK-DAG: SDCF function=main      name=arith.float        count=1024
+
 // Expected dynamic totals ignoring "scf" and any extra index arith counted by your pass:
 // N = 32*16 = 512
 // init stores: 3N = 1536
@@ -83,3 +88,4 @@ func.func @main() {
 // CHECK: SODA_DYNAMIC_COUNTER name=arith.int count=1024
 // CHECK: SODA_DYNAMIC_COUNTER name=arith.float count=1024
 // CHECK: SODA_DYNAMIC_COUNTER name=scf
+
