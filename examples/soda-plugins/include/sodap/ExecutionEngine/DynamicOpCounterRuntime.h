@@ -32,6 +32,9 @@ extern "C" MLIR_SODAPINSTRRUNNERUTILS_EXPORT void print_rank(int32_t rank);
 
 // Print trace helper used by GenAddrFunctionPass.
 extern "C" MLIR_SODAPINSTRRUNNERUTILS_EXPORT void print_trace(const char* trace);
+
+// Address formatting hook used by GenAddrFunctionPass helpers.
+extern "C" MLIR_SODAPINSTRRUNNERUTILS_EXPORT int64_t format_address(int64_t address);
 /// Entry point emitted by soda-instr-dynamic-op-counts-at-loop-bounds.
 ///
 /// \\param run        Non-zero for loop-entry marker, zero for loop-exit marker.

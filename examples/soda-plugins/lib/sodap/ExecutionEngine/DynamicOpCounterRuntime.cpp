@@ -63,6 +63,23 @@ extern "C" MLIR_SODAPINSTRRUNNERUTILS_EXPORT void print_rank(int32_t rank) {
 extern "C" MLIR_SODAPINSTRRUNNERUTILS_EXPORT void print_trace(const char* trace) {
   std::cout << "Gen addr: " << trace << std::endl;
 }
+
+extern "C" MLIR_SODAPINSTRRUNNERUTILS_EXPORT int64_t format_address(int64_t address) {
+  std::ostringstream oss;
+  oss << "0x" << std::hex << static_cast<uint64_t>(address);
+  std::cout << oss.str() << "\n";
+  return address;
+}
+
+extern "C" MLIR_SODAPINSTRRUNNERUTILS_EXPORT int64_t format_address_pair(
+    int64_t address, int64_t baseZeroAddress) {
+  std::ostringstream oss;
+  oss << "real=0x" << std::hex << static_cast<uint64_t>(address)
+      << " base0=0x" << static_cast<uint64_t>(baseZeroAddress);
+  std::cout << oss.str() << "\n";
+  return address;
+}
+
 const char *linalgOperandKindName(int64_t operandKind) {
   switch (operandKind) {
   case 0:
