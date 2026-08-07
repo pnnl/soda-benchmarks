@@ -1,34 +1,29 @@
-// Addr-function generation check (static):
+// Base0 trace check for matmul address generation (static):
 // RUN: mlir-opt %s -mlir-disable-threading \
 // RUN:   --load-pass-plugin=%sodap_libs/SODAPlugin%shlibext \
-// RUN:   --pass-pipeline='builtin.module(gen-addr-function-pass)' \
-// RUN:   | FileCheck %s --check-prefix=CHECK-ADDR
-//
-// TODO: Enable once APE execution passes are wired up:
-// RUN: mlir-opt %s -mlir-disable-threading \
-// RUN:   --load-pass-plugin=%sodap_libs/SODAPlugin%shlibext \
-// RUN:   --pass-pipeline='builtin.module(gen-addr-function-pass)' \
-// RUN:   | mlir-opt \
-// RUN:       -convert-linalg-to-affine-loops \
-// RUN:       -expand-strided-metadata \
-// RUN:       -lower-affine \
-// RUN:       -convert-scf-to-cf \
-// RUN:       -convert-vector-to-llvm \
-// RUN:       --convert-math-to-llvm \
-// RUN:       --convert-math-to-libm \
-// RUN:       -arith-expand \
-// RUN:       -finalize-memref-to-llvm \
-// RUN:       -convert-arith-to-llvm \
-// RUN:       -convert-func-to-llvm='use-bare-ptr-memref-call-conv=1' \
-// RUN:       -convert-cf-to-llvm \
-// RUN:       -reconcile-unrealized-casts \
-// RUN:       -symbol-dce \
+// RUN:   --pass-pipeline='builtin.module(gen-addr-function-pass)' | \
+// RUN: mlir-opt \
+// RUN:   -convert-linalg-to-affine-loops \
+// RUN:   -expand-strided-metadata \
+// RUN:   -lower-affine \
+// RUN:   -convert-scf-to-cf \
+// RUN:   -convert-vector-to-llvm \
+// RUN:   --convert-math-to-llvm \
+// RUN:   --convert-math-to-libm \
+// RUN:   -arith-expand \
+// RUN:   -finalize-memref-to-llvm \
+// RUN:   -convert-arith-to-llvm \
+// RUN:   -convert-func-to-llvm='use-bare-ptr-memref-call-conv=1' \
+// RUN:   -convert-cf-to-llvm \
+// RUN:   -reconcile-unrealized-casts \
+// RUN:   -symbol-dce \
 // RUN:   | mlir-cpu-runner \
 // RUN:       -O0 -e main -entry-point-result=void \
 // RUN:       -shared-libs=%sodap_libs/libmlir_sodap_instr_runner_utils%shlibext \
 // RUN:       -shared-libs=%llvm_lib_dir/libmlir_runner_utils%shlibext \
 // RUN:       -shared-libs=%llvm_lib_dir/libmlir_c_runner_utils%shlibext \
-// RUN:   | FileCheck %s --check-prefix=CHECK-EXEC
+// RUN:   | sed -n 's/.*base0=//p' \
+// RUN:   | FileCheck %s --check-prefix=BASE0
 
 // Matmul maps: C[m][n] += A[m][k] * B[k][n]
 // Loop order: d0=m (parallel), d1=k (reduction), d2=n (parallel).
@@ -37,8 +32,6 @@
 #map_mm_c = affine_map<(d0, d1, d2) -> (d0, d2)>
 
 module {
-  func.func private @printMemrefF32(memref<*xf32>)
-
   // C[2x2] = A[2x3] × B[3x2]
   //
   // A = [[1, 2, 3],     B = [[7,  8],      C = [[58,  64],
@@ -102,9 +95,6 @@ module {
 
     call @matmul(%A, %B, %C) : (memref<2x3xf32>, memref<3x2xf32>, memref<2x2xf32>) -> ()
 
-    %C_u = memref.cast %C : memref<2x2xf32> to memref<*xf32>
-    call @printMemrefF32(%C_u) : (memref<*xf32>) -> ()
-
     memref.dealloc %A : memref<2x3xf32>
     memref.dealloc %B : memref<3x2xf32>
     memref.dealloc %C : memref<2x2xf32>
@@ -112,21 +102,32 @@ module {
   }
 }
 
-// ---------------------------------------------------------------------------
-// CHECK-ADDR: Exactly 3 addr helpers — one per distinct memref type.
-// A: 2×3,  loop-space rank 3  (d0=m, d1=k, d2=n)
-// CHECK-ADDR: func.func private @gen_addr_{{[0-9A-F]+}}({{.*}}: i64, {{.*}}: memref<2x3xf32>) -> i64 {
-// B: 3×2
-// CHECK-ADDR: func.func private @gen_addr_{{[0-9A-F]+}}({{.*}}: i64, {{.*}}: memref<3x2xf32>) -> i64 {
-// C: 2×2
-// CHECK-ADDR: func.func private @gen_addr_{{[0-9A-F]+}}({{.*}}: i64, {{.*}}: memref<2x2xf32>) -> i64 {
-// No further helpers.
-// CHECK-ADDR-NOT: func.func private @gen_addr_
-
-// ---------------------------------------------------------------------------
-// CHECK-EXEC: Verify C = A × B = [[58, 64], [139, 154]].
-// TODO: Fill in the exact address-trace format once the APE runtime is wired up.
-// CHECK-EXEC: 58
-// CHECK-EXEC: 64
-// CHECK-EXEC: 139
-// CHECK-EXEC: 154
+// This is what the relative addresses should be for the 2x3x2 matmul (C[m][n] += A[m][k] * B[k][n]) with the above values of A and B. This test needs to be extended to verify the pattern between A, B, and C access are correct based on the full addresses.
+// BASE0: 0x0
+// BASE0-NEXT: 0x0
+// BASE0-NEXT: 0x4
+// BASE0-NEXT: 0x8
+// BASE0-NEXT: 0x8
+// BASE0-NEXT: 0x10
+// BASE0-NEXT: 0x0
+// BASE0-NEXT: 0x0
+// BASE0-NEXT: 0x4
+// BASE0-NEXT: 0x4
+// BASE0-NEXT: 0xc
+// BASE0-NEXT: 0x8
+// BASE0-NEXT: 0x14
+// BASE0-NEXT: 0x4
+// BASE0-NEXT: 0xc
+// BASE0-NEXT: 0x0
+// BASE0-NEXT: 0x10
+// BASE0-NEXT: 0x8
+// BASE0-NEXT: 0x14
+// BASE0-NEXT: 0x10
+// BASE0-NEXT: 0x8
+// BASE0-NEXT: 0xc
+// BASE0-NEXT: 0x4
+// BASE0-NEXT: 0x10
+// BASE0-NEXT: 0xc
+// BASE0-NEXT: 0x14
+// BASE0-NEXT: 0x14
+// BASE0-NEXT: 0xc

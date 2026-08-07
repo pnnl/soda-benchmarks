@@ -1,0 +1,1 @@
+This folder contains the files to continue working on this project where I left off at the end of the PNNL internship. It includes the run script for the APE passes, as well as modified MLIR files, and a few output files. new_\*.mlir files have the main function added so that they can be lowered through to the 'run' phase of the run_ape.sh script.

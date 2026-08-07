@@ -35,6 +35,29 @@ If tests are enabled and llvm-lit is available, you can run the tests with:
 cmake --build . --target check-sodap
 ```
 
+If `check-sodap` is configured with a stale `LLVM_EXTERNAL_LIT` path, run lit
+directly from the build test directory:
+
+```sh
+cd /workspaces/soda-benchmarks/examples/soda-plugins/build/test
+/home/developer/.local/bin/lit -sv .
+```
+
+Useful focused runs:
+
+```sh
+# Address-generator tests only.
+/home/developer/.local/bin/lit -sv . --filter=addr_gen
+
+# APE analysis/insertion tests only.
+/home/developer/.local/bin/lit -sv . --filter=ape
+```
+
+Test locations:
+
+- `test/addr_gen_testing/` for `gen-addr-function-pass` coverage.
+- `test/sodap/Analysis/` for analysis-oriented pass tests, including APE passes.
+
 
 ##  Running the Plugins
 

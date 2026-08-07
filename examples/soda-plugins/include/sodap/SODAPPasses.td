@@ -201,6 +201,23 @@ def AffineAPEInsertion : Pass<"soda-affine-ape-insertion"> {
   }];
 }
 
+def GenAddrFunctionPass : Pass<"gen-addr-function-pass", "::mlir::ModuleOp"> {
+  let summary = "Generate memref-specific flattened-index address helpers, generates traces with addresses";
+  let description = [{
+    Walks linalg operations in a module and synthesizes helper functions that
+    compute concrete byte addresses for operand accesses from flattened loop
+    indices.
+
+    The pass emits one helper per unique (memref type, indexing map) pair and
+    routes each computed absolute address plus a base-zero relative address
+    through `@format_address_pair(i64, i64)` for runtime tracing.
+
+    This pass currently supports indexing maps without symbols.
+
+    This pass continues to create gen_trace functions, which interweave the addresses generated from the gen_addr functions. This pass will eventually replace the issue_APE_request calls. This pass is incomplete. Eventually, it will not have flow statements inside of the gen_trace functions. This pass currently creates interweaved addresses, but further testing is required to confirm that the patterns are being generated correctly.
+  }];
+}
+
 def LinalgBatchMatmulToESP : Pass<"sodap-linalg-batch-matmul-to-esp", "::mlir::ModuleOp"> {
   let summary = "Replace linalg.batch_matmul with ESP accelerator runtime calls";
   let description = [{

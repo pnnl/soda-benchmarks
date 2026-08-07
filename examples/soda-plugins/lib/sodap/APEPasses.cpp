@@ -11,6 +11,7 @@
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/Linalg/IR/Linalg.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
+#include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/BuiltinTypes.h"
@@ -43,6 +44,7 @@ using namespace mlir;
 namespace mlir::sodap {
 #define GEN_PASS_DEF_LINALGAPEANALYSIS
 #define GEN_PASS_DEF_AFFINEAPEINSERTION
+#define GEN_PASS_DEF_GENADDRFUNCTIONPASS
 #include "sodap/SODAPPasses.h.inc"
 
 namespace {
@@ -723,17 +725,19 @@ struct AddressGeneratorKey {
 };
 
 struct GenAddrFunctionPass
-    : public PassWrapper<GenAddrFunctionPass,
-                         OperationPass<ModuleOp>> {
-  MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(GenAddrFunctionPass)
+    : public impl::GenAddrFunctionPassBase<GenAddrFunctionPass> {
+  using impl::GenAddrFunctionPassBase<GenAddrFunctionPass>::GenAddrFunctionPassBase;
 
-  StringRef getArgument() const final {
-    return "gen-addr-function-pass";
-  }
+  struct OperandAccessPattern {
+    MemRefType memrefType;
+    AffineMap indexingMap;
+    bool isOutput;
+  };
 
-  StringRef getDescription() const final {
-    return "Generate memref-specific flattened-index address helpers";
-  }
+  struct LinalgTraceSite {
+    linalg::LinalgOp linalgOp;
+    SmallVector<OperandAccessPattern> operandPatterns;
+  };
 
   void runOnOperation() override {
     ModuleOp module = getOperation();
@@ -772,20 +776,22 @@ struct GenAddrFunctionPass
     // Each operand may have a different indexing map, even when the
     // operands have the same memref type.
     //
-    SmallVector<std::pair<MemRefType, AffineMap>> accessPatterns;
+    SmallVector<OperandAccessPattern> accessPatterns;
+    SmallVector<LinalgTraceSite> traceSites;
     std::unordered_set<std::string> seenPatterns;
 
-    module.walk([&](linalg::GenericOp genericOp) {
-      ArrayAttr indexingMaps = genericOp.getIndexingMaps();
+    module.walk([&](linalg::LinalgOp linalgOp) {
+      SmallVector<OperandAccessPattern> operandPatterns;
+      SmallVector<AffineMap, 4> indexingMaps = linalgOp.getIndexingMapsArray();
 
-      if (indexingMaps.size() != genericOp->getNumOperands()) {
-        genericOp.emitError()
+      if (indexingMaps.size() != linalgOp->getNumOperands()) {
+        linalgOp.emitError()
             << "number of indexing maps does not match number of operands";
         signalPassFailure();
         return;
       }
 
-      for (auto it : llvm::enumerate(genericOp->getOperands())) {
+      for (auto it : llvm::enumerate(linalgOp->getOperands())) {
         Value operand = it.value();
 
         auto memrefType =
@@ -794,18 +800,7 @@ struct GenAddrFunctionPass
         if (!memrefType)
           continue;
 
-        auto mapAttr =
-          mlir::dyn_cast<AffineMapAttr>(indexingMaps[it.index()]);
-
-        if (!mapAttr) {
-          genericOp.emitError()
-              << "expected an affine map for operand "
-              << it.index();
-          signalPassFailure();
-          return;
-        }
-
-        AffineMap indexingMap = mapAttr.getValue();
+        AffineMap indexingMap = indexingMaps[it.index()];
 
         //
         // affine.apply can evaluate dimension expressions directly.
@@ -813,18 +808,18 @@ struct GenAddrFunctionPass
         // of this helper's current ABI.
         //
         if (indexingMap.getNumSymbols() != 0) {
-          genericOp.emitError()
+          linalgOp.emitError()
               << "symbolic indexing maps are not currently supported";
           signalPassFailure();
           return;
         }
 
         //
-        // For linalg.generic, all indexing maps use the same number of
-        // loop dimensions.
+        // Linalg indexing maps use the same number of loop dimensions as
+        // the enclosing op iteration space.
         //
-        if (indexingMap.getNumDims() != genericOp.getNumLoops()) {
-          genericOp.emitError()
+        if (indexingMap.getNumDims() != linalgOp.getNumLoops()) {
+          linalgOp.emitError()
               << "indexing map dimension count does not match "
                  "linalg iteration rank";
           signalPassFailure();
@@ -832,11 +827,16 @@ struct GenAddrFunctionPass
         }
 
         if (indexingMap.getNumResults() != memrefType.getRank()) {
-          genericOp.emitError()
+          linalgOp.emitError()
               << "indexing map result rank does not match memref rank";
           signalPassFailure();
           return;
         }
+
+        bool isOutput =
+          static_cast<int64_t>(it.index()) >= linalgOp.getNumDpsInputs();
+
+        operandPatterns.push_back({memrefType, indexingMap, isOutput});
 
         std::string key;
         llvm::raw_string_ostream keyStream(key);
@@ -844,13 +844,16 @@ struct GenAddrFunctionPass
         memrefType.print(keyStream);
         keyStream << "|";
         indexingMap.print(keyStream);
-        keyStream << "|loops=" << genericOp.getNumLoops();
+        keyStream << "|loops=" << linalgOp.getNumLoops();
         keyStream.flush();
 
         if (seenPatterns.insert(key).second) {
-          accessPatterns.push_back({memrefType, indexingMap});
+          accessPatterns.push_back({memrefType, indexingMap, isOutput});
         }
       }
+
+      if (!operandPatterns.empty())
+        traceSites.push_back({linalgOp, std::move(operandPatterns)});
     });
 
     //
@@ -858,12 +861,40 @@ struct GenAddrFunctionPass
     //
     //   memref type + indexing map
     //
-    for (auto [memrefType, indexingMap] : accessPatterns) {
+    for (const OperandAccessPattern &pattern : accessPatterns) {
       createAddressFunction(
           module,
-          memrefType,
-          indexingMap,
+          pattern.memrefType,
+          pattern.indexingMap,
           formatAddressPair);
+    }
+
+    for (auto &traceSite : traceSites) {
+      func::FuncOp traceFunction = createTraceFunction(
+          module,
+          traceSite.linalgOp,
+          traceSite.operandPatterns,
+          traceSite.linalgOp->getLoc(),
+          formatAddressPair,
+          &traceSite - traceSites.data());
+
+      if (!traceFunction) {
+        signalPassFailure();
+        return;
+      }
+
+      SmallVector<Value> traceOperands;
+      for (Value operand : traceSite.linalgOp->getOperands()) {
+        if (isa<MemRefType>(operand.getType()))
+          traceOperands.push_back(operand);
+      }
+
+      OpBuilder builder(traceSite.linalgOp);
+      builder.create<func::CallOp>(
+          traceSite.linalgOp.getLoc(),
+          TypeRange{},
+          SymbolRefAttr::get(context, traceFunction.getSymName()),
+          traceOperands);
     }
   }
 
@@ -883,6 +914,27 @@ private:
         std::hash<std::string>{}(typeString);
 
     return "gen_addr_" + llvm::utohexstr(hashValue);
+  }
+
+  static std::string getTraceFunctionName(
+      ArrayRef<OperandAccessPattern> operandPatterns,
+      unsigned ordinal) {
+    std::string key;
+    llvm::raw_string_ostream stream(key);
+
+    stream << "trace|op=" << ordinal;
+    for (const OperandAccessPattern &pattern : operandPatterns) {
+      stream << "|";
+      pattern.memrefType.print(stream);
+      stream << "|";
+      pattern.indexingMap.print(stream);
+    }
+    stream.flush();
+
+    std::size_t hashValue =
+        std::hash<std::string>{}(key);
+
+    return "gen_trace_" + llvm::utohexstr(hashValue);
   }
 
   static FailureOr<int64_t> getElementSizeInBytes(
@@ -920,6 +972,465 @@ private:
     return bitWidth / 8;
   }
 
+  static SmallVector<Value> buildIterationSizes(
+      OpBuilder &builder,
+      Location loc,
+      AffineMap indexingMap,
+      memref::ExtractStridedMetadataOp metadata) {
+    unsigned iterationRank = indexingMap.getNumDims();
+
+    Value one =
+        builder.create<arith::ConstantIndexOp>(
+            loc,
+            1);
+
+    SmallVector<Value> iterationSizes(
+        iterationRank,
+        one);
+
+    auto memrefSizes = metadata.getSizes();
+    for (unsigned resultIndex = 0;
+         resultIndex < indexingMap.getNumResults();
+         ++resultIndex) {
+      auto dimExpr =
+          mlir::dyn_cast<AffineDimExpr>(
+              indexingMap.getResult(resultIndex));
+
+      if (!dimExpr)
+        continue;
+
+      unsigned dimPos = dimExpr.getPosition();
+      if (dimPos >= iterationRank)
+        continue;
+
+      iterationSizes[dimPos] = memrefSizes[resultIndex];
+    }
+
+    return iterationSizes;
+  }
+
+  static FailureOr<SmallVector<Value>> buildLinalgDimensionSizes(
+      OpBuilder &builder,
+      Location loc,
+      ArrayRef<OperandAccessPattern> operandPatterns,
+      Block *entry) {
+    if (operandPatterns.empty())
+      return SmallVector<Value>{};
+
+    unsigned iterationRank = operandPatterns.front().indexingMap.getNumDims();
+    SmallVector<Value> dimensionSizes(iterationRank);
+    SmallVector<bool> seenDimensions(iterationRank, false);
+
+    for (auto it : llvm::enumerate(operandPatterns)) {
+      auto metadata = builder.create<memref::ExtractStridedMetadataOp>(
+          loc,
+          entry->getArgument(it.index()));
+
+      auto memrefSizes = metadata.getSizes();
+      AffineMap indexingMap = it.value().indexingMap;
+
+      for (unsigned resultIndex = 0;
+           resultIndex < indexingMap.getNumResults();
+           ++resultIndex) {
+        auto dimExpr =
+            mlir::dyn_cast<AffineDimExpr>(indexingMap.getResult(resultIndex));
+
+        if (!dimExpr)
+          continue;
+
+        unsigned dimPos = dimExpr.getPosition();
+        if (dimPos >= iterationRank || seenDimensions[dimPos])
+          continue;
+
+        dimensionSizes[dimPos] = memrefSizes[resultIndex];
+        seenDimensions[dimPos] = true;
+      }
+    }
+
+    for (bool seen : seenDimensions) {
+      if (!seen)
+        return failure();
+    }
+
+    return dimensionSizes;
+  }
+
+  static SmallVector<unsigned> collectLoopDimsByType(
+      ArrayRef<utils::IteratorType> iteratorTypes,
+      bool collectReductionDims) {
+    SmallVector<unsigned> dimensions;
+
+    for (auto it : llvm::enumerate(iteratorTypes)) {
+      bool isReduction =
+          it.value() == utils::IteratorType::reduction;
+      if (isReduction == collectReductionDims)
+        dimensions.push_back(it.index());
+    }
+
+    return dimensions;
+  }
+
+  static SmallVector<Value> decodeLinearIndex(
+      OpBuilder &builder,
+      Location loc,
+      Value linearIndex,
+      ArrayRef<Value> extents) {
+    SmallVector<Value> coordinates(extents.size());
+    Value remainingIndex = linearIndex;
+
+    for (int64_t dimension = static_cast<int64_t>(extents.size()) - 1;
+         dimension >= 0;
+         --dimension) {
+      if (dimension == 0) {
+        coordinates[dimension] = remainingIndex;
+        continue;
+      }
+
+      coordinates[dimension] = builder.create<arith::RemUIOp>(
+          loc,
+          remainingIndex,
+          extents[dimension]);
+
+      remainingIndex = builder.create<arith::DivUIOp>(
+          loc,
+          remainingIndex,
+          extents[dimension]);
+    }
+
+    return coordinates;
+  }
+
+  static Value buildOperandFlatIndexFromLinalgCoords(
+      OpBuilder &builder,
+      Location loc,
+      const OperandAccessPattern &pattern,
+      ArrayRef<Value> linalgCoords,
+      ArrayRef<Value> linalgDimensionSizes) {
+    Value zero = builder.create<arith::ConstantIndexOp>(loc, 0);
+    Value one = builder.create<arith::ConstantIndexOp>(loc, 1);
+    unsigned iterationRank = pattern.indexingMap.getNumDims();
+
+    SmallVector<bool> usesDimension(iterationRank, false);
+    for (unsigned resultIndex = 0;
+         resultIndex < pattern.indexingMap.getNumResults();
+         ++resultIndex) {
+      auto dimExpr =
+          mlir::dyn_cast<AffineDimExpr>(pattern.indexingMap.getResult(resultIndex));
+      if (!dimExpr)
+        continue;
+
+      unsigned dimPos = dimExpr.getPosition();
+      if (dimPos < iterationRank)
+        usesDimension[dimPos] = true;
+    }
+
+    Value flatIndex = zero;
+    for (unsigned dimension = 0; dimension < iterationRank; ++dimension) {
+      Value size = usesDimension[dimension] ? linalgDimensionSizes[dimension] : one;
+      Value coordinate = usesDimension[dimension] ? linalgCoords[dimension] : zero;
+
+      flatIndex = builder.create<arith::MulIOp>(loc, flatIndex, size);
+      flatIndex = builder.create<arith::AddIOp>(loc, flatIndex, coordinate);
+    }
+
+    return flatIndex;
+  }
+
+  static Value buildIterationCount(
+      OpBuilder &builder,
+      Location loc,
+      ArrayRef<Value> iterationSizes) {
+    Value totalIterations =
+        builder.create<arith::ConstantIndexOp>(
+            loc,
+            1);
+
+    for (Value size : iterationSizes) {
+      totalIterations =
+          builder.create<arith::MulIOp>(
+              loc,
+              totalIterations,
+              size);
+    }
+
+    return totalIterations;
+  }
+
+  static func::FuncOp createTraceFunction(
+      ModuleOp module,
+      linalg::LinalgOp linalgOp,
+      ArrayRef<OperandAccessPattern> operandPatterns,
+      Location loc,
+      func::FuncOp formatAddressPair,
+      unsigned ordinal) {
+    MLIRContext *context = module.getContext();
+
+    OpBuilder moduleBuilder(context);
+    moduleBuilder.setInsertionPointToEnd(module.getBody());
+
+    std::string functionName =
+        getTraceFunctionName(operandPatterns, ordinal);
+
+    if (auto existing =
+            module.lookupSymbol<func::FuncOp>(functionName)) {
+      return existing;
+    }
+
+    SmallVector<Type> inputTypes;
+    for (const OperandAccessPattern &pattern : operandPatterns)
+      inputTypes.push_back(pattern.memrefType);
+
+    auto functionType =
+        moduleBuilder.getFunctionType(
+            inputTypes,
+            TypeRange{});
+
+    func::FuncOp function =
+        moduleBuilder.create<func::FuncOp>(
+            loc,
+            functionName,
+            functionType);
+
+    function.setPrivate();
+
+    Block *entry = function.addEntryBlock();
+    OpBuilder builder(entry, entry->begin());
+
+    Value zero =
+        builder.create<arith::ConstantIndexOp>(
+            loc,
+            0);
+    Value one =
+        builder.create<arith::ConstantIndexOp>(
+            loc,
+            1);
+    auto i64Type =
+        IntegerType::get(context, 64);
+
+    SmallVector<func::FuncOp> addressFunctions;
+    SmallVector<unsigned> inputOperandIndices;
+    SmallVector<unsigned> outputOperandIndices;
+
+    for (auto it : llvm::enumerate(operandPatterns)) {
+      const OperandAccessPattern &pattern = it.value();
+
+      func::FuncOp addressFunction = createAddressFunction(
+          module,
+          pattern.memrefType,
+          pattern.indexingMap,
+          formatAddressPair);
+
+      if (!addressFunction) {
+        function.erase();
+        return func::FuncOp();
+      }
+
+      addressFunctions.push_back(addressFunction);
+
+      if (pattern.isOutput)
+        outputOperandIndices.push_back(it.index());
+      else
+        inputOperandIndices.push_back(it.index());
+    }
+
+    FailureOr<SmallVector<Value>> linalgDimensionSizes = buildLinalgDimensionSizes(
+        builder,
+        loc,
+        operandPatterns,
+        entry);
+
+    if (failed(linalgDimensionSizes)) {
+      function.emitError()
+          << "cannot infer all linalg loop dimension sizes for trace generation";
+      function.erase();
+      return func::FuncOp();
+    }
+
+    auto iteratorTypes = linalgOp.getIteratorTypesArray();
+    SmallVector<unsigned> reductionDims =
+        collectLoopDimsByType(iteratorTypes, true);
+    SmallVector<unsigned> parallelDims =
+        collectLoopDimsByType(iteratorTypes, false);
+
+    SmallVector<Value> parallelDimSizes;
+    parallelDimSizes.reserve(parallelDims.size());
+    for (unsigned dim : parallelDims)
+      parallelDimSizes.push_back((*linalgDimensionSizes)[dim]);
+
+    SmallVector<Value> reductionDimSizes;
+    reductionDimSizes.reserve(reductionDims.size());
+    for (unsigned dim : reductionDims)
+      reductionDimSizes.push_back((*linalgDimensionSizes)[dim]);
+
+    Value groupCount = buildIterationCount(
+        builder,
+        loc,
+        parallelDimSizes);
+    Value reductionVolume = buildIterationCount(
+        builder,
+        loc,
+        reductionDimSizes);
+
+    Value inputCount = builder.create<arith::ConstantIndexOp>(
+        loc,
+        static_cast<int64_t>(inputOperandIndices.size()));
+    Value outputCount = builder.create<arith::ConstantIndexOp>(
+        loc,
+        static_cast<int64_t>(outputOperandIndices.size()));
+    Value inputPhaseLength = builder.create<arith::MulIOp>(
+        loc,
+        reductionVolume,
+        inputCount);
+    Value groupSpan = builder.create<arith::AddIOp>(
+        loc,
+        inputPhaseLength,
+        outputCount);
+    Value totalTraceSteps = builder.create<arith::MulIOp>(
+        loc,
+        groupCount,
+        groupSpan);
+
+    auto forOp =
+        builder.create<scf::ForOp>(
+            loc,
+            zero,
+            totalTraceSteps,
+            one);
+
+    OpBuilder loopBuilder = OpBuilder::atBlockBegin(forOp.getBody());
+    Value groupId = loopBuilder.create<arith::DivUIOp>(
+        loc,
+        forOp.getInductionVar(),
+        groupSpan);
+    Value phase = loopBuilder.create<arith::RemUIOp>(
+        loc,
+        forOp.getInductionVar(),
+        groupSpan);
+
+    SmallVector<Value> parallelCoords = decodeLinearIndex(
+        loopBuilder,
+        loc,
+        groupId,
+        parallelDimSizes);
+
+    SmallVector<Value> baseLinalgCoords((*linalgDimensionSizes).size(), zero);
+    for (auto it : llvm::enumerate(parallelDims))
+      baseLinalgCoords[it.value()] = parallelCoords[it.index()];
+
+    Value inInputPhase = loopBuilder.create<arith::CmpIOp>(
+        loc,
+        arith::CmpIPredicate::ult,
+        phase,
+        inputPhaseLength);
+
+    auto inputPhaseIf = loopBuilder.create<scf::IfOp>(
+        loc,
+        inInputPhase,
+        true);
+
+    {
+      OpBuilder thenBuilder = inputPhaseIf.getThenBodyBuilder();
+      Value inputSlot = thenBuilder.create<arith::RemUIOp>(
+          loc,
+          phase,
+          inputCount);
+      Value reductionLinear = thenBuilder.create<arith::DivUIOp>(
+          loc,
+          phase,
+          inputCount);
+
+      SmallVector<Value> reductionCoords = decodeLinearIndex(
+          thenBuilder,
+          loc,
+          reductionLinear,
+          reductionDimSizes);
+
+      SmallVector<Value> linalgCoords = baseLinalgCoords;
+      for (auto it : llvm::enumerate(reductionDims))
+        linalgCoords[it.value()] = reductionCoords[it.index()];
+
+      for (auto it : llvm::enumerate(inputOperandIndices)) {
+        Value operandIndex = thenBuilder.create<arith::ConstantIndexOp>(
+            loc,
+            static_cast<int64_t>(it.index()));
+        Value matchesOperand = thenBuilder.create<arith::CmpIOp>(
+            loc,
+            arith::CmpIPredicate::eq,
+            inputSlot,
+            operandIndex);
+        auto operandIf = thenBuilder.create<scf::IfOp>(
+            loc,
+            matchesOperand,
+            false);
+        OpBuilder operandBuilder = operandIf.getThenBodyBuilder();
+        unsigned operandPos = it.value();
+        Value flatIndex = buildOperandFlatIndexFromLinalgCoords(
+            operandBuilder,
+            loc,
+            operandPatterns[operandPos],
+            linalgCoords,
+            *linalgDimensionSizes);
+        Value flatIndexI64 = operandBuilder.create<arith::IndexCastOp>(
+            loc,
+            i64Type,
+            flatIndex);
+        operandBuilder.create<func::CallOp>(
+            loc,
+            TypeRange{i64Type},
+            SymbolRefAttr::get(context, addressFunctions[operandPos].getSymName()),
+            ValueRange{flatIndexI64, entry->getArgument(operandPos)});
+      }
+
+    }
+
+    {
+      OpBuilder elseBuilder = inputPhaseIf.getElseBodyBuilder();
+      Value outputSlot = elseBuilder.create<arith::SubIOp>(
+          loc,
+          phase,
+          inputPhaseLength);
+
+      for (auto it : llvm::enumerate(outputOperandIndices)) {
+        Value operandIndex = elseBuilder.create<arith::ConstantIndexOp>(
+            loc,
+            static_cast<int64_t>(it.index()));
+        Value matchesOperand = elseBuilder.create<arith::CmpIOp>(
+            loc,
+            arith::CmpIPredicate::eq,
+            outputSlot,
+            operandIndex);
+        auto operandIf = elseBuilder.create<scf::IfOp>(
+            loc,
+            matchesOperand,
+            false);
+        OpBuilder operandBuilder = operandIf.getThenBodyBuilder();
+        unsigned operandPos = it.value();
+        Value flatIndex = buildOperandFlatIndexFromLinalgCoords(
+            operandBuilder,
+            loc,
+            operandPatterns[operandPos],
+            baseLinalgCoords,
+            *linalgDimensionSizes);
+        Value flatIndexI64 = operandBuilder.create<arith::IndexCastOp>(
+            loc,
+            i64Type,
+            flatIndex);
+        operandBuilder.create<func::CallOp>(
+            loc,
+            TypeRange{i64Type},
+            SymbolRefAttr::get(context, addressFunctions[operandPos].getSymName()),
+            ValueRange{flatIndexI64, entry->getArgument(operandPos)});
+      }
+
+    }
+
+    builder.create<func::ReturnOp>(
+        loc,
+        ValueRange{});
+
+    return function;
+  }
+
   static func::FuncOp createAddressFunction(
       ModuleOp module,
       MemRefType memrefType,
@@ -943,9 +1454,8 @@ private:
         IntegerType::get(context, 64);
     Type indexType =
         IndexType::get(context);
-
     unsigned iterationRank =
-        indexingMap.getNumDims();
+      indexingMap.getNumDims();
 
     //
     // Function ABI:
@@ -990,32 +1500,11 @@ private:
         loc,
         memref);
 
-    Value one =
-        builder.create<arith::ConstantIndexOp>(
-            loc,
-            1);
-
-    SmallVector<Value> iterationSizes(
-        iterationRank,
-        one);
-
-    auto memrefSizes = metadata.getSizes();
-    for (unsigned resultIndex = 0;
-         resultIndex < indexingMap.getNumResults();
-         ++resultIndex) {
-      auto dimExpr =
-          mlir::dyn_cast<AffineDimExpr>(
-              indexingMap.getResult(resultIndex));
-
-      if (!dimExpr)
-        continue;
-
-      unsigned dimPos = dimExpr.getPosition();
-      if (dimPos >= iterationRank)
-        continue;
-
-      iterationSizes[dimPos] = memrefSizes[resultIndex];
-    }
+    SmallVector<Value> iterationSizes = buildIterationSizes(
+        builder,
+        loc,
+        indexingMap,
+        metadata);
 
     //
     // Convert the flat index into an MLIR index.
@@ -1210,9 +1699,6 @@ private:
     return function;
   }
 };
-
-static PassRegistration<GenAddrFunctionPass>
-    registerGenAddrFunctionPass;
 
 } // namespace
 

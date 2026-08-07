@@ -265,6 +265,7 @@ void printAllCounterSummaries() {
 
 extern "C" void pre_issue_APE_request() {}
 
+// TODO KIM: Due to new pass functionality in gen-addr-function-pass, the addr_gen2.py C are no longer needed. After final testing of the new pass, we can remove the addr_gen2.py C implementations and the corresponding calls in the APE pass.
 // ---------- addr_gen2.py C implementations ----------
 
 extern "C" void ape_incomplete() {
