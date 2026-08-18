@@ -10,12 +10,17 @@ WORKFLOW_PROMPT = ".claude/pythonworkflow.txt"
 EXPERIMENT_NAME = "Polybench"
 
 TRANSFORM_SCHEDULE_DIR = "transformation/transform_schedules"
-ARTIFACTS = [
+KERNEL_STEPS_DIR = "transformation/kernel_steps"
+ARTIFACTS_TRANSFORM = [
     "02_linalg_tile_ts.mlir",
     "04_affine_unroll_ts.mlir",
 ]
-BAMBU_SUMMARY = "transformation/bambu_summary.json"
 
+ARTIFACTS_KERNEL_STEPS = [
+    "06_affine_unrolled.mlir",
+
+]
+BAMBU_SUMMARY = "transformation/bambu_summary.json"
 
 def sync_workflow_prompt(prompt_file: str, kernel: str, dimension: str, target: str) -> None:
     path = Path(prompt_file)
@@ -45,7 +50,7 @@ def run_workflow(prompt: str) -> dict:
         [
             "claude", "-p", prompt,
             "--output-format", "json",
-            "--allowedTools", "Agent,Bash,Read,Write",
+            "--allowedTools", "Agent,Bash,Edit,Read,Skill,Write",
             "--exclude-dynamic-system-prompt-sections",
         ],
         capture_output=True,
@@ -146,10 +151,20 @@ def main() -> None:
 
         # --- Log transform schedule artifacts ---
         sched_dir = exp_dir / TRANSFORM_SCHEDULE_DIR
-        for artifact_name in ARTIFACTS:
+        for artifact_name in ARTIFACTS_TRANSFORM:
             artifact_path = sched_dir / artifact_name
             if artifact_path.exists():
                 mlflow.log_artifact(str(artifact_path), artifact_path="transform_schedules")
+                print(f"Logged artifact: {artifact_path}")
+            else:
+                print(f"WARNING: artifact not found: {artifact_path}")
+
+        # --- Log kernel steps artifacts ---
+        kernel_steps_dir = exp_dir / KERNEL_STEPS_DIR
+        for artifact_name in ARTIFACTS_KERNEL_STEPS:
+            artifact_path = kernel_steps_dir / artifact_name
+            if artifact_path.exists():
+                mlflow.log_artifact(str(artifact_path), artifact_path="kernel_steps")
                 print(f"Logged artifact: {artifact_path}")
             else:
                 print(f"WARNING: artifact not found: {artifact_path}")
