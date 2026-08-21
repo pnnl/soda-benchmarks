@@ -1,0 +1,22 @@
+{
+  "$schema": "https://anthropic.com/claude-code/plugin.schema.json",
+  "name": "polybench-runner",
+  "version": "0.1.0",
+  "description": "SODA PolyBench HLS optimization workflow - agents and skills for MLIR kernel preparation, planning, implementation, and synthesis",
+  "author": {
+    "name": "Max Ramstad",
+    "email": "max.ramstad@gmail.com"
+  },
+  "skills": [
+    "skills/soda-benchmarks",
+    "skills/bambu-log-parser",
+    "skills/mlir-annotator"
+  ],
+  "agents": [
+    "agents/"
+  ],
+  "scripts": [
+    "scripts/workflow.py",
+    "scripts/pythonworkflow.txt"
+  ]
+}

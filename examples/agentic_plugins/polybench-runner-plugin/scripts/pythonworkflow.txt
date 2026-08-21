@@ -1,8 +1,8 @@
 Orchestrate the following workflow:
 
-<Kernel>:
-<Target>:
-<Dimension>:
+<Kernel>: threemm
+<Target>: Transformed
+<Dimension>: TEST
 
 If <Target> = Transformed:
 1. Scaffold experiment using experiment-preparation agent in /benches/experiments folder. Name output directory <kernel>_<dimension>_<target>.

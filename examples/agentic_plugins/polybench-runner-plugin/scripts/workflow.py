@@ -6,7 +6,8 @@ from pathlib import Path
 
 import mlflow
 
-WORKFLOW_PROMPT = ".claude/pythonworkflow.txt"
+PLUGIN_DIR = Path(__file__).resolve().parent.parent
+WORKFLOW_PROMPT = str(PLUGIN_DIR / "scripts" / "pythonworkflow.txt")
 EXPERIMENT_NAME = "Polybench"
 
 TRANSFORM_SCHEDULE_DIR = "transformation/transform_schedules"
@@ -52,6 +53,7 @@ def run_workflow(prompt: str) -> dict:
             "--output-format", "json",
             "--allowedTools", "Agent,Bash,Edit,Read,Skill,Write",
             "--exclude-dynamic-system-prompt-sections",
+            "--plugin-dir", str(PLUGIN_DIR),
         ],
         capture_output=True,
         text=True,
@@ -119,7 +121,8 @@ def main() -> None:
         claude_output = run_workflow(Path(WORKFLOW_PROMPT).read_text())
 
         # --- Locate the experiment directory produced by the workflow ---
-        benches_root = Path(__file__).parent / "benches"
+        repo_root = PLUGIN_DIR.parent.parent.parent
+        benches_root = repo_root / "benches"
         exp_dir = find_experiment_dir(benches_root)
         if exp_dir is None:
             print("WARNING: no experiment directory found; skipping artifact/param logging")
