@@ -54,7 +54,13 @@ def run_workflow(prompt: str) -> dict:
             "--allowedTools", "Agent,Bash,Edit,Read,Skill,Write",
             "--exclude-dynamic-system-prompt-sections",
             "--plugin-dir", str(PLUGIN_DIR),
+            "--permission-mode", "bypassPermissions",
         ],
+        env={
+            **__import__("os").environ,
+            "MLFLOW_EXPERIMENT_NAME": "claude-tracing",
+            "MLFLOW_CLAUDE_TRACING_ENABLED": "true",
+        },
         capture_output=True,
         text=True,
     )

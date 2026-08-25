@@ -1,9 +1,0 @@
-{
-  "permissions": {
-    "defaultMode": "bypassPermissions"
-  },
-  "env": {
-    "MLFLOW_EXPERIMENT_NAME": "claude-tracing",
-    "MLFLOW_CLAUDE_TRACING_ENABLED": "true"
-  }
-}
