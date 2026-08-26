@@ -9,7 +9,7 @@
 	<component_o id="sodaInstrChangeLocation">
           <description>Single-active-counter (change-location) instrumentation IP</description>
           <copyright>PNNL</copyright>
-          <authors>agostinti</authors>
+          <authors>Nicolas Agostini</authors>
           <license>Apache with LLVM Exceptions</license>
           <structural_type_descriptor id_type="sodaInstrChangeLocation"/>
           <port_o id="clock" dir="IN" is_clock="1">
