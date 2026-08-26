@@ -20,10 +20,10 @@ module @transforms attributes { transform.with_named_sequence } {
   }
 
   transform.named_sequence @tiling (%entry: !transform.any_op {transform.consumed}){
-    %L, %loops:3 = transform.structured.tile_using_for %entry tile_sizes [1, 2, 2] : (!transform.any_op) -> (!transform.any_op, !transform.any_op, !transform.any_op, !transform.any_op)
-    %1 = transform.get_parent_op %L {op_name = "scf.for"} : (!transform.any_op) -> !transform.op<"scf.for">
-    %2 = transform.get_parent_op %L {op_name = "scf.for", nth_parent=2} : (!transform.any_op) -> !transform.op<"scf.for">
-    %3 = transform.get_parent_op %L {op_name = "scf.for", nth_parent=3} : (!transform.any_op) -> !transform.op<"scf.for">
+    %H, %loops:3 = transform.structured.tile_using_for %entry tile_sizes [1, 1, 1] : (!transform.any_op) -> (!transform.any_op, !transform.any_op, !transform.any_op, !transform.any_op)
+    %1 = transform.get_parent_op %H {op_name = "scf.for"} : (!transform.any_op) -> !transform.op<"scf.for">
+    %2 = transform.get_parent_op %H {op_name = "scf.for", nth_parent=2} : (!transform.any_op) -> !transform.op<"scf.for">
+    %3 = transform.get_parent_op %H {op_name = "scf.for", nth_parent=3} : (!transform.any_op) -> !transform.op<"scf.for">
     transform.loop.unroll %1 { factor = 1} : !transform.op<"scf.for">
     transform.loop.unroll %2 { factor = 1} : !transform.op<"scf.for">
     transform.loop.unroll %3 { factor = 1} : !transform.op<"scf.for">
