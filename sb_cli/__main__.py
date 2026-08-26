@@ -16,7 +16,7 @@ from pathlib import Path
 import benches
 from sb_cli.flow import BACKENDS, FLOWS, STAGES
 
-_DATASET_CHOICES = ["MINI", "SMALL", "MEDIUM", "LARGE", "EXTRALARGE"]
+_DATASET_CHOICES = ["TEST", "MINI", "SMALL", "MEDIUM", "LARGE", "EXTRALARGE"]
 _DTYPE_CHOICES = ["float16", "float32", "float64"]
 
 # --target conflated the flow and stage axes; see .specs/target-fix/README.md.

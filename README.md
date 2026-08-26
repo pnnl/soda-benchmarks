@@ -76,7 +76,22 @@ An explicitly passed `--output_dir` still fails on a collision, so nothing is
 ever silently overwritten. Deriving a name for `init` requires
 `--benchmark_name`; without it, pass `--output_dir`.
 
+To have Claude Code agents run a synthesis experiment, use the
+[PolyBench Runner Plugin](examples/agentic_plugins/polybench-runner-plugin/):
 
+1. Ensure you have Claude Code installed and a supported API key in your environment
+2. Run the workflow script, specifying the kernel, dataset dimension, and optimization target:
+
+```bash
+python examples/agentic_plugins/polybench-runner-plugin/scripts/workflow.py \
+    --kernel threemm \
+    --dimension TEST \
+    --target Transformed
+```
+
+Available targets are `Baseline` (no transformations), `Transformed` (linalg
+tiling + affine unrolling).
+Results are logged to MLflow.
 ## Project Structure
 
 ```

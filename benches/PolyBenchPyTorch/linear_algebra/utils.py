@@ -142,7 +142,7 @@ _DTYPE_MAP: dict[str, torch.dtype] = {
 }
 
 _DIALECT_CHOICES = ["linalg-on-tensors", "tosa", "torch", "raw", "mhlo"]
-_DATASET_CHOICES = ["MINI", "SMALL", "MEDIUM", "LARGE", "EXTRALARGE"]
+_DATASET_CHOICES = ["TEST", "MINI", "SMALL", "MEDIUM", "LARGE", "EXTRALARGE"]
 _BASE_DTYPE_CHOICES = ["float16", "float32", "float64"]
 
 

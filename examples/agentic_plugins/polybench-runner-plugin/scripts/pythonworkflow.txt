@@ -1,0 +1,30 @@
+Orchestrate the following workflow:
+
+<Kernel>: threemm
+<Target>: Transformed
+<Dimension>: TEST
+
+If <Target> = Transformed:
+1. Scaffold experiment using experiment-preparation agent in /benches/experiments folder. Name output directory <kernel>_<dimension>_<target>.
+2. Analyze 02_linalg_tagged.mlir using mlir-linalg-hls-planner agent
+3. Implement linalg hls plan using mlir-linalg-implementer agent. Ensure tiling transformation schedule is named 02_linalg_tile_ts.mlir.
+4. use Skill(mlir-annotator) to annotate 04_affine_tiled into 05_affine_tagged
+5. Analyze 05_affine_tagged using mlir-affine-hls-planner agent
+6. Implement affine hls plan using mlir-affine-implementer agent. Ensure unrolling transformation schedule is named 04_affine_unroll_ts.mlir.
+7. use experiment-runner agent to run transformed simulation
+8. use Skill(bambu-log-parser) to generate JSON at the following path: experiment_directory/transformation/bambu_summary.json
+Important: Ensure that the linalg hls plan and affine hls plan are saved to the experiment_directory/transformation directory
+
+
+if <Target> = Baseline
+1. Scaffold experiment using experiment-preparation agent in /benches/experiments folder. Name output directory <kernel>_<dimension>_<target>.
+2. use experiment-runner agent to run baseline simulation
+3. use Skill(bambu-log-parser) to generate JSON at the following path: experiment_directory/transformation/bambu_summary.json
+
+
+if <Target> = Optimized
+1. Scaffold experiment using experiment-preparation agent in /benches/experiments folder. Name output directory <kernel>_<dimension>_<target>.
+2. use experiment-runner agent to run optimized simulation
+3. use Skill(bambu-log-parser) to generate JSON at the following path: experiment_directory/transformation/bambu_summary.json
+
+On error: stop and report. Do not attempt fixes.
