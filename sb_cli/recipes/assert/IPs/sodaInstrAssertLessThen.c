@@ -13,5 +13,5 @@
 void sodaInstrAssertLessThen(uint64_t it, uint64_t max)
 {
   bool result = it < max;
-  printf("sodaInstrAssertLessThen: %llu < %llu ? %s\n", it, max, result ? "true" : "false");
+  printf("[SW] sodaInstrAssertLessThen: %llu < %llu ? %s\n", it, max, result ? "true" : "false");
 }

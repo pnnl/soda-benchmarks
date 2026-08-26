@@ -7,10 +7,10 @@
       <operation operation_name="sodaInstrAssertLessThen" bounded="0"/>
       <circuit>
 	<component_o id="sodaInstrAssertLessThen">
-          <description>Printer 2 IP</description>
-          <copyright>foo</copyright>
-          <authors>foo</authors>
-          <license>foo</license>
+          <description>HW Print statement during simulation regarding value.</description>
+          <copyright>PNNL</copyright>
+          <authors>Nicolas Agostini</authors>
+          <license>Apache 2.0 with LLVM Exception</license>
           <structural_type_descriptor id_type="sodaInstrAssertLessThen"/>
           <port_o id="clock" dir="IN" is_clock="1">
             <structural_type_descriptor type="BOOL" size="1"/>

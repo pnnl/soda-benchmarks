@@ -46,7 +46,7 @@ module sodaInstrAssertLessThen
       else begin
          done_port <= done_port_reg;
          if (done_port_reg) begin
-            $display("sodaInstrAssertLessThen: %h < %h ? %s", it, max, result ? "true" : "false");
+            $display("[HW] sodaInstrAssertLessThen: %h < %h ? %s", it, max, result ? "true" : "false");
          end
       end
    end
