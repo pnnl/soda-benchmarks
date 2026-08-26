@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <constraints>
    <HLS_constraints>
-      <tech_constraints fu_name="forward_kernel" fu_library="work" n="1"/>
+      <!-- Change Location requires to be a single instance to aggregate the counter values in multiple locations -->
       <tech_constraints fu_name="sodaInstrChangeLocation" fu_library="work" n="1"/>
    </HLS_constraints>
 </constraints>
