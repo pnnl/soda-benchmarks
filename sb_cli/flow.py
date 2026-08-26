@@ -149,7 +149,7 @@ def ip_integration_block(recipe: Recipe | None) -> str:
 
     return (
         f"# IP integration flow (instrumentation recipe: {recipe.name})\n"
-        "EXP_CWD := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))\n"
+        "EXP_CWD:=$(CURDIR)\n"
         "IPDIR=$(EXP_CWD)/IPs\n"
         "BAMBU_IP_INTEGRATION=true\n"
         "# Comma-separated lists of files, with full paths.\n"
