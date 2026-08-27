@@ -1,4 +1,5 @@
 add_mlir_dialect_library(MLIRSODAP
+        AnnotateTosaOps.cpp
         GenerateLinalgSummary.cpp
         MyExtension.cpp
         ViewOpGraph.cpp

@@ -27,6 +27,26 @@ def SODAPSwitchBarFoo: Pass<"sodap-switch-bar-foo", "::mlir::ModuleOp"> {
   }];
 }
 
+def AnnotateTosaOps : Pass<"sodap-annotate-tosa-ops", "ModuleOp"> {
+  let summary = "Analyze TOSA operations and annotate them with performance metrics";
+  let description = [{
+    This pass analyzes TOSA operations by lowering them to linalg.generic operations
+    and collecting performance metrics. The metrics are then added as attributes to the
+    original TOSA operations:
+    
+    - numArithmeticOpsEstimative: Estimated total arithmetic operations
+    - numMemoryOpsEstimative: Estimated total memory operations
+    - numArithmeticOpsInKernel: Arithmetic operations in the kernel body
+    - numMemoryOpsInKernel: Memory operations in the kernel body
+  }];
+  let constructor = "mlir::sodap::createAnnotateTosaOpsPass()";
+  let dependentDialects = [
+    "mlir::bufferization::BufferizationDialect",
+    "mlir::tosa::TosaDialect",
+    "mlir::linalg::LinalgDialect"
+  ];
+}
+
 def ViewOpGraph : Pass<"soda-view-op-graph"> {
   let summary = "Print Graphviz visualization of an operation";
   let description = [{
