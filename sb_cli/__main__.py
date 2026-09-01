@@ -14,7 +14,7 @@ import argparse
 from pathlib import Path
 
 import benches
-from sb_cli.flow import BACKENDS, FLOWS, STAGES
+from sb_cli.flow import BACKENDS, BUILDERS, FLOWS, STAGES
 from sb_cli.recipes import NONE_RECIPE, available_recipes
 
 _DATASET_CHOICES = ["TEST", "MINI", "SMALL", "MEDIUM", "LARGE", "EXTRALARGE"]
@@ -104,6 +104,15 @@ def _add_init_parser(
         default=NONE_RECIPE,
         choices=available_recipes(),
         help="Instrumentation recipe to integrate (default: none)",
+    )
+    p.add_argument(
+        "--builder",
+        default="make",
+        choices=BUILDERS,
+        help=(
+            "Build script to scaffold. 'make' is the generated Makefile; "
+            "'siliconcompiler' adds sc_flow.py beside it (default: make)"
+        ),
     )
     p.add_argument("--target", action=_TargetRemoved, nargs="?", help=argparse.SUPPRESS)
 
@@ -208,6 +217,7 @@ def main() -> None:
             backend=args.backend,
             stage=args.stage,
             instrumentation=args.instrumentation,
+            builder=args.builder,
         )
         scaffold(config, args.output_dir, base_dir)
 

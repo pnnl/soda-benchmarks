@@ -10,6 +10,10 @@ opaque name:
 
 `resolve_target` turns a triple into the Makefile TARGET path, which mirrors
 the directory layout the mkinc rules already use (`bambu/<flow>/<artifact>`).
+
+**builder** is a fourth axis, and orthogonal to those three: it selects which
+build script the experiment is scaffolded with, not what is built. It is not
+part of `resolve_target`, whose result is a Makefile path.
 """
 
 from __future__ import annotations
@@ -21,6 +25,13 @@ from sb_cli.recipes import NONE_RECIPE, Recipe
 FLOWS: tuple[str, ...] = ("baseline", "optimized", "transformed")
 BACKENDS: tuple[str, ...] = ("bambu",)  # "cpu", "gpu" reserved for future use
 STAGES: tuple[str, ...] = ("llvm", "verilog", "simulation", "gds")
+
+# Build script scaffolded into the experiment. "make" is the generated Makefile
+# that chains the scripts/ wrappers and finishes in OpenROAD-flow-scripts;
+# "siliconcompiler" additionally writes sc_flow.py, which drives the same tools
+# as one SiliconCompiler job. It is not a `backend` value: SiliconCompiler still
+# has Bambu consume the LLVM IR, so the two axes are independent.
+BUILDERS: tuple[str, ...] = ("make", "siliconcompiler")
 
 # Default Bambu top function name. It is also baked into ll_to_verilog.sh and
 # the soda_to_llvm_*.sh scripts, so it is a default here rather than a knob.
@@ -116,6 +127,7 @@ class ExperimentConfig:
     backend: str
     stage: str
     instrumentation: str = NONE_RECIPE  # recipe name; "none" = no instrumentation
+    builder: str = "make"  # one of BUILDERS; "make" scaffolds the Makefile only
 
     @property
     def target_name(self) -> str:

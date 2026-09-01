@@ -44,6 +44,12 @@ docs, `sb-cli`) are managed with [pixi](https://pixi.sh) via the root
 environment you can call `sb-cli` directly as well as `pixi run sb-cli`. Both
 work from any directory. List the available kernels with `pixi run sb-cli list`.
 
+There is a second pixi environment, `sc`, which adds SiliconCompiler on top of
+the default one. Nothing in the default environment needs it — `sb-cli` only
+*generates* the `sc_flow.py` build script — so it is opt-in: `pixi install -e
+sc`, then `pixi run -e sc <task>`. See
+[docs/SiliconCompilerBackend.md](docs/SiliconCompilerBackend.md).
+
 To scaffold and run a synthesis experiment for a PolyBenchPyTorch kernel:
 
 ```bash
@@ -81,6 +87,7 @@ ever silently overwritten. Deriving a name for `init` requires
 
 - Claude code generation of transformation schedules for PolyBench kernels: [Agentic Polybench Runner](docs/AgenticPolybenchRunner.md)
 - Triggering instrumentation and IP integration flows using the `sb-cli` command line interface: [Instrumentation](docs/Intrumentation.md)
+- Building a scaffolded experiment with SiliconCompiler instead of the generated Makefile: [A SiliconCompiler builder for `sb-cli`](docs/SiliconCompilerBackend.md)
 
 
 ## Project Structure

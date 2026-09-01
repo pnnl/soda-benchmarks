@@ -28,6 +28,12 @@ _GENERATED_FILES = [
     ".gitignore",
 ]
 
+# Written on top of those when --builder siliconcompiler is selected. Additive,
+# so an experiment scaffolded for SiliconCompiler still has the Makefile and
+# still builds with `make`.
+_SC_BUILDER = "siliconcompiler"
+_SC_FLOW_FILE = "sc_flow.py"
+
 
 # Trailing "-000" style counter appended to auto-generated experiment names
 _COUNTER_SUFFIX = re.compile(r"-\d{3}$")
@@ -255,6 +261,7 @@ def scaffold(config: ExperimentConfig, output_dir: str | None, base_dir: Path) -
         "target_name": config.target_name,
         "target_path": target_path,
         "instrumentation": config.instrumentation,
+        "builder": config.builder,
         "ip_integration_block": ip_integration_block(recipe),
         "created_at": created_at,
     }
@@ -276,6 +283,15 @@ def scaffold(config: ExperimentConfig, output_dir: str | None, base_dir: Path) -
     (exp_dir / "README.md").write_text(render("README.md.tmpl", ctx), encoding="utf-8")
     (exp_dir / ".gitignore").write_text(render("gitignore.tmpl", ctx), encoding="utf-8")
 
+    # The SiliconCompiler build script, when asked for. Nothing above changes:
+    # the Makefile is still written, so the two backends sit side by side in one
+    # experiment and can be compared against each other.
+    if config.builder == _SC_BUILDER:
+        sc_flow = exp_dir / _SC_FLOW_FILE
+        sc_flow.write_text(render("sc_flow.py.tmpl", ctx), encoding="utf-8")
+        # Its docstring says `./sc_flow.py`, so make that true.
+        sc_flow.chmod(sc_flow.stat().st_mode | 0o111)
+
     # transform.mlir + IP files come from the selected recipe, or fall back to
     # the no-op template when no instrumentation is requested.
     if recipe is not None:
@@ -296,4 +312,6 @@ def scaffold(config: ExperimentConfig, output_dir: str | None, base_dir: Path) -
     print(f"[sb-cli] Created experiment: {exp_dir.absolute()}")
     print(f"[sb-cli] Symlink: {symlink_path} -> {ts}/")
     print(f"[sb-cli] Registered as '{output_dir}' in experiments/registry.py")
+    if config.builder == _SC_BUILDER:
+        print(f"[sb-cli] SiliconCompiler builder: run ./{_SC_FLOW_FILE}")
     return exp_dir

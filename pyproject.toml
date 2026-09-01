@@ -40,6 +40,7 @@ testpaths = ["benches/tests"]
 addopts = "-v"
 markers = [
     "slow: marks tests as slow (MLIR generation via torch-mlir)",
+    "sc: needs the siliconcompiler package (pixi environment `sc`)",
 ]
 
 [tool.mypy]

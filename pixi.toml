@@ -7,9 +7,11 @@ version = "0.1.1"
 [tasks]
 lint = "ruff check benches/PolyBenchPyTorch benches/tests sb_cli"
 format = "ruff format benches/PolyBenchPyTorch benches/tests sb_cli"
-test = "pytest"
-test-mlir = "pytest -m slow"
-test-fast = "pytest -m 'not slow'"
+# The default environment has no siliconcompiler, so the tests that import it
+# are deselected here and run by `pixi run test-sc` in the `sc` environment.
+test = "pytest -m 'not sc'"
+test-mlir = "pytest -m 'slow and not sc'"
+test-fast = "pytest -m 'not slow and not sc'"
 sb-cli = "python -m sb_cli"
 docs-serve = "mkdocs serve"
 docs-build = "mkdocs build"
@@ -28,6 +30,27 @@ ipykernel = "*"
 # importable. Both live in the one distribution declared by pyproject.toml.
 [pypi-dependencies]
 soda-benchmarks = { path = ".", editable = true }
+
+# --- SiliconCompiler backend -------------------------------------------------
+# Kept out of the default environment: sb-cli only *generates* sc_flow.py, so
+# nothing in the default install needs the package. Use it with
+# `pixi run -e sc ...` or the `test-sc` task.
+[feature.sc.pypi-dependencies]
+# Pinned to a commit rather than a release: the SODA front end sc_flow.py
+# imports (siliconcompiler.flows.sodaflow and tools/soda/opt.py) landed after
+# v0.38.5, so no published wheel carries it yet. Move to a version constraint
+# once a release includes it.
+siliconcompiler = { git = "https://github.com/siliconcompiler/siliconcompiler.git", rev = "3f33a3c50a91ea9861d5c3fb132463a2da189a3b" }
+
+[feature.sc.tasks]
+# Only the tests that import siliconcompiler; the rest are covered by the
+# default environment's `test`.
+test-sc = "pytest -m sc"
+# The whole suite in one go, for when the sc environment is the one at hand.
+test-all = "pytest"
+
+[environments]
+sc = ["sc"]
 
 # PYTHONPATH is only for dependencies installed outside this environment (torch
 # and the MLIR/SODA bindings built into the container). Project code must never
