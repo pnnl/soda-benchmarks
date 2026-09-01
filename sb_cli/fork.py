@@ -21,6 +21,12 @@ _TRACKED_FILES = [
     ".gitignore",
 ]
 
+# Files only some experiments have, copied when present and not warned about
+# when absent: sc_flow.py exists only for --builder siliconcompiler.
+_OPTIONAL_FILES = [
+    "sc_flow.py",
+]
+
 
 def fork_experiment(
     from_name_or_path: str, output_dir: str | None, base_dir: Path
@@ -78,6 +84,13 @@ def fork_experiment(
             shutil.copy2(src, dst)
         else:
             print(f"[sb-cli] WARNING: {fname} not found in source, skipping")
+
+    # Copy the files an experiment may or may not have, preserving the mode so
+    # an executable sc_flow.py stays executable in the fork.
+    for fname in _OPTIONAL_FILES:
+        src = source_dir / fname
+        if src.exists():
+            shutil.copy2(src, new_dir / fname)
 
     # Carry the instrumentation IP directory (present when the source was
     # scaffolded with an --instrumentation recipe) so the fork stays buildable.

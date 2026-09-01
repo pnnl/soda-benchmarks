@@ -33,6 +33,7 @@ def _run_scaffold(
     backend: str = "bambu",
     stage: str = "verilog",
     instrumentation: str = "none",
+    builder: str = "make",
 ) -> Path:
     """Run scaffold() with given args and return the experiment dir."""
     from sb_cli.flow import ExperimentConfig
@@ -49,8 +50,25 @@ def _run_scaffold(
         backend=backend,
         stage=stage,
         instrumentation=instrumentation,
+        builder=builder,
     )
     return scaffold(config, output_dir, tmp_path)
+
+
+def _load_sc_flow(exp_dir: Path) -> dict:
+    """Execute a generated sc_flow.py and return its module namespace.
+
+    The script's module body is only constants and function definitions -- main()
+    runs under ``if __name__ == "__main__"`` -- so loading it is how a single
+    function of it can be exercised. Its imports are real, though: siliconcompiler
+    lives outside the default pixi environment, hence the `sc` marker on every
+    caller and this second guard for a run that ignores markers.
+    """
+    pytest.importorskip("siliconcompiler")
+    path = exp_dir / "sc_flow.py"
+    namespace: dict = {"__name__": "sc_flow", "__file__": str(path)}
+    exec(compile(path.read_text(), str(path), "exec"), namespace)
+    return namespace
 
 
 # ---------------------------------------------------------------------------
@@ -1130,3 +1148,184 @@ Run 1 execution time 14028 cycles;
         data = _json.loads((exp_dir / "output" / "metrics.json").read_text())
         for key in ["simulation_cycles", "resource_usage", "instrumentation_events"]:
             assert data["metrics"][key] == {}
+
+
+# ---------------------------------------------------------------------------
+# SiliconCompiler builder: sc_flow.py beside the Makefile
+# ---------------------------------------------------------------------------
+
+
+class TestSiliconCompilerBuilder:
+    def test_default_builder_writes_no_sc_flow(self, tmp_path: Path) -> None:
+        """The default builder is unchanged: a Makefile and no sc_flow.py."""
+        base = _make_base_dir(tmp_path)
+        exp_dir = _run_scaffold(base, output_dir="make_exp")
+
+        assert (exp_dir / "Makefile").exists()
+        assert not (exp_dir / "sc_flow.py").exists()
+
+    def test_sc_builder_adds_sc_flow_beside_an_identical_makefile(
+        self, tmp_path: Path
+    ) -> None:
+        """The builder is additive: same Makefile, plus a runnable sc_flow.py.
+
+        The two backends have to be comparable against each other, which they
+        are not if selecting one changes what the other builds.
+        """
+        base = _make_base_dir(tmp_path)
+        mk_dir = _run_scaffold(base, output_dir="a_exp", flow="optimized", stage="gds")
+        sc_dir = _run_scaffold(
+            base,
+            output_dir="b_exp",
+            flow="optimized",
+            stage="gds",
+            builder="siliconcompiler",
+        )
+
+        # The experiment name is in the header comment of every generated file,
+        # so it is the one difference allowed here.
+        mk = (mk_dir / "Makefile").read_text().replace("a_exp", "")
+        assert (sc_dir / "Makefile").read_text().replace("b_exp", "") == mk
+
+        sc_flow = sc_dir / "sc_flow.py"
+        assert sc_flow.exists()
+        assert sc_flow.stat().st_mode & 0o111, "sc_flow.py is not executable"
+        compile(sc_flow.read_text(), str(sc_flow), "exec")
+
+    def test_sc_flow_leaves_no_placeholder_unsubstituted(self, tmp_path: Path) -> None:
+        """Every $placeholder in the template is a key of the render context.
+
+        render() substitutes safely, so a placeholder with no context key
+        survives into the generated script as literal text rather than failing.
+        The only identifier left in it is the Tcl variable the script writes
+        into the SDC.
+        """
+        from string import Template
+
+        base = _make_base_dir(tmp_path)
+        exp_dir = _run_scaffold(base, output_dir="ph_exp", builder="siliconcompiler")
+
+        text = (exp_dir / "sc_flow.py").read_text()
+        assert set(Template(text).get_identifiers()) == {"non_clock_inputs"}
+
+    def test_sc_flow_records_the_configuration(self, tmp_path: Path) -> None:
+        """The generated script carries the axes sb-cli was asked for."""
+        base = _make_base_dir(tmp_path)
+        exp_dir = _run_scaffold(
+            base,
+            output_dir="cfg_exp",
+            flow="transformed",
+            stage="simulation",
+            device="asap7-BC",
+            clock_period=3.5,
+            memory_policy="ALL_BRAM",
+            instrumentation="hw-counters",
+            builder="siliconcompiler",
+        )
+
+        text = (exp_dir / "sc_flow.py").read_text()
+        assert 'STRATEGY = "transformed"' in text
+        assert 'STAGE = "simulation"' in text
+        assert 'DEVICE = "asap7-BC"' in text
+        assert "CLOCK_PERIOD = 3.5" in text
+        assert 'MEMORY_POLICY = "ALL_BRAM"' in text
+        assert 'INSTRUMENTATION = "hw-counters"' in text
+
+    def test_sc_flow_benchmark_name_is_a_python_literal(self, tmp_path: Path) -> None:
+        """A missing benchmark reaches the script as None, not as "None".
+
+        The context spells `benchmark_name` for humans (`None`) and
+        `benchmark_name_repr` for Python, and a generated Python file that
+        quoted the first would name its design after the string "None".
+        """
+        base = _make_base_dir(tmp_path)
+        exp_dir = _run_scaffold(base, output_dir="lit_exp", builder="siliconcompiler")
+
+        text = (exp_dir / "sc_flow.py").read_text()
+        assert "BENCHMARK = None" in text
+        assert 'BENCHMARK = "None"' not in text
+
+    def test_fork_carries_sc_flow(self, tmp_path: Path) -> None:
+        """A fork of a SiliconCompiler experiment stays buildable by it."""
+        from sb_cli.fork import fork_experiment
+
+        base = _make_base_dir(tmp_path)
+        _run_scaffold(base, output_dir="sc_src", builder="siliconcompiler")
+
+        new_dir = fork_experiment("sc_src", "sc_fork", base)
+
+        sc_flow = new_dir / "sc_flow.py"
+        assert sc_flow.exists()
+        assert sc_flow.stat().st_mode & 0o111, "the fork lost the +x bit"
+
+    def test_fork_of_a_make_experiment_is_quiet(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture
+    ) -> None:
+        """sc_flow.py is optional, so its absence is not worth warning about."""
+        from sb_cli.fork import fork_experiment
+
+        base = _make_base_dir(tmp_path)
+        _run_scaffold(base, output_dir="mk_src")
+
+        new_dir = fork_experiment("mk_src", "mk_fork", base)
+
+        assert not (new_dir / "sc_flow.py").exists()
+        assert "sc_flow.py" not in capsys.readouterr().out
+
+    def test_builder_flag_reaches_the_config(self, tmp_path: Path) -> None:
+        """The --builder flag is what a user types, so it is what is tested.
+
+        Every other test here builds an ExperimentConfig directly, which would
+        stay green if the argparse wiring dropped the flag on the floor.
+        """
+        import sys
+        from unittest.mock import patch
+
+        from sb_cli.__main__ import main
+
+        base = _make_base_dir(tmp_path)
+        argv = [
+            "sb-cli",
+            "init",
+            "--output_dir",
+            "cli_exp",
+            "--builder",
+            "siliconcompiler",
+            "--base_dir",
+            str(base),
+        ]
+        with patch.object(sys, "argv", argv):
+            main()
+
+        exp_dir = base / "experiments" / "cli_exp"
+        assert (exp_dir / "sc_flow.py").exists()
+        assert (exp_dir / "Makefile").exists()
+
+    @pytest.mark.sc
+    def test_sdc_is_rewritten_when_the_clock_period_changes(
+        self, tmp_path: Path
+    ) -> None:
+        """A stale SDC would hold high-level synthesis, synthesis and
+        place-and-route to a period nobody asked for, so it is rewritten -- and
+        an edit made against the period still in force is not."""
+        base = _make_base_dir(tmp_path)
+        exp_dir = _run_scaffold(
+            base, output_dir="sdc_exp", clock_period=5.0, builder="siliconcompiler"
+        )
+
+        namespace = _load_sc_flow(exp_dir)
+        namespace["write_constraints"](1.0)
+        sdc = exp_dir / namespace["SDC"]
+        assert "-period 5.0" in sdc.read_text()
+
+        # An edit survives a rerun at the same period.
+        sdc.write_text(sdc.read_text() + "# hand edit\n")
+        namespace["write_constraints"](1.0)
+        assert "# hand edit" in sdc.read_text()
+
+        # A different period does not.
+        namespace["CLOCK_PERIOD"] = 2.0
+        namespace["write_constraints"](1.0)
+        text = sdc.read_text()
+        assert "-period 2.0" in text
+        assert "-period 5.0" not in text
