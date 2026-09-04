@@ -34,6 +34,57 @@
 
 #include <cstdint>
 
+namespace sodap {
+
+/// Head of the ranked descriptor an `memref<*xf32>` points at, as MLIR's
+/// LLVM lowering lays it out:
+///
+///     { float *allocated; float *aligned; int64_t offset;
+///       int64_t sizes[rank]; int64_t strides[rank]; }
+///
+/// The two arrays follow this header contiguously, which is why the header is a
+/// struct and the arrays are reached by offsetting past it -- letting the
+/// compiler place `offset` after the pointers keeps this correct on targets
+/// where a pointer is not 64 bits (RISC-V ilp32, which some ESP SoCs use).
+struct MemRefDescriptorHeadF32 {
+  float *allocated;
+  float *aligned;
+  int64_t offset;
+};
+
+/// A decoded `memref<*xf32>` argument.
+struct MemRefViewF32 {
+  float *data;            ///< aligned pointer, already advanced by `offset`
+  int64_t rank;
+  const int64_t *sizes;   ///< `rank` entries
+  const int64_t *strides; ///< `rank` entries
+  int64_t numElements;    ///< product of `sizes`
+};
+
+/// Decode the `(int64_t rank, void *descriptor)` pair an `memref<*xf32>`
+/// argument arrives as.
+///
+/// The kernels this runtime serves come out of soda-opt with static, contiguous
+/// shapes, so `numElements` is the product of the sizes and the strides are only
+/// carried for a caller that wants to check that assumption.
+inline MemRefViewF32 decodeMemRefF32(int64_t rank, void *descriptor) {
+  auto *head = static_cast<MemRefDescriptorHeadF32 *>(descriptor);
+  auto *tail = reinterpret_cast<int64_t *>(
+      static_cast<char *>(descriptor) + sizeof(MemRefDescriptorHeadF32));
+
+  MemRefViewF32 view;
+  view.data = head->aligned + head->offset;
+  view.rank = rank;
+  view.sizes = tail;
+  view.strides = tail + rank;
+  view.numElements = 1;
+  for (int64_t i = 0; i < rank; ++i)
+    view.numElements *= tail[i];
+  return view;
+}
+
+} // namespace sodap
+
 /// Allocate a contiguous shared memory buffer accessible by both the
 /// processor and the ESP accelerator.
 /// \param total_bytes  Size of the buffer in bytes.
