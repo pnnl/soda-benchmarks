@@ -148,18 +148,152 @@ class TestResolveTarget:
         err = capsys.readouterr().err
         assert "--flow" in err and "--stage" in err
 
-    def test_unsupported_pair_raises(self) -> None:
-        """A legal backend with no template for a legal stage is rejected."""
-        from sb_cli import flow as flow_mod
+    @pytest.mark.parametrize(
+        ("backend", "stage"),
+        [
+            ("cpu", "gds"),
+            ("cpu", "verilog"),
+            ("cpu", "object"),
+            ("esp", "gds"),
+            ("esp", "simulation"),
+            ("bambu", "binary"),
+        ],
+    )
+    def test_unsupported_pair_raises(self, backend: str, stage: str) -> None:
+        """A legal backend with no template for a legal stage is rejected.
 
-        # Simulate a future backend that only reaches llvm.
-        original = flow_mod.BACKENDS
-        flow_mod.BACKENDS = (*original, "cpu")
-        try:
-            with pytest.raises(ValueError, match="does not support stage 'gds'"):
-                flow_mod.resolve_target("baseline", "cpu", "gds", device="nangate45")
-        finally:
-            flow_mod.BACKENDS = original
+        Not every backend reaches every stage -- the cpu backend has no RTL and
+        the esp backend never runs here -- and the error has to name what the
+        backend does support rather than fail somewhere in make.
+        """
+        from sb_cli.flow import _supported_stages, resolve_target
+
+        with pytest.raises(ValueError, match=f"does not support stage '{stage}'"):
+            resolve_target("baseline", backend, stage, device="nangate45")
+
+        assert stage not in _supported_stages(backend)
+
+
+# ---------------------------------------------------------------------------
+# The cpu and esp backends
+# ---------------------------------------------------------------------------
+
+
+class TestCpuAndEspBackends:
+    @pytest.mark.parametrize("flow", ["baseline", "optimized", "transformed"])
+    @pytest.mark.parametrize(
+        ("backend", "stage", "expected"),
+        [
+            ("cpu", "llvm", "$(ODIR)/05_llvm_{flow}.ll"),
+            ("cpu", "binary", "$(ODIR)/cpu/{flow}/06_kernel"),
+            ("cpu", "simulation", "$(ODIR)/cpu/{flow}/07_results.txt"),
+            ("esp", "llvm", "$(ODIR)/05_llvm_{flow}.ll"),
+            ("esp", "object", "$(ODIR)/esp/{flow}/06_kernel_riscv.o"),
+            ("esp", "binary", "$(ODIR)/esp/{flow}/07_kernel.riscv"),
+        ],
+    )
+    def test_target_paths(
+        self, flow: str, backend: str, stage: str, expected: str
+    ) -> None:
+        """Each cpu/esp target resolves to the path its mkinc rule builds."""
+        from sb_cli.flow import resolve_target
+
+        got = resolve_target(flow, backend, stage, device="nangate45")
+        assert got == expected.format(flow=flow)
+
+    def test_esp_backend_selects_the_esp_schedule(self, tmp_path: Path) -> None:
+        """--backend esp implies the schedule that produces the ESP calls.
+
+        The backend is only reachable through that rewrite, so requiring a second
+        flag to enable it would just be a way to get a silently CPU-only build.
+        """
+        base = _make_base_dir(tmp_path)
+        exp_dir = _run_scaffold(
+            base,
+            output_dir="esp_exp",
+            backend="esp",
+            flow="transformed",
+            stage="object",
+        )
+
+        schedule = (exp_dir / "transform.mlir").read_text()
+        assert "sodap-linalg-batch-matmul-to-esp" in schedule
+
+    def test_explicit_instrumentation_overrides_the_esp_default(
+        self, tmp_path: Path
+    ) -> None:
+        """An --instrumentation the user asked for wins over the backend default."""
+        base = _make_base_dir(tmp_path)
+        exp_dir = _run_scaffold(
+            base,
+            output_dir="esp_hw",
+            backend="esp",
+            flow="transformed",
+            stage="object",
+            instrumentation="hw-counters",
+        )
+
+        schedule = (exp_dir / "transform.mlir").read_text()
+        assert "sodap-linalg-batch-matmul-to-esp" not in schedule
+        assert (exp_dir / "IPs").is_dir()
+
+    def test_cpu_backend_keeps_the_noop_schedule(self, tmp_path: Path) -> None:
+        """Only --backend esp implies the ESP schedule; cpu is asked explicitly."""
+        base = _make_base_dir(tmp_path)
+        exp_dir = _run_scaffold(
+            base,
+            output_dir="cpu_exp",
+            backend="cpu",
+            flow="transformed",
+            stage="simulation",
+        )
+
+        assert "sodap-linalg-batch-matmul-to-esp" not in (
+            exp_dir / "transform.mlir"
+        ).read_text()
+
+    def test_esp_recipe_is_discoverable(self) -> None:
+        """The recipe is a directory, so it needs no registration -- check that."""
+        from sb_cli.recipes import available_recipes, resolve_recipe
+
+        assert "esp" in available_recipes()
+        recipe = resolve_recipe("esp")
+        assert recipe is not None
+        assert not recipe.ip_dir.is_dir()
+
+    def test_esp_recipe_emits_no_bambu_ip_block(self) -> None:
+        """A schedule-only recipe must not turn on Bambu IP integration.
+
+        ll_to_verilog.sh aborts on the first unset IP_* variable, so emitting the
+        block with every entry empty would break an unrelated Bambu build.
+        """
+        from sb_cli.flow import ip_integration_block
+        from sb_cli.recipes import resolve_recipe
+
+        assert ip_integration_block(resolve_recipe("esp")) == ""
+        assert ip_integration_block(resolve_recipe("hw-counters")) != ""
+
+    def test_makefile_includes_the_backend_rules(self, tmp_path: Path) -> None:
+        """Every experiment carries the cpu/esp rules, as it does the gds ones.
+
+        They only define rules, so including them unconditionally costs a Bambu
+        experiment nothing and keeps one Makefile able to build any backend.
+        """
+        base = _make_base_dir(tmp_path)
+        exp_dir = _run_scaffold(base, output_dir="mk_exp")
+
+        makefile = (exp_dir / "Makefile").read_text()
+        assert "mkinc/ll_to_binary.mk" in makefile
+        assert "mkinc/ll_to_riscv.mk" in makefile
+
+    def test_makefile_names_the_esp_application_after_the_experiment(
+        self, tmp_path: Path
+    ) -> None:
+        """The staged baremetal app takes the experiment's name, not a timestamp."""
+        base = _make_base_dir(tmp_path)
+        exp_dir = _run_scaffold(base, output_dir="named_exp")
+
+        assert "ESP_APP_NAME?=named_exp" in (exp_dir / "Makefile").read_text()
 
 
 # ---------------------------------------------------------------------------
