@@ -38,10 +38,10 @@ soda-opt \
 	--soda-transform-erase-schedule \
   --lower-all-to-llvm="use-bare-ptr-memref-call-conv" \
   --convert-func-to-llvm \
+  --reconcile-unrealized-casts \
   -mlir-print-ir-after-all \
   $1 \
   -o $2 \
   2>&1 | cat > $2.steps.mlir
 
-  
 set +x
