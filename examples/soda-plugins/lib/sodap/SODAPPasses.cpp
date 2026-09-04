@@ -48,8 +48,7 @@ public:
 };
 } // namespace
 
-class SODAPTagOps
-    : public impl::TagOpsBase<SODAPTagOps> {
+class SODAPTagOps : public impl::TagOpsBase<SODAPTagOps> {
 public:
   using impl::TagOpsBase<SODAPTagOps>::TagOpsBase;
   void runOnOperation() final {

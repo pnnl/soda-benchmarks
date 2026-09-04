@@ -1,4 +1,4 @@
-//===-- SODAPTransforms.cpp - SODAP transform dialect ops ------------------===//
+//===-- SODAPTransforms.cpp - SODAP transform dialect ops -----------------===//
 //
 // This file is licensed under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -39,17 +39,16 @@ void SODAPTransformsExtension::init() {
 #define GET_OP_CLASSES
 #include "sodap/SODAPTransforms.cpp.inc"
 
-::mlir::DiagnosedSilenceableFailure mlir::transform::TagOpsOp::apply(
-    ::mlir::transform::TransformRewriter &rewriter,
-    ::mlir::transform::TransformResults &results,
-    ::mlir::transform::TransformState &state) {
+::mlir::DiagnosedSilenceableFailure
+mlir::transform::TagOpsOp::apply(::mlir::transform::TransformRewriter &rewriter,
+                                 ::mlir::transform::TransformResults &results,
+                                 ::mlir::transform::TransformState &state) {
 
   auto payload = state.getPayloadOps(getTarget());
   unsigned counter = 0;
   for (Operation *payloadOp : payload) {
     std::string uid = getPrefix().str() + "_" + std::to_string(counter++);
-    payloadOp->setAttr("uid",
-                        StringAttr::get(payloadOp->getContext(), uid));
+    payloadOp->setAttr("uid", StringAttr::get(payloadOp->getContext(), uid));
   }
   return DiagnosedSilenceableFailure::success();
 }

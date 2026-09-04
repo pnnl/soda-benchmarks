@@ -25,12 +25,11 @@ using namespace mlir;
 /// Necessary symbol to register the dialect plugin.
 extern "C" LLVM_ATTRIBUTE_WEAK DialectPluginLibraryInfo
 mlirGetDialectPluginInfo() {
-  return {
-      MLIR_PLUGIN_API_VERSION, "SODA", LLVM_VERSION_STRING,
-      [](DialectRegistry *registry) {
-        sodap::registerMyExtension(*registry);
-        sodap::registerSODAPTransforms(*registry);
-      }};
+  return {MLIR_PLUGIN_API_VERSION, "SODA", LLVM_VERSION_STRING,
+          [](DialectRegistry *registry) {
+            sodap::registerMyExtension(*registry);
+            sodap::registerSODAPTransforms(*registry);
+          }};
 }
 
 /// Pass plugin registration mechanism.

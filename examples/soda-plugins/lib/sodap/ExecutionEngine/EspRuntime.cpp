@@ -12,10 +12,11 @@
 // two are interchangeable from the kernel's point of view, which is what lets
 // the cpu backend exercise the lowering on a workstation.
 //
-// It is built only inside an ESP checkout: <esp_accelerator.h> and <esp_probe.h>
-// come from ESP's baremetal support library, along with probe(), aligned_malloc()
-// and the register names. See ll_to_riscv.sh, which stages this file into a
-// buildable esp-app/ directory, and the CMake option SODAP_ENABLE_ESP_RUNTIME.
+// It is built only inside an ESP checkout: <esp_accelerator.h> and
+// <esp_probe.h> come from ESP's baremetal support library, along with probe(),
+// aligned_malloc() and the register names. See ll_to_riscv.sh, which stages
+// this file into a buildable esp-app/ directory, and the CMake option
+// SODAP_ENABLE_ESP_RUNTIME.
 //
 // The register map and the shared-memory layout are the ones documented in
 // .specs/esp_invok.h and exercised by .specs/matmul_test.c; the platform setup
@@ -81,10 +82,10 @@ EspState g_state;
 
 /// Does this SoC have caches worth flushing?
 ///
-/// esp_flush() prints over the UART and probes for LLC/L2 devices on every call.
-/// On an SoC built without ESP caches both probes come back empty and the call
-/// does nothing but cost cycles, so ask once. (esp_gemm.c:68-79 measured this at
-/// ~576k cycles per invocation.)
+/// esp_flush() prints over the UART and probes for LLC/L2 devices on every
+/// call. On an SoC built without ESP caches both probes come back empty and the
+/// call does nothing but cost cycles, so ask once. (esp_gemm.c:68-79 measured
+/// this at ~576k cycles per invocation.)
 bool cachesPresent() {
   struct esp_device *cdev = nullptr;
   int nllc = probe(&cdev, VENDOR_CACHE, DEVID_LLC_CACHE, DEVNAME_LLC_CACHE);
@@ -96,18 +97,20 @@ bool cachesPresent() {
 ///
 /// The offsets and the size come from two places that have to agree: the pass
 /// computed them from M, K and N (ignoring the batch dimension -- correct only
-/// while batch is 1, which is what TOSA gives these kernels), and the descriptor
-/// carries the operand's real element count. A batch of 2 shows up here as twice
-/// the elements the buffer was sized for, so check rather than corrupt memory.
+/// while batch is 1, which is what TOSA gives these kernels), and the
+/// descriptor carries the operand's real element count. A batch of 2 shows up
+/// here as twice the elements the buffer was sized for, so check rather than
+/// corrupt memory.
 bool fitsInBuffer(const char *what, int64_t offset,
                   const sodap::MemRefViewF32 &view) {
   int64_t capacity = g_state.memSize / sizeof(token_t);
   if (offset >= 0 && offset + view.numElements <= capacity)
     return true;
-  std::printf("esp: %s of %lld elements at offset %lld overruns the %lld-element "
-              "shared buffer (batch > 1?)\n",
-              what, (long long)view.numElements, (long long)offset,
-              (long long)capacity);
+  std::printf(
+      "esp: %s of %lld elements at offset %lld overruns the %lld-element "
+      "shared buffer (batch > 1?)\n",
+      what, (long long)view.numElements, (long long)offset,
+      (long long)capacity);
   return false;
 }
 
@@ -158,9 +161,8 @@ extern "C" int64_t esp_alloc_shared(int64_t total_bytes) {
   g_state.ptable = static_cast<unsigned **>(
       aligned_malloc(nchunk(memSize) * sizeof(unsigned *)));
   for (unsigned i = 0; i < nchunk(memSize); ++i)
-    g_state.ptable[i] =
-        reinterpret_cast<unsigned *>(&g_state.buf[i * (kChunkSize /
-                                                       sizeof(token_t))]);
+    g_state.ptable[i] = reinterpret_cast<unsigned *>(
+        &g_state.buf[i * (kChunkSize / sizeof(token_t))]);
 
   // ACC_COH_NONE is the one mode available on every SoC; the others need the
   // cache hierarchy to be present.
@@ -169,8 +171,7 @@ extern "C" int64_t esp_alloc_shared(int64_t total_bytes) {
 
   iowrite32(g_state.dev, COHERENCE_REG, g_state.coherence);
 #ifndef __sparc
-  iowrite32(g_state.dev, PT_ADDRESS_REG,
-            (unsigned long long)g_state.ptable);
+  iowrite32(g_state.dev, PT_ADDRESS_REG, (unsigned long long)g_state.ptable);
 #else
   iowrite32(g_state.dev, PT_ADDRESS_REG, (unsigned)g_state.ptable);
 #endif
@@ -190,16 +191,15 @@ extern "C" void esp_free_shared(int64_t mem_handle) {
   g_state = EspState();
 }
 
-extern "C" void esp_float2fixed_f32(int64_t rank, void *ptr,
-                                    int64_t mem_handle, int64_t offset) {
+extern "C" void esp_float2fixed_f32(int64_t rank, void *ptr, int64_t mem_handle,
+                                    int64_t offset) {
   if (!g_state.buf)
     return;
   sodap::MemRefViewF32 src = sodap::decodeMemRefF32(rank, ptr);
   if (!fitsInBuffer("float2fixed", offset, src))
     return;
   for (int64_t i = 0; i < src.numElements; ++i)
-    g_state.buf[offset + i] =
-        static_cast<token_t>(src.data[i] * kFxScale);
+    g_state.buf[offset + i] = static_cast<token_t>(src.data[i] * kFxScale);
 }
 
 extern "C" void esp_fixed2float_f32(int64_t mem_handle, int64_t offset,
@@ -210,10 +210,10 @@ extern "C" void esp_fixed2float_f32(int64_t mem_handle, int64_t offset,
   if (!fitsInBuffer("fixed2float", offset, dst))
     return;
   for (int64_t i = 0; i < dst.numElements; ++i)
-    dst.data[i] =
-        static_cast<float>(g_state.buf[offset + i]) / kFxScale;
+    dst.data[i] = static_cast<float>(g_state.buf[offset + i]) / kFxScale;
 }
 
+// These memory mapped registers are tied to the the FFN accelerator
 extern "C" void esp_accel_cfg_regs(int64_t seq_len, int64_t indim,
                                    int64_t outdim, int64_t off_in,
                                    int64_t off_w, int64_t off_b,

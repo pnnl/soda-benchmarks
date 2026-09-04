@@ -8,13 +8,13 @@
 
 #include "sodap/ExecutionEngine/DynamicOpCounterRuntime.h"
 
+#include "llvm/ADT/ArrayRef.h"
 #include <algorithm>
-#include <cstdlib>
 #include <cstdint>
+#include <cstdlib>
 #include <iostream>
 #include <unordered_map>
 #include <vector>
-#include "llvm/ADT/ArrayRef.h"
 
 namespace {
 struct CounterState {
@@ -54,19 +54,14 @@ void printAllLoopSummaries() {
 }
 
 const char *dynamicCounterName(int64_t counterId) {
-    static constexpr std::array<const char *, 6> names = {{
-        "memref.load",
-        "memref.store",
-        "arith.int",
-        "arith.float",
-        "scf",
-        "affine"
-    }};
+  static constexpr std::array<const char *, 6> names = {
+      {"memref.load", "memref.store", "arith.int", "arith.float", "scf",
+       "affine"}};
 
-    if (counterId >= 0 && counterId < static_cast<int64_t>(names.size())) {
-        return names[counterId];
-    }
-    return "unknown";
+  if (counterId >= 0 && counterId < static_cast<int64_t>(names.size())) {
+    return names[counterId];
+  }
+  return "unknown";
 }
 
 void printDynamicCounterSummaries() {
@@ -89,9 +84,8 @@ void printAllCounterSummaries() {
 } // namespace
 
 extern "C" void sodaInstrCollectOpCounts(int64_t run, int64_t loopId,
-                                          int64_t loads, int64_t stores,
-                                          int64_t fpArith,
-                                          int64_t intArith) {
+                                         int64_t loads, int64_t stores,
+                                         int64_t fpArith, int64_t intArith) {
   if (!gAtExitRegistered) {
     std::atexit(printAllCounterSummaries);
     gAtExitRegistered = true;
@@ -115,9 +109,8 @@ extern "C" void sodaInstrCollectOpCounts(int64_t run, int64_t loopId,
     gCounterByLoopId[activeLoopId].add(loads, stores, fpArith, intArith);
   }
 
-  
-  auto activeIt = std::find(gActiveLoopStack.rbegin(), gActiveLoopStack.rend(),
-                            loopId);
+  auto activeIt =
+      std::find(gActiveLoopStack.rbegin(), gActiveLoopStack.rend(), loopId);
   if (activeIt != gActiveLoopStack.rend()) {
     gActiveLoopStack.erase(std::next(activeIt).base());
   }

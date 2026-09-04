@@ -1,4 +1,4 @@
-//===- ESPPasses.cpp - Replace linalg.batch_matmul with ESP calls -*- C++ -*-===//
+//===- ESPPasses.cpp - Replace linalg.batch_matmul with ESP calls -*- C++-*-==//
 //
 // This file is licensed under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -32,8 +32,7 @@ namespace {
 
 /// Look up or create a private function declaration in the module.
 static FlatSymbolRefAttr getOrInsertFunc(ModuleOp module, OpBuilder &builder,
-                                         StringRef name,
-                                         TypeRange resultTypes,
+                                         StringRef name, TypeRange resultTypes,
                                          TypeRange argTypes) {
   MLIRContext *ctx = module.getContext();
   auto symRef = SymbolRefAttr::get(ctx, name);
@@ -43,8 +42,7 @@ static FlatSymbolRefAttr getOrInsertFunc(ModuleOp module, OpBuilder &builder,
   OpBuilder::InsertionGuard guard(builder);
   builder.setInsertionPointToStart(module.getBody());
   auto funcOp = builder.create<func::FuncOp>(
-      module.getLoc(), name,
-      FunctionType::get(ctx, argTypes, resultTypes));
+      module.getLoc(), name, FunctionType::get(ctx, argTypes, resultTypes));
   funcOp.setPrivate();
   return symRef;
 }
@@ -121,8 +119,8 @@ static void replaceBatchMatmul(linalg::BatchMatmulOp op, OpBuilder &builder) {
   Type i64Ty = IntegerType::get(ctx, 64);
   Type urMemRefF32 = UnrankedMemRefType::get(Float32Type::get(ctx), 0);
 
-  Value A = op.getInputs()[0]; // batch x M x K
-  Value B = op.getInputs()[1]; // batch x K x N
+  Value A = op.getInputs()[0];  // batch x M x K
+  Value B = op.getInputs()[1];  // batch x K x N
   Value C = op.getOutputs()[0]; // batch x M x N
 
   // Extract dimensions: A is <batch x M x K>, B is <batch x K x N>
@@ -131,10 +129,10 @@ static void replaceBatchMatmul(linalg::BatchMatmulOp op, OpBuilder &builder) {
     if (!mrType.isDynamicDim(idx)) {
       int64_t size = mrType.getDimSize(idx);
       return builder.create<arith::ConstantOp>(loc,
-          IntegerAttr::get(i64Ty, size));
+                                               IntegerAttr::get(i64Ty, size));
     }
-    Value dimIdx = builder.create<arith::ConstantOp>(loc,
-        builder.getIndexAttr(idx));
+    Value dimIdx =
+        builder.create<arith::ConstantOp>(loc, builder.getIndexAttr(idx));
     Value dimVal = builder.create<memref::DimOp>(loc, memref, dimIdx);
     return builder.create<arith::IndexCastOp>(loc, i64Ty, dimVal);
   };
@@ -149,15 +147,15 @@ static void replaceBatchMatmul(linalg::BatchMatmulOp op, OpBuilder &builder) {
   Value szO = builder.create<arith::MulIOp>(loc, M, N);
 
   // Compute offsets: off_in=0, off_w=sz_in, off_o=off_w+sz_w
-  Value offIn = builder.create<arith::ConstantOp>(loc,
-      IntegerAttr::get(i64Ty, 0));
+  Value offIn =
+      builder.create<arith::ConstantOp>(loc, IntegerAttr::get(i64Ty, 0));
   Value offW = szIn;
   Value offO = builder.create<arith::AddIOp>(loc, offW, szW);
 
   // Total elements = off_o + sz_o; total_bytes = total * 4 (sizeof token_t)
   Value totalElems = builder.create<arith::AddIOp>(loc, offO, szO);
-  Value elemSize = builder.create<arith::ConstantOp>(loc,
-      IntegerAttr::get(i64Ty, 4));
+  Value elemSize =
+      builder.create<arith::ConstantOp>(loc, IntegerAttr::get(i64Ty, 4));
   Value totalBytes = builder.create<arith::MulIOp>(loc, totalElems, elemSize);
 
   // Cast operands to unranked memrefs
@@ -180,9 +178,8 @@ static void replaceBatchMatmul(linalg::BatchMatmulOp op, OpBuilder &builder) {
   // esp_accel_cfg_regs(seq_len=M, indim=K, outdim=N,
   //                    off_in, off_w, off_b=off_o, off_o)
   // Note: no bias for batch_matmul, so off_b == off_o (zero-size bias region)
-  builder.create<func::CallOp>(
-      loc, kEspAccelCfgRegs, TypeRange{},
-      ValueRange{M, K, N, offIn, offW, offO, offO});
+  builder.create<func::CallOp>(loc, kEspAccelCfgRegs, TypeRange{},
+                               ValueRange{M, K, N, offIn, offW, offO, offO});
 
   // Step 4: Start accelerator
   builder.create<func::CallOp>(loc, kEspAccelStart, TypeRange{}, ValueRange{});
@@ -214,9 +211,7 @@ public:
 
     // Collect all batch_matmul ops first to avoid modifying while walking.
     SmallVector<linalg::BatchMatmulOp> opsToReplace;
-    module.walk([&](linalg::BatchMatmulOp op) {
-      opsToReplace.push_back(op);
-    });
+    module.walk([&](linalg::BatchMatmulOp op) { opsToReplace.push_back(op); });
 
     if (opsToReplace.empty())
       return;

@@ -5,9 +5,9 @@
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
+#include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
-#include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Linalg/IR/Linalg.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
@@ -410,8 +410,9 @@ getDynamicCounterKind(Operation &op, const DynamicCounterSelection &selection) {
   return std::nullopt;
 }
 
-static void instrumentForOpsWithDynamicCounter(
-    func::FuncOp funcOp, const DynamicCounterSelection &selection) {
+static void
+instrumentForOpsWithDynamicCounter(func::FuncOp funcOp,
+                                   const DynamicCounterSelection &selection) {
   llvm::SmallVector<std::pair<Operation *, DynamicCounterKind>, 64> worklist;
   funcOp.walk([&](Operation *op) {
     if (auto kind = getDynamicCounterKind(*op, selection))
@@ -437,8 +438,7 @@ static void instrumentForOpsWithDynamicCounter(
 // Returns true if `type` is a memref of static rank 1 (a fixed-size vector).
 static bool isStaticVectorMemRef(Type type) {
   auto memrefType = dyn_cast<MemRefType>(type);
-  return memrefType && memrefType.getRank() == 1 &&
-         !memrefType.isDynamicDim(0);
+  return memrefType && memrefType.getRank() == 1 && !memrefType.isDynamicDim(0);
 }
 
 // Matches a `linalg.dot` op that can be swapped for the `sodaVectorDot`
@@ -524,8 +524,9 @@ public:
   using impl::InstrDynamicOpCountsBase<
       SODAPInstrDynamicOpCounts>::InstrDynamicOpCountsBase;
   void runOnOperation() final {
-    getOperation()->walk(
-        [](func::FuncOp funcOp) { instrumentForOpsWithDynamicOpCounts(funcOp); });
+    getOperation()->walk([](func::FuncOp funcOp) {
+      instrumentForOpsWithDynamicOpCounts(funcOp);
+    });
   }
 };
 
@@ -550,8 +551,7 @@ public:
   }
 };
 
-class SODAPSwapOpToHW
-    : public impl::SwapOpToHWBase<SODAPSwapOpToHW> {
+class SODAPSwapOpToHW : public impl::SwapOpToHWBase<SODAPSwapOpToHW> {
 public:
   using impl::SwapOpToHWBase<SODAPSwapOpToHW>::SwapOpToHWBase;
 

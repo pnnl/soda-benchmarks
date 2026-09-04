@@ -54,7 +54,7 @@ struct MemRefDescriptorHeadF32 {
 
 /// A decoded `memref<*xf32>` argument.
 struct MemRefViewF32 {
-  float *data;            ///< aligned pointer, already advanced by `offset`
+  float *data; ///< aligned pointer, already advanced by `offset`
   int64_t rank;
   const int64_t *sizes;   ///< `rank` entries
   const int64_t *strides; ///< `rank` entries
@@ -65,12 +65,12 @@ struct MemRefViewF32 {
 /// argument arrives as.
 ///
 /// The kernels this runtime serves come out of soda-opt with static, contiguous
-/// shapes, so `numElements` is the product of the sizes and the strides are only
-/// carried for a caller that wants to check that assumption.
+/// shapes, so `numElements` is the product of the sizes and the strides are
+/// only carried for a caller that wants to check that assumption.
 inline MemRefViewF32 decodeMemRefF32(int64_t rank, void *descriptor) {
   auto *head = static_cast<MemRefDescriptorHeadF32 *>(descriptor);
-  auto *tail = reinterpret_cast<int64_t *>(
-      static_cast<char *>(descriptor) + sizeof(MemRefDescriptorHeadF32));
+  auto *tail = reinterpret_cast<int64_t *>(static_cast<char *>(descriptor) +
+                                           sizeof(MemRefDescriptorHeadF32));
 
   MemRefViewF32 view;
   view.data = head->aligned + head->offset;

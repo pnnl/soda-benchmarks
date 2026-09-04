@@ -29,7 +29,8 @@
 
 /// Entry point emitted by soda-instr-dynamic-op-counts-at-loop-bounds.
 ///
-/// \\param run        Non-zero for loop-entry marker, zero for loop-exit marker.
+/// \\param run        Non-zero for loop-entry marker, zero for loop-exit
+/// marker.
 /// \\param loopId     Stable id assigned to each loop by the pass.
 /// \\param loads      Per-event load count delta.
 /// \\param stores     Per-event store count delta.
