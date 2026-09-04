@@ -70,12 +70,17 @@ func.func @main() {
   return
 }
 
-// The mock runtime prints each step:
+// The mock runtime prints each step. The shapes come from decoding the
+// (i64 rank, void *descriptor) pair an memref<*xf32> argument arrives as, so
+// they are what checks that the runtime reads the descriptor MLIR passes.
 // CHECK: esp_alloc_shared
 // CHECK: esp_float2fixed_f32
+// CHECK-NEXT: src: rank=3, shape=2x4x8, elements=64
 // CHECK: esp_float2fixed_f32
+// CHECK-NEXT: src: rank=3, shape=2x8x4, elements=64
 // CHECK: esp_accel_cfg_regs
 // CHECK: esp_accel_start
 // CHECK: esp_accel_wait
 // CHECK: esp_fixed2float_f32
+// CHECK-NEXT: dst: rank=3, shape=2x4x4, elements=32
 // CHECK: esp_free_shared

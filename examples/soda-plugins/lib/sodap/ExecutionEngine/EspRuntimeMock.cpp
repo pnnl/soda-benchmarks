@@ -16,6 +16,22 @@
 
 #include <iostream>
 
+namespace {
+/// Print `rank` and the shape of an unranked memref argument.
+///
+/// The mock ignored the descriptor for a long time, which meant nothing had ever
+/// checked that the `(i64 rank, void *)` pair MLIR passes matches what the
+/// runtime reads. Decoding it here makes a plain cpu-backend run prove the ABI
+/// before any hardware is involved.
+void printMemRef(const char *label, int64_t rank, void *ptr) {
+  sodap::MemRefViewF32 view = sodap::decodeMemRefF32(rank, ptr);
+  std::cout << "\t" << label << ": rank=" << rank << ", shape=";
+  for (int64_t i = 0; i < rank; ++i)
+    std::cout << (i ? "x" : "") << view.sizes[i];
+  std::cout << ", elements=" << view.numElements << std::endl;
+}
+} // namespace
+
 extern "C" int64_t esp_alloc_shared(int64_t total_bytes) {
   std::cout << "Called: " << __func__ << std::endl;
   std::cout << "\t"
@@ -30,15 +46,17 @@ extern "C" void esp_free_shared(int64_t mem_handle) {
 extern "C" void esp_float2fixed_f32(int64_t rank, void *ptr,
                                     int64_t mem_handle, int64_t offset) {
   std::cout << "Called: " << __func__ << std::endl;
+  printMemRef("src", rank, ptr);
   std::cout << "\t"
-            << "rank=" << rank << ", offset=" << offset << std::endl;
+            << "offset=" << offset << std::endl;
 }
 
 extern "C" void esp_fixed2float_f32(int64_t mem_handle, int64_t offset,
                                     int64_t rank, void *ptr) {
   std::cout << "Called: " << __func__ << std::endl;
+  printMemRef("dst", rank, ptr);
   std::cout << "\t"
-            << "offset=" << offset << ", rank=" << rank << std::endl;
+            << "offset=" << offset << std::endl;
 }
 
 extern "C" void esp_accel_cfg_regs(int64_t seq_len, int64_t indim,
