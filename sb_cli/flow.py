@@ -4,12 +4,14 @@ A build target is described by three orthogonal axes rather than a single
 opaque name:
 
 * **flow** — how the MLIR is optimized (baseline, optimized, transformed)
-* **backend** — what consumes the LLVM IR (bambu today; cpu/gpu reserved)
-* **stage** — how far down the compilation path to go (llvm, verilog,
-  simulation, gds)
+* **backend** — what consumes the LLVM IR (bambu, cpu, esp)
+* **stage** — how far down the compilation path to go (llvm, object, binary,
+  verilog, simulation, gds)
 
 `resolve_target` turns a triple into the Makefile TARGET path, which mirrors
-the directory layout the mkinc rules already use (`bambu/<flow>/<artifact>`).
+the directory layout the mkinc rules already use (`<backend>/<flow>/<artifact>`).
+Not every backend reaches every stage; a pair with no entry in
+`_TARGET_TEMPLATES` is rejected rather than silently falling back.
 
 **builder** is a fourth axis, and orthogonal to those three: it selects which
 build script the experiment is scaffolded with, not what is built. It is not
@@ -23,8 +25,23 @@ from dataclasses import dataclass
 from sb_cli.recipes import NONE_RECIPE, Recipe
 
 FLOWS: tuple[str, ...] = ("baseline", "optimized", "transformed")
-BACKENDS: tuple[str, ...] = ("bambu",)  # "cpu", "gpu" reserved for future use
-STAGES: tuple[str, ...] = ("llvm", "verilog", "simulation", "gds")
+
+# What consumes the LLVM IR. "bambu" synthesizes it; "cpu" links it into a native
+# executable and runs it; "esp" compiles it for the Ariane RISC-V core an ESP SoC
+# is built around. "gpu" is still reserved.
+BACKENDS: tuple[str, ...] = ("bambu", "cpu", "esp")
+
+# Ordered by depth, which is also the order `_supported_stages` reports them in.
+# "object" and "binary" are the two compile-and-link stages the cpu/esp backends
+# add; the rest are Bambu's.
+STAGES: tuple[str, ...] = (
+    "llvm",
+    "object",
+    "binary",
+    "verilog",
+    "simulation",
+    "gds",
+)
 
 # Build script scaffolded into the experiment. "make" is the generated Makefile
 # that chains the scripts/ wrappers and finishes in OpenROAD-flow-scripts;
@@ -48,6 +65,16 @@ _TARGET_TEMPLATES: dict[tuple[str, str], str] = {
         "$(ODIR)/bambu/{flow}/HLS_output/Synthesis/bash_flow"
         "/openroad/results/{platform}/{top_fname}/base/6_final.gds"
     ),
+    # cpu: link the IR into a host executable and run it. "simulation" keeps the
+    # meaning it has for bambu -- run the thing and capture what it printed.
+    ("cpu", "llvm"): "$(ODIR)/05_llvm_{flow}.ll",
+    ("cpu", "binary"): "$(ODIR)/cpu/{flow}/06_kernel",
+    ("cpu", "simulation"): "$(ODIR)/cpu/{flow}/07_results.txt",
+    # esp: cross-compile for the SoC's RISC-V core. "object" is as far as this
+    # container can go -- the final link needs an ESP checkout, see ll_to_riscv.sh.
+    ("esp", "llvm"): "$(ODIR)/05_llvm_{flow}.ll",
+    ("esp", "object"): "$(ODIR)/esp/{flow}/06_kernel_riscv.o",
+    ("esp", "binary"): "$(ODIR)/esp/{flow}/07_kernel.riscv",
 }
 
 
@@ -149,8 +176,20 @@ def ip_integration_block(recipe: Recipe | None) -> str:
     ``scripts/ll_to_verilog.sh``, referencing the IP files copied into the
     experiment's ``IPs/`` directory. Paths use ``$(IPDIR)`` so the block is
     relocatable with the experiment folder.
+
+    A recipe that carries no ``IPs/`` at all -- ``esp`` is one; it only swaps a
+    pass into the schedule -- gets an empty string too. Emitting
+    ``BAMBU_IP_INTEGRATION=true`` with every ``IP_*`` empty would make
+    ``ll_to_verilog.sh`` abort on the first unset variable.
     """
     if recipe is None:
+        return ""
+    if not (
+        recipe.verilog_inputs
+        or recipe.c_excludes
+        or recipe.module_lib
+        or recipe.constraints
+    ):
         return ""
 
     # Comma-separated lists (full paths, per llvm_to_verilog.mk convention).

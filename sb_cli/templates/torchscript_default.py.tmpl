@@ -8,6 +8,7 @@ Usage:
 """
 
 import os
+import sys
 
 import torch
 from torch_mlir import torchscript
@@ -23,6 +24,16 @@ class MM(torch.nn.Module):
 
 
 def main() -> None:
+    # The cpu and esp backends ask for this to build their test data. They cannot
+    # be served from here: the model above is fed random tensors, and there is no
+    # init_array to draw a reproducible input set and a golden result from.
+    if "--emit-testdata" in sys.argv:
+        raise SystemExit(
+            "torchscript.py: --emit-testdata needs a benchmark. Scaffold the "
+            "experiment with --benchmark_name (see `sb-cli list`) to use the "
+            "cpu or esp backend."
+        )
+
     model = MM()
 
     # Input dimensions for matrix multiplication: [bs, M, K] x [bs, K, N]

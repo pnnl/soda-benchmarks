@@ -29,9 +29,19 @@ include $$(SCRIPTS_DIR)/mkinc/soda_to_llvm.mk
 BAMBU_DEVICE?=$device
 BAMBU_CLOCK_PERIOD?=$clock_period
 
+# Name of the baremetal application scripts/ll_to_riscv.sh stages for the esp
+# backend. The experiment's logical name, not its timestamped directory, so two
+# experiments dropped into the same ESP checkout stay distinguishable.
+ESP_APP_NAME?=$experiment_name
+
 # Instrumentation IP integration (empty unless an --instrumentation recipe was selected)
 $ip_integration_block
 include $$(SCRIPTS_DIR)/mkinc/llvm_to_verilog.mk
 
 # Include rules to generate gds files with openroad
 include $$(SCRIPTS_DIR)/mkinc/verilog_to_gds.mk
+
+# Include rules for the cpu and esp backends. Like every include above, these only
+# define rules -- nothing fires unless TARGET asks for one of their artifacts.
+include $$(SCRIPTS_DIR)/mkinc/ll_to_binary.mk
+include $$(SCRIPTS_DIR)/mkinc/ll_to_riscv.mk

@@ -9,12 +9,13 @@ from __future__ import annotations
 
 import re
 import shutil
+from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
 
 from benches import catalog
 from sb_cli.flow import ExperimentConfig, ip_integration_block
-from sb_cli.recipes import resolve_recipe
+from sb_cli.recipes import NONE_RECIPE, resolve_recipe
 from sb_cli.registry import Registry
 from sb_cli.templates import render
 
@@ -33,6 +34,13 @@ _GENERATED_FILES = [
 # still builds with `make`.
 _SC_BUILDER = "siliconcompiler"
 _SC_FLOW_FILE = "sc_flow.py"
+
+# The `esp` backend is only reached through the schedule that rewrites
+# linalg.batch_matmul into ESP runtime calls, so selecting the backend selects the
+# recipe. An explicit --instrumentation still wins, which is what lets an ESP
+# experiment carry a schedule that does something else as well.
+_ESP_BACKEND = "esp"
+_ESP_RECIPE = "esp"
 
 
 # Trailing "-000" style counter appended to auto-generated experiment names
@@ -237,6 +245,13 @@ def scaffold(config: ExperimentConfig, output_dir: str | None, base_dir: Path) -
 
     # Resolve the instrumentation recipe (None for the "none" sentinel) before
     # creating files so an unknown recipe fails fast.
+    if config.backend == _ESP_BACKEND and config.instrumentation == NONE_RECIPE:
+        config = replace(config, instrumentation=_ESP_RECIPE)
+        print(
+            f"[sb-cli] Backend '{_ESP_BACKEND}': selected the "
+            f"'{_ESP_RECIPE}' transform schedule "
+            "(pass --instrumentation to override)"
+        )
     recipe = resolve_recipe(config.instrumentation)
 
     ts = _timestamp(base_dir)
@@ -296,9 +311,11 @@ def scaffold(config: ExperimentConfig, output_dir: str | None, base_dir: Path) -
     # the no-op template when no instrumentation is requested.
     if recipe is not None:
         shutil.copyfile(recipe.transform_mlir, exp_dir / "transform.mlir")
+        note = "schedule only"
         if recipe.ip_dir.is_dir():
             shutil.copytree(recipe.ip_dir, exp_dir / "IPs")
-        print(f"[sb-cli] Instrumentation recipe: '{recipe.name}' (IPs copied to IPs/)")
+            note = "IPs copied to IPs/"
+        print(f"[sb-cli] Instrumentation recipe: '{recipe.name}' ({note})")
     else:
         (exp_dir / "transform.mlir").write_text(
             render("transform.mlir.tmpl", ctx), encoding="utf-8"
