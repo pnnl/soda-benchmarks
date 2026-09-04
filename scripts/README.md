@@ -27,6 +27,18 @@ Typically, the lowering scripts will generate the following files:
 * `03_llvm.mlir` - LLVM dialect using buffers
 * `04_llvm.ll` - LLVM IR file
 
+## Backends
+
+The scripts that consume the LLVM IR produced above, one per `sb-cli --backend`.
+See [docs/ESPBackend.md](../docs/ESPBackend.md) for the cpu and esp ones.
+
+* [ll_to_verilog.sh](ll_to_verilog.sh) - Synthesizes `<input.ll>` with Bambu (`--backend bambu`).
+* [ll_to_binary.sh](ll_to_binary.sh) - Links `<input.ll>` into a native executable (`--backend cpu`).
+* [ll_to_riscv.sh](ll_to_riscv.sh) - Cross-compiles `<input.ll>` for an ESP SoC's RISC-V core and stages a baremetal application (`--backend esp`).
+* [link_esp_app.sh](link_esp_app.sh) - Finishes that application's link inside an ESP checkout.
+* [kernel_arg_order.sh](kernel_arg_order.sh) - Prints the order `-soda-outline-bambu-code` gave `forward_kernel`'s parameters, which is not the order `@forward` declares them in.
+* [esp_gemm_demo.sh](esp_gemm_demo.sh) - Runs all three of the above configurations on PolyBench gemm.
+
 ## Using the templates
 
 The folder [templates/make/](templates/make/) contains Makefile templates to translate the model and convert it to LLVM IR. To use the templates, copy the correct template to the root of the project and rename it to `Makefile`. Adjust the variables in the template to match your project.
