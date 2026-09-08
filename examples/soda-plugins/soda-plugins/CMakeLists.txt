@@ -5,12 +5,18 @@ add_llvm_library(SODAPlugin
 
         DEPENDS
         MLIRSODAP
+        MLIRSODAPDataflow
+        MLIRSODAPDataflowTransforms
+        MLIRSODAPAffineToDataflow
         MLIRLinalgToESPRuntime
         PLUGIN_TOOL
         mlir-opt
 
         LINK_LIBS
         MLIRSODAP
+        MLIRSODAPDataflow
+        MLIRSODAPDataflowTransforms
+        MLIRSODAPAffineToDataflow
         MLIRLinalgToESPRuntime
         )
 target_include_directories(

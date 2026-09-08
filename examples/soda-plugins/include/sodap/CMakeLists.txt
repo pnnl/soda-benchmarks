@@ -20,3 +20,6 @@ add_public_tablegen_target(SODAPTransformsIncGen)
 set(LLVM_TARGET_DEFINITIONS AnalysisPasses.td)
 mlir_tablegen(AnalysisPasses.h.inc -gen-pass-decls)
 add_public_tablegen_target(SODAPAnalysisPassesIncGen)
+
+add_subdirectory(Dialect/Dataflow)
+add_subdirectory(Conversion/AffineToDataflow)
