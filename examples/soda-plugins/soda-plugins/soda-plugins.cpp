@@ -12,6 +12,9 @@
 
 #include "mlir/Tools/Plugins/PassPlugin.h"
 #include "sodap/AnalysisPasses.h"
+#include "sodap/Conversion/AffineToDataflow/Passes.h"
+#include "sodap/Dialect/Dataflow/Dataflow.h"
+#include "sodap/Dialect/Dataflow/Transforms/Passes.h"
 #include "sodap/MyExtension.h"
 #include "sodap/SODAPPasses.h"
 #include "sodap/SODAPTransforms.h"
@@ -27,6 +30,7 @@ extern "C" LLVM_ATTRIBUTE_WEAK DialectPluginLibraryInfo
 mlirGetDialectPluginInfo() {
   return {MLIR_PLUGIN_API_VERSION, "SODA", LLVM_VERSION_STRING,
           [](DialectRegistry *registry) {
+            registry->insert<sodap::dataflow::DataflowDialect>();
             sodap::registerMyExtension(*registry);
             sodap::registerSODAPTransforms(*registry);
           }};
@@ -38,5 +42,8 @@ extern "C" LLVM_ATTRIBUTE_WEAK PassPluginLibraryInfo mlirGetPassPluginInfo() {
   return {MLIR_PLUGIN_API_VERSION, "SODAPasses", LLVM_VERSION_STRING, []() {
             sodap::linalg::reports::registerPasses();
             sodap::registerPasses();
+            sodap::registerAffineToDataflowPasses();
+            sodap::registerAffineToDataflowPipeline();
+            sodap::dataflow::registerDataflowTransformsPasses();
           }};
 }
