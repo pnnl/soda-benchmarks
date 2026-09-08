@@ -1,8 +1,19 @@
 //===- Dataflow.h - Dataflow dialect ----------------------------*- C++ -*-===//
 //
+// Copyright 2020-2021 The ScaleHLS Authors
+// Copyright 2024 Suhail Basalama
+// Copyright 2026, Battelle Memorial Institute
+//
+//===----------------------------------------------------------------------===//
+//
 // This file is licensed under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+//
+// Portions of this file were modified by Suhail Basalama in 2024 under the
+// MIT License. The full MIT text can be found in the root NOTICE file.
+//
+// Ported and modified for the SODA dataflow dialect in 2026.
 //
 //===----------------------------------------------------------------------===//
 
