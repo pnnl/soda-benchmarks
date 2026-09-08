@@ -1,1 +1,2 @@
+add_subdirectory(AffineToDataflow)
 add_subdirectory(LinalgToESPRuntime)

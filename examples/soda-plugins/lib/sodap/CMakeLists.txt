@@ -21,5 +21,6 @@ add_mlir_dialect_library(MLIRSODAP
         MLIRFuncDialect
         )
 
+add_subdirectory(Dialect)
 add_subdirectory(Conversion)
 add_subdirectory(ExecutionEngine)
