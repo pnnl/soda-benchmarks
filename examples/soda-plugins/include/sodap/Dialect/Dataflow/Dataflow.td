@@ -1,5 +1,10 @@
 //===- Dataflow.td - Dataflow dialect definition -----------*- tablegen -*-===//
 //
+// Copyright 2020-2021 The ScaleHLS Authors
+// Copyright 2026, Battelle Memorial Institute
+//
+//===----------------------------------------------------------------------===//
+//
 // This file is licensed under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
