@@ -18,34 +18,49 @@ scripts/esp_gemm_demo.sh    # all three configurations below, end to end
 
 `sb_cli/recipes/esp/transform.mlir` applies `sodap-linalg-batch-matmul-to-esp`,
 a pass in `examples/soda-plugins`. It replaces each `linalg.batch_matmul` with
-seven calls that mirror ESP's own invocation sequence:
+calls that mirror ESP's own invocation sequence:
 
 ```
-esp_alloc_shared(total_bytes) -> handle
-esp_float2fixed_f32(A, handle, off_in)      # host floats -> Q16.16 in shared memory
-esp_float2fixed_f32(B, handle, off_w)
-esp_accel_cfg_regs(M, K, N, off_in, off_w, off_b, off_o)
+esp_alloc_shared(total_bytes) -> handle       # zeroed
+esp_float2fixed_f32(A, handle, off_in, K)     # host floats -> Q16.16, rows K apart
+esp_float2fixed_f32(B, handle, off_w, Npad)   # rows Npad apart
+esp_accel_write_reg(reg, value)  x7           # one call per register
 esp_accel_start()
 esp_accel_wait()
-esp_fixed2float_f32(handle, off_o, C)       # and back
+esp_fixed2float_f32(handle, off_o, Npad, C)   # and back, dropping the padding
 esp_free_shared(handle)
 ```
 
-The shared buffer is one flat region, `[ I | W | B | O ]`, with the offsets in
-elements. `alpha` and `beta` are not part of it: PolyBench's gemm reaches
-`linalg` as a `batch_matmul` plus two `linalg.generic` scalings, and only the
-matmul is offloaded.
+The pass takes two options, set in the transform schedule: `vec-len`, the
+accelerator's vector length, and `profile`, which brackets the pack,
+accelerator and unpack phases with `esp_prof_begin`/`esp_prof_end` (see
+`esp_prof.h`).
 
-Two properties of the pass are worth knowing before reading a result:
+**The pass owns the layout; the runtime knows nothing about the accelerator.**
+The shared buffer is one flat region, `[ I | W | B | O ]`, with offsets in
+elements and `Npad = roundup(N, vec-len)`:
 
-- **There is no bias.** `batch_matmul` has none, so the pass points `FFN_ADDRB`
-  at the output region. The accelerator still reads `N` bias words from there,
-  which is why `esp_alloc_shared` zeroes the buffer rather than merely
-  allocating it.
+- **N is padded to `Npad`.** The accelerator computes whole `vec-len`-wide
+  output tiles (`w_iter = outdim / vec-len`, an integer division in hardware),
+  so W and O are laid out with the padded stride and the register gets `Npad`.
+  The `ld` argument to the copies carries that stride; the runtime copies row by
+  row and needs no notion of why.
+- **The bias has its own region, and stays zero.** `batch_matmul` has no bias,
+  but the accelerator re-reads its bias once per output tile while the output
+  is being written, so the two cannot alias. `esp_alloc_shared` zeroes the
+  buffer, which is what a bias-less matmul needs.
+- **The register map lives in the pass**, as constants that describe
+  `sld,ffn_sysc_catapult`. The runtime writes whatever `(offset, value)` pairs
+  it is handed. When the accelerator is generated, those constants become an
+  output of that generation.
 - **The batch dimension is ignored.** Sizes come from `dim(A,1)`, `dim(A,2)` and
   `dim(B,2)`. That is correct for these kernels — TOSA always gives them batch 1
   — and `EspRuntime.cpp` bounds-checks every transfer against the buffer rather
   than trusting it.
+
+`alpha` and `beta` are not part of any of this: PolyBench's gemm reaches
+`linalg` as a `batch_matmul` plus two `linalg.generic` scalings, and only the
+matmul is offloaded.
 
 ## Two runtimes
 
@@ -93,16 +108,28 @@ pixi run sb-cli init --benchmark_name gemm --flow transformed \
 
 ```
 Called: esp_alloc_shared
-	total_bytes=7400
+	total_bytes=8928
 Called: esp_float2fixed_f32
 	src: rank=3, shape=1x20x30, elements=600
-	offset=0
+	offset=0, ld=30
+Called: esp_float2fixed_f32
+	src: rank=3, shape=1x30x25, elements=750
+	offset=600, ld=32
+Called: esp_accel_write_reg
+	offset=0x58, value=20
 ...
-Called: esp_accel_cfg_regs
-	seq_len=20, indim=30, outdim=25
-	off_in=0, off_w=600, off_b=1350, off_o=1350
+Called: esp_accel_write_reg
+	offset=0x40, value=1592
 ...
 TEST FAILED (456/500 elements exceed tolerance 0.001)
+max error = 3600064035 e-9, tolerance = 1000000 e-9
+---------------------------------
+region        cycles       calls        mean     share
+------------------------------------------------------
+total              20438       1       20438     100%
+pack                2495       1        2495      12%
+accel                711       1         711       3%
+unpack               861       1         861       4%
 ```
 
 **The mismatch is the expected outcome**, and the reason `make` still succeeds:

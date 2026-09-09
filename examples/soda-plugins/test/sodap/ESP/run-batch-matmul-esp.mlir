@@ -72,15 +72,33 @@ func.func @main() {
 
 // The mock runtime prints each step. The shapes come from decoding the
 // (i64 rank, void *descriptor) pair an memref<*xf32> argument arrives as, so
-// they are what checks that the runtime reads the descriptor MLIR passes.
+// they are what checks that the runtime reads the descriptor MLIR passes. The
+// offsets, strides and register values are the layout the pass computed for
+// N=4 padded to 8: I@0 (ld K=8), W@32 (ld Npad=8), B@96, O@104.
 // CHECK: esp_alloc_shared
 // CHECK: esp_float2fixed_f32
 // CHECK-NEXT: src: rank=3, shape=2x4x8, elements=64
+// CHECK-NEXT: offset=0, ld=8
 // CHECK: esp_float2fixed_f32
 // CHECK-NEXT: src: rank=3, shape=2x8x4, elements=64
-// CHECK: esp_accel_cfg_regs
+// CHECK-NEXT: offset=32, ld=8
+// CHECK: esp_accel_write_reg
+// CHECK-NEXT: offset=0x58, value=4
+// CHECK: esp_accel_write_reg
+// CHECK-NEXT: offset=0x54, value=8
+// CHECK: esp_accel_write_reg
+// CHECK-NEXT: offset=0x50, value=8
+// CHECK: esp_accel_write_reg
+// CHECK-NEXT: offset=0x4c, value=0
+// CHECK: esp_accel_write_reg
+// CHECK-NEXT: offset=0x48, value=32
+// CHECK: esp_accel_write_reg
+// CHECK-NEXT: offset=0x44, value=96
+// CHECK: esp_accel_write_reg
+// CHECK-NEXT: offset=0x40, value=104
 // CHECK: esp_accel_start
 // CHECK: esp_accel_wait
 // CHECK: esp_fixed2float_f32
 // CHECK-NEXT: dst: rank=3, shape=2x4x4, elements=32
+// CHECK-NEXT: offset=104, ld=8
 // CHECK: esp_free_shared

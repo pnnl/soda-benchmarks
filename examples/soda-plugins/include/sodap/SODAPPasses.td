@@ -210,12 +210,27 @@ def LinalgBatchMatmulToESP : Pass<"sodap-linalg-batch-matmul-to-esp", "::mlir::M
 
     1. `esp_alloc_shared` — allocate shared memory buffer
     2. `esp_float2fixed_f32` — convert each input memref to fixed-point in shared mem
-    3. `esp_accel_cfg_regs` — configure accelerator registers with dimensions/offsets
+    3. `esp_accel_write_reg` — one call per accelerator register (offset, value)
     4. `esp_accel_start` — launch the accelerator
     5. `esp_accel_wait` — busy-wait for completion
     6. `esp_fixed2float_f32` — convert fixed-point output back to float
     7. `esp_free_shared` — free shared memory buffer
+
+    The pass owns the shared-memory layout. It pads the output dimension to a
+    multiple of `vec-len`, gives the bias its own region, and passes each
+    operand's leading dimension to the copy routines, so the runtime needs no
+    knowledge of the accelerator: it copies with the stride it is told and
+    writes the registers it is told.
+
+    With `profile`, the sequence is bracketed by `esp_prof_begin`/`esp_prof_end`
+    calls around the pack, accelerator and unpack phases.
   }];
+  let options = [
+    Option<"vecLen", "vec-len", "unsigned",
+           /*default=*/"8", "Accelerator vector length; outdim is padded to a multiple of it">,
+    Option<"profile", "profile", "bool",
+           /*default=*/"false", "Emit esp_prof_begin/end around pack, accel and unpack">
+  ];
 }
 
 #endif // SODAP_PASS
