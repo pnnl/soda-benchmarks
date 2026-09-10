@@ -11,8 +11,11 @@ synthesizes it. The two backends described here compile it instead:
   `linalg.batch_matmul` the kernel contains is offloaded to an ESP accelerator.
 
 ```bash
-scripts/esp_gemm_demo.sh    # all three configurations below, end to end
+scripts/esp_gemm_demo.sh    # the three container configurations below
 ```
+
+See [ESP validation](ESPValidation.md) for runnable checks, the companion
+`soda-opt` patch, and the additional dependencies used for the FPGA run.
 
 ## The offload
 
@@ -59,7 +62,10 @@ Because the conversion is ordinary IR, later transformations see it. The
 dead zero-fill of C and the three alpha/beta `linalg.generic`s into one loop
 that reads tokens straight from the shared buffer. `esp_free_shared` moves to
 the end of the block in this mode, because fusion may sink the unpack loop
-into its consumer.
+into its consumer. The pass conservatively permits at most one IR offload per
+function and requires static shapes. Use runtime marshalling for sequential
+offloads. Reentrant calls that offload while a buffer is live are unsupported;
+the guard is not an interprocedural lifetime analysis.
 
 Measured on the VC707 (Ariane at 50 MHz, gemm MINI, cycles from `mcycle`;
 identical results in all three):
@@ -73,12 +79,14 @@ identical results in all three):
 
 Generating the conversion is performance-neutral by itself; fusion halves
 unpack+epilogue. Pack — 42 cycles per element into the uncached DMA buffer — is
-then the dominant host cost, and has no CPU consumer to fuse with; removing it
+still a substantial host cost, and has no CPU consumer to fuse with; removing it
 means allocating the operands in shared memory in the first place, which the
 views make possible. Under the bare-pointer convention a rank-0 memref is a
 single pointer, so both modes link against the same runtime.
 
-**The pass owns the layout; the runtime knows nothing about the accelerator.**
+**The pass owns the layout and accelerator register programming.** The runtime
+still selects the FFN device and supplies Q16.16 helpers for runtime marshalling;
+it is not yet a fully accelerator-independent implementation.
 The shared buffer is one flat region, `[ I | W | B | O ]`, with offsets in
 elements and `Npad = roundup(N, vec-len)`:
 
@@ -95,10 +103,9 @@ elements and `Npad = roundup(N, vec-len)`:
   `sld,ffn_sysc_catapult`. The runtime writes whatever `(offset, value)` pairs
   it is handed. When the accelerator is generated, those constants become an
   output of that generation.
-- **The batch dimension is ignored.** Sizes come from `dim(A,1)`, `dim(A,2)` and
-  `dim(B,2)`. That is correct for these kernels — TOSA always gives them batch 1
-  — and `EspRuntime.cpp` bounds-checks every transfer against the buffer rather
-  than trusting it.
+- **Batch must be statically known to be 1 for every operand.** Larger or
+  dynamic batches are rejected before rewriting, because the layout has no
+  batch dimension. Operands must be rank-3 f32 memrefs.
 
 `alpha` and `beta` are not part of any of this: PolyBench's gemm reaches
 `linalg` as a `batch_matmul` plus two `linalg.generic` scalings, and only the
@@ -146,6 +153,7 @@ code — against PyTorch's own answer for the same inputs. It works for any
 pixi run sb-cli init --benchmark_name gemm --flow transformed \
     --instrumentation esp --backend cpu --stage simulation \
     --output_dir cpu_gemm_mini_esp
+pixi run make -C benches/experiments/cpu_gemm_mini_esp
 ```
 
 ```
@@ -177,8 +185,9 @@ unpack               861       1         861       4%
 **The mismatch is the expected outcome**, and the reason `make` still succeeds:
 the mock does not compute, so the output buffer keeps whatever the surrounding
 software left in it. What this configuration checks is everything around that —
-that the pass fired, that the dimensions and offsets are right, that the
-descriptor ABI matches, and that the kernel links against the runtime. `make
+that the pass fired and that the kernel links against the runtime. Inspect the
+printed shapes and offsets; the automated assertions live in the focused
+MLIR/mock-runner test. This is not an assertion-based end-to-end numerical test. `make
 check` is the target that treats `TEST FAILED` as an error, so use it on the
 configuration above and not on this one.
 
@@ -187,6 +196,7 @@ configuration above and not on this one.
 ```bash
 pixi run sb-cli init --benchmark_name gemm --flow transformed \
     --backend esp --stage object --output_dir esp_gemm_mini_test
+pixi run make -C benches/experiments/esp_gemm_mini_test
 ```
 
 `--backend esp` selects the ESP schedule on its own; `--instrumentation` still
@@ -204,10 +214,13 @@ output/esp/transformed/esp-app/
     README.md
 ```
 
-`esp-app/` is self-contained: copy it into `<esp>/soft/$SOC/baremetal/` and
-`make`. `--stage binary` does that for you when `ESP_ROOT` or `DRIVERS` points
-at a checkout, and otherwise says exactly what is missing rather than failing
-somewhere in the toolchain.
+`esp-app/` stages the application sources and object, but still depends on an
+ESP checkout, matching SoC support files, startup/linker configuration and a
+RISC-V toolchain. For the validated ESP revision, copy it under
+`<esp>/soft/common/apps/baremetal/<appname>` and build from the SoC directory as
+described in [ESP validation](ESPValidation.md). The legacy `--stage binary`
+helper assumes a different ESP directory layout and was not used for this
+validation; use the documented manual link for this checkout.
 
 ## What each stage builds
 

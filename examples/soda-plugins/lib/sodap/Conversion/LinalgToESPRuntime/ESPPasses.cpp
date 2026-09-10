@@ -247,12 +247,6 @@ static LogicalResult replaceBatchMatmul(linalg::BatchMatmulOp op,
   Value B = op.getInputs()[1];  // batch x K x N
   Value C = op.getOutputs()[0]; // batch x M x N
 
-  if (marshalInIR) {
-    for (Value v : {A, B, C})
-      if (!cast<MemRefType>(v.getType()).hasStaticShape())
-        return op.emitError("marshal=ir needs static shapes");
-  }
-
   // The layout arithmetic is built with createOrFold so that, for static
   // shapes, every value below is an arith.constant and the views can be typed
   // statically; a dynamic N still works in marshal=runtime mode.
@@ -476,6 +470,42 @@ public:
     DenseMap<Block *, unsigned> perBlock;
     for (auto op : opsToReplace)
       ++perBlock[op->getBlock()];
+
+    // Validate the whole set before introducing declarations or rewriting any
+    // operations. The hardware layout has no batch dimension; an unknown batch
+    // is not evidence that it is one.
+    DenseMap<Operation *, unsigned> perFunction;
+    for (auto op : opsToReplace) {
+      for (Value operand : op->getOperands()) {
+        auto type = dyn_cast<MemRefType>(operand.getType());
+        if (!type || type.getRank() != 3 || !type.getElementType().isF32()) {
+          op.emitError("ESP lowering requires rank-3 f32 memref operands");
+          return signalPassFailure();
+        }
+        if (type.getDimSize(0) != 1) {
+          op.emitError("ESP lowering requires a statically known batch size of 1 "
+                       "for every operand");
+          return signalPassFailure();
+        }
+        if (marshalInIR && !type.hasStaticShape()) {
+          op.emitError("marshal=ir needs static shapes");
+          return signalPassFailure();
+        }
+      }
+
+      if (marshalInIR) {
+        // IR marshalling keeps the buffer until the block terminator so fusion
+        // can move its consumers. The runtime owns only one live buffer. Until
+        // lifetimes are tracked, conservatively reject multiple offloads in a
+        // function, including those in nested or different blocks.
+        auto function = op->getParentOfType<func::FuncOp>();
+        if (!function || ++perFunction[function.getOperation()] > 1) {
+          op.emitError("marshal=ir supports at most one ESP offload per function; "
+                       "use marshal=runtime for sequential offloads");
+          return signalPassFailure();
+        }
+      }
+    }
 
     // Forward-declare all ESP runtime functions.
     declareEspFunctions(module, builder, profile, marshalInIR);

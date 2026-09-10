@@ -231,6 +231,13 @@ def LinalgBatchMatmulToESP : Pass<"sodap-linalg-batch-matmul-to-esp", "::mlir::M
     With `profile`, the sequence is bracketed by `esp_prof_begin`/`esp_prof_end`
     calls around the pack, accelerator and unpack phases, and -- when the block
     holds a single matmul -- the rest of the block as the epilogue.
+
+    Operands must be rank-3 f32 memrefs with a statically known batch size of 1.
+    `marshal=ir` additionally requires static shapes and permits at most one
+    offload per function: its shared buffer stays live until the enclosing
+    block terminator. Use `marshal=runtime` for sequential offloads. Reentrant
+    offloads through calls while a shared buffer is live remain unsupported;
+    this pass does not perform interprocedural lifetime analysis.
   }];
   let options = [
     Option<"vecLen", "vec-len", "unsigned",

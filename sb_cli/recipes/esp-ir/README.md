@@ -24,7 +24,11 @@ linalg.generic ins(%vO) outs(%C) { sitofp ; mulf 2^-16 }
 The token format is one struct in the pass, `FixedPointToken`; the runtime
 never sees a datatype. `esp_free_shared` moves to the end of the block, because
 fusion may sink the unpack loop into its consumer and the buffer has to outlive
-wherever it lands.
+wherever it lands. The current pass therefore conservatively allows at most
+one offload per function in this mode. It requires static shapes and batch=1;
+larger or dynamic batches are rejected in both marshalling modes. Use
+`marshal=runtime` for sequential offloads. Interprocedural/reentrant offloads
+while a buffer remains live are unsupported.
 
 The schedule then runs `convert-linalg-to-affine-loops`,
 `fold-memref-alias-ops` (so fusion sees one memref through the reshapes the
@@ -37,7 +41,8 @@ the shared buffer.
 
 ```sh
 sb-cli init --benchmark_name gemm --flow transformed --backend esp --stage object \
-    --instrumentation esp-ir
+    --instrumentation esp-ir --output_dir esp_ir_gemm
+make -C benches/experiments/esp_ir_gemm
 ```
 
 `--backend esp` alone selects the `esp` recipe; the explicit `--instrumentation`
@@ -50,4 +55,6 @@ C function.
 Beyond the plugin: a soda-opt that registers `fold-memref-alias-ops` and
 `affine-loop-normalize`. Upstream soda-opt registers passes by hand and lacks
 both (`mlir-opt` has them); the change is four lines in
-`tools/soda-opt/soda-opt.cpp`.
+`tools/soda-opt/soda-opt.cpp`. The [validation guide](../../../docs/ESPValidation.md)
+includes an applicable companion patch, plugin-linking build flags, and complete
+test commands.

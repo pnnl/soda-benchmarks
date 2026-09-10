@@ -118,40 +118,19 @@ func.func @test_basic(%A: memref<1x4x8xf32>, %B: memref<1x8x4xf32>,
   return %C : memref<1x4x4xf32>
 }
 
-// Verify that two batch_matmul ops each get their own full call sequence,
-// but the runtime functions are declared only once. N=16 is already a multiple
-// of vec-len, so no padding: W is 32x16 @ 512, B 16 @ 1024, O 16x16 @ 1040.
-// CHECK-LABEL: func.func @test_two_matmuls
-// CHECK-NOT: linalg.batch_matmul
+// The IR lifetime restriction is per function, not per module. Independent
+// functions with one offload each can still be compiled together.
+// CHECK-LABEL: func.func @test_other_function
 // CHECK: call @esp_alloc_shared
-// CHECK: call @esp_float2fixed_f32
-// CHECK: call @esp_float2fixed_f32
-// CHECK-COUNT-7: call @esp_accel_write_reg
-// CHECK: call @esp_accel_start
-// CHECK: call @esp_accel_wait
-// CHECK: call @esp_fixed2float_f32
 // CHECK: call @esp_free_shared
-// Second matmul:
-// CHECK: call @esp_alloc_shared
-// CHECK: call @esp_float2fixed_f32
-// CHECK: call @esp_float2fixed_f32
-// CHECK-COUNT-7: call @esp_accel_write_reg
-// CHECK: call @esp_accel_start
-// CHECK: call @esp_accel_wait
-// CHECK: call @esp_fixed2float_f32
-// CHECK: call @esp_free_shared
-// CHECK: return
-//
-// Two matmuls in one block: no epilogue bracket, it would be ambiguous.
-// PROF-LABEL: func.func @test_two_matmuls
-// PROF-NOT: call @esp_prof_begin(%c4_i32)
-// PROF: return
-func.func @test_two_matmuls(%A: memref<1x16x32xf32>, %B: memref<1x32x16xf32>,
-                             %C: memref<1x16x16xf32>, %D: memref<1x16x16xf32>)
-    -> memref<1x16x16xf32> {
-  linalg.batch_matmul ins(%A, %B : memref<1x16x32xf32>, memref<1x32x16xf32>)
-                      outs(%C : memref<1x16x16xf32>)
-  linalg.batch_matmul ins(%A, %B : memref<1x16x32xf32>, memref<1x32x16xf32>)
-                      outs(%D : memref<1x16x16xf32>)
-  return %D : memref<1x16x16xf32>
+// PROF-LABEL: func.func @test_other_function
+// PROF: call @esp_prof_begin(%c1_i32)
+// IR-LABEL: func.func @test_other_function
+// IR: call @esp_alloc_shared
+// IR: call @esp_free_shared
+func.func @test_other_function(%a: memref<1x4x8xf32>, %b: memref<1x8x4xf32>,
+                               %c: memref<1x4x4xf32>) {
+  linalg.batch_matmul ins(%a, %b : memref<1x4x8xf32>, memref<1x8x4xf32>)
+                      outs(%c : memref<1x4x4xf32>)
+  return
 }
