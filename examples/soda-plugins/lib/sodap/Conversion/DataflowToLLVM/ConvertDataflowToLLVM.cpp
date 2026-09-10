@@ -318,8 +318,11 @@ void ConvertDataflowToLLVM::runOnOperation() {
 
   // Both options default to the configured Bambu install, so this only
   // catches someone passing an empty one -- worth catching, because
-  // findProgramByName asserts on an empty name rather than failing.
-  if (clangxx.empty() || includePandaPath.empty()) {
+  // findProgramByName asserts on an empty name rather than failing. MLIR
+  // does not strip quotes from a pass option, so `clangxx=""` arrives as the
+  // two-character string "" and is caught here too.
+  if (clangxx.empty() || clangxx == "\"\"" || includePandaPath.empty() ||
+      includePandaPath == "\"\"") {
     module.emitError() << "clangxx and include-panda-path cannot be empty";
     return signalPassFailure();
   }

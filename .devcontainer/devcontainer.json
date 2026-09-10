@@ -15,9 +15,6 @@
         "PYTHONPATH": "${containerEnv:PYTHONPATH}:/usr/local/lib/python3.11/site-packages:/opt/llvm-project/python_packages/mlir_core",
         "LLVM_SYMBOLIZER_PATH": "/opt/llvm-project/bin/llvm-symbolizer"
     },
-    "mounts": [
-        "source=/opt/panda-unified-ac-channel,target=/opt/panda-host,type=bind,readonly"
-    ],
     // Allow container to stop. See: https://github.com/microsoft/vscode-remote-release/issues/3512#issuecomment-1267053890
     // "overrideCommand": false,
     "postCreateCommand": "bash .devcontainer/postCreateCommand.sh",
