@@ -13,6 +13,7 @@
 #include "mlir/Tools/Plugins/PassPlugin.h"
 #include "sodap/AnalysisPasses.h"
 #include "sodap/Conversion/AffineToDataflow/Passes.h"
+#include "sodap/Conversion/DataflowToLLVM/Passes.h"
 #include "sodap/Dialect/Dataflow/Dataflow.h"
 #include "sodap/Dialect/Dataflow/Transforms/Passes.h"
 #include "sodap/MyExtension.h"
@@ -45,5 +46,7 @@ extern "C" LLVM_ATTRIBUTE_WEAK PassPluginLibraryInfo mlirGetPassPluginInfo() {
             sodap::registerAffineToDataflowPasses();
             sodap::registerAffineToDataflowPipeline();
             sodap::dataflow::registerDataflowTransformsPasses();
+            sodap::registerDataflowToLLVMPasses();
+            sodap::registerDataflowToLLVMPipeline();
           }};
 }
