@@ -16,9 +16,10 @@ told. The symbols are declared in
 `examples/soda-plugins/include/sodap/ExecutionEngine/ESPRuntime.h` and have two
 implementations: `EspRuntimeMock.cpp` (prints each call; what the `cpu` backend
 links) and `EspRuntime.cpp` (the ESP socket protocol; built only inside an ESP
-checkout). With `profile=true` the pass also brackets the pack, accelerator
-and unpack phases with `esp_prof_begin`/`esp_prof_end` (`esp_prof.h`).
-See `docs/ESPBackend.md`.
+checkout). With `profile=true` the pass also brackets the pack, accelerator,
+unpack and epilogue phases with `esp_prof_begin`/`esp_prof_end` (`esp_prof.h`).
+See `docs/ESPBackend.md`; the `esp-ir` recipe generates the conversions as IR
+instead of calling the runtime.
 
 ## No `IPs/`
 

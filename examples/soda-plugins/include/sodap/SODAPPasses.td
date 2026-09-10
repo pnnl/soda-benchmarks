@@ -222,14 +222,25 @@ def LinalgBatchMatmulToESP : Pass<"sodap-linalg-batch-matmul-to-esp", "::mlir::M
     knowledge of the accelerator: it copies with the stride it is told and
     writes the registers it is told.
 
+    With `marshal=ir`, steps 2 and 6 are not runtime calls but `linalg.generic`
+    ops over strided views (`memref.reinterpret_cast`) of the shared buffer,
+    which `esp_alloc_shared` then returns as a `memref<i32>`. The conversion
+    becomes ordinary IR that later transformations can fuse and optimize, and
+    the runtime no longer contains the token format.
+
     With `profile`, the sequence is bracketed by `esp_prof_begin`/`esp_prof_end`
-    calls around the pack, accelerator and unpack phases.
+    calls around the pack, accelerator and unpack phases, and -- when the block
+    holds a single matmul -- the rest of the block as the epilogue.
   }];
   let options = [
     Option<"vecLen", "vec-len", "unsigned",
            /*default=*/"8", "Accelerator vector length; outdim is padded to a multiple of it">,
     Option<"profile", "profile", "bool",
-           /*default=*/"false", "Emit esp_prof_begin/end around pack, accel and unpack">
+           /*default=*/"false", "Emit esp_prof_begin/end around pack, accel, unpack and epilogue">,
+    Option<"marshal", "marshal", "std::string",
+           /*default=*/"\"runtime\"",
+           "Where the float<->token conversion runs: 'runtime' (calls into the ESP runtime) "
+           "or 'ir' (linalg.generic over views of the shared buffer)">
   ];
 }
 

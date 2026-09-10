@@ -31,10 +31,52 @@ esp_fixed2float_f32(handle, off_o, Npad, C)   # and back, dropping the padding
 esp_free_shared(handle)
 ```
 
-The pass takes two options, set in the transform schedule: `vec-len`, the
-accelerator's vector length, and `profile`, which brackets the pack,
-accelerator and unpack phases with `esp_prof_begin`/`esp_prof_end` (see
-`esp_prof.h`).
+The pass takes three options, set in the transform schedule: `vec-len`, the
+accelerator's vector length; `profile`, which brackets the pack, accelerator,
+unpack and epilogue phases with `esp_prof_begin`/`esp_prof_end` (see
+`esp_prof.h`); and `marshal`, below.
+
+### `marshal=ir` — the conversion as IR
+
+With `marshal=runtime` (the default) the two copies are runtime calls, and the
+loop and the Q16.16 format are C++. With `marshal=ir` the pass generates them:
+`esp_alloc_shared` returns the buffer as a `memref<i32>`, each operand becomes
+a `memref.reinterpret_cast` view of it — the padded stride is the view's
+stride, the padding columns are outside it — and the conversion is a two-op
+`linalg.generic` over the view. The token format is one struct in the pass,
+`FixedPointToken`; the runtime never sees a datatype.
+
+```
+%mem = call @esp_alloc_shared(%c8928_i64) : (i64) -> memref<i32>
+%vW  = memref.reinterpret_cast %mem to offset: [600], sizes: [1, 30, 25],
+         strides: [960, 32, 1]                        # rows Npad=32 apart
+linalg.generic ins(%B) outs(%vW) { mulf 65536.0 ; fptosi }
+```
+
+Because the conversion is ordinary IR, later transformations see it. The
+`esp-ir` recipe follows the pass with `fold-memref-alias-ops`,
+`affine-loop-fusion` and `affine-scalrep`; on gemm that fuses the unpack, the
+dead zero-fill of C and the three alpha/beta `linalg.generic`s into one loop
+that reads tokens straight from the shared buffer. `esp_free_shared` moves to
+the end of the block in this mode, because fusion may sink the unpack loop
+into its consumer.
+
+Measured on the VC707 (Ariane at 50 MHz, gemm MINI, cycles from `mcycle`;
+identical results in all three):
+
+| | `marshal=runtime` | `marshal=ir` | `esp-ir` recipe (fused) |
+|---|---|---|---|
+| pack | 60,436 | 57,239 | 57,253 |
+| accel | 74,027 | 74,071 | 74,132 |
+| unpack | 39,643 | 38,736 | 66 |
+| epilogue | – | 79,659 | 61,483 |
+
+Generating the conversion is performance-neutral by itself; fusion halves
+unpack+epilogue. Pack — 42 cycles per element into the uncached DMA buffer — is
+then the dominant host cost, and has no CPU consumer to fuse with; removing it
+means allocating the operands in shared memory in the first place, which the
+views make possible. Under the bare-pointer convention a rank-0 memref is a
+single pointer, so both modes link against the same runtime.
 
 **The pass owns the layout; the runtime knows nothing about the accelerator.**
 The shared buffer is one flat region, `[ I | W | B | O ]`, with offsets in

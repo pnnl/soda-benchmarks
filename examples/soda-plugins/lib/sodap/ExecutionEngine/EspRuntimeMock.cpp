@@ -14,6 +14,7 @@
 
 #include "sodap/ExecutionEngine/ESPRuntime.h"
 
+#include <cstdlib>
 #include <iostream>
 
 namespace {
@@ -32,15 +33,18 @@ void printMemRef(const char *label, int64_t rank, void *ptr) {
 }
 } // namespace
 
+// Real, zeroed memory: with marshal=ir the generated loops write through the
+// handle, so it has to point somewhere.
 extern "C" int64_t esp_alloc_shared(int64_t total_bytes) {
   std::cout << "Called: " << __func__ << std::endl;
   std::cout << "\t"
             << "total_bytes=" << total_bytes << std::endl;
-  return 0; // opaque handle (mock)
+  return reinterpret_cast<int64_t>(std::calloc(total_bytes, 1));
 }
 
 extern "C" void esp_free_shared(int64_t mem_handle) {
   std::cout << "Called: " << __func__ << std::endl;
+  std::free(reinterpret_cast<void *>(mem_handle));
 }
 
 extern "C" void esp_float2fixed_f32(int64_t rank, void *ptr, int64_t mem_handle,
