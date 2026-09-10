@@ -86,7 +86,8 @@ inline MemRefViewF32 decodeMemRefF32(int64_t rank, void *descriptor) {
 } // namespace sodap
 
 /// Allocate a contiguous shared memory buffer accessible by both the
-/// processor and the ESP accelerator.
+/// processor and the ESP accelerator. The buffer is zeroed: the pass relies on
+/// that for regions it never writes, such as the bias of a bias-less matmul.
 /// \param total_bytes  Size of the buffer in bytes.
 /// \return Opaque handle to the shared memory allocation.
 extern "C" MLIR_ESPRUNNERUTILS_EXPORT int64_t
@@ -97,37 +98,42 @@ esp_alloc_shared(int64_t total_bytes);
 extern "C" MLIR_ESPRUNNERUTILS_EXPORT void esp_free_shared(int64_t mem_handle);
 
 /// Convert float data from a memref to fixed-point and copy it into the
-/// shared memory buffer at the given element offset.
+/// shared memory buffer at the given element offset, one row at a time.
+///
+/// The memref is treated as rows x cols with the batch dimension folded in
+/// (rows = product of all but the last dimension). Row r of the source lands
+/// at offset + r*ld in shared memory, so a K x N operand can be laid into a
+/// K x Npad region: ld carries the padded stride and the runtime needs no
+/// notion of why it is padded.
 /// \param rank        Rank of the source float memref.
 /// \param ptr         Descriptor of the source memref<*xf32>.
 /// \param mem_handle  Opaque handle of the shared memory buffer.
 /// \param offset      Element offset into shared memory.
+/// \param ld          Leading dimension: elements between consecutive rows.
 extern "C" MLIR_ESPRUNNERUTILS_EXPORT void
 esp_float2fixed_f32(int64_t rank, void *ptr, int64_t mem_handle,
-                    int64_t offset);
+                    int64_t offset, int64_t ld);
 
-/// Convert fixed-point data from shared memory back to float and store
-/// into the destination memref.
+/// Convert fixed-point data from shared memory back to float and store into
+/// the destination memref, one row at a time. The inverse of
+/// esp_float2fixed_f32: row r is read from offset + r*ld, and only the
+/// destination's own width is read, so padding is dropped.
 /// \param mem_handle  Opaque handle of the shared memory buffer.
 /// \param offset      Element offset into shared memory.
+/// \param ld          Leading dimension: elements between consecutive rows.
 /// \param rank        Rank of the destination float memref.
 /// \param ptr         Descriptor of the destination memref<*xf32>.
 extern "C" MLIR_ESPRUNNERUTILS_EXPORT void
-esp_fixed2float_f32(int64_t mem_handle, int64_t offset, int64_t rank,
-                    void *ptr);
+esp_fixed2float_f32(int64_t mem_handle, int64_t offset, int64_t ld,
+                    int64_t rank, void *ptr);
 
-/// Configure the ESP accelerator registers for an FFN/matmul operation.
-/// Sets dimensions and shared-memory offsets for each operand.
-/// \param seq_len  Number of rows (M dimension).
-/// \param indim    Shared/reduction dimension (K).
-/// \param outdim   Number of columns (N dimension).
-/// \param off_in   Element offset of input matrix in shared memory.
-/// \param off_w    Element offset of weight matrix in shared memory.
-/// \param off_b    Element offset of bias vector in shared memory.
-/// \param off_o    Element offset of output matrix in shared memory.
+/// Write one accelerator register. The pass emits one call per register with
+/// the offset and the value it computed; the runtime has no register map and
+/// no idea what any offset means. That is what makes it accelerator-agnostic.
+/// \param offset  Byte offset of the register from the device base.
+/// \param value   Value to write.
 extern "C" MLIR_ESPRUNNERUTILS_EXPORT void
-esp_accel_cfg_regs(int64_t seq_len, int64_t indim, int64_t outdim,
-                   int64_t off_in, int64_t off_w, int64_t off_b, int64_t off_o);
+esp_accel_write_reg(uint32_t offset, uint32_t value);
 
 /// Flush caches and start the ESP accelerator.
 extern "C" MLIR_ESPRUNNERUTILS_EXPORT void esp_accel_start();
