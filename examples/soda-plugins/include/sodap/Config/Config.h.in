@@ -1,0 +1,34 @@
+//===- Config.h.in - Bambu install paths ------------------------*- C++ -*-===//
+//
+// Copyright (c) 2026 Tommaso Fellegara
+//
+//===----------------------------------------------------------------------===//
+//
+// This file is licensed under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+//
+//===----------------------------------------------------------------------===//
+//
+// Generated into the build directory from this template by CMake. It carries
+// the Bambu install that -DSODAP_BAMBU_ROOT named at configure time, so
+// the backend passes can default to it instead of making every caller repeat
+// a path that is a property of the machine, not of the design.
+//
+// Only paths belong here. The top function is deliberately not defaulted: it
+// is a property of the design being compiled, and guessing it wrong produces a
+// plausible-looking XML for the wrong entry point.
+//
+//===----------------------------------------------------------------------===//
+
+#ifndef SODAP_CONFIG_H
+#define SODAP_CONFIG_H
+
+/// Directory holding ac_channel.h and the rest of the Bambu headers.
+#define SODAP_BAMBU_INCLUDE "@SODAP_BAMBU_INCLUDE@"
+
+/// The Clang that reads the ac_channel ABI back out of those headers. It has
+/// to be the one Bambu is later told to use (--compiler=I386_CLANG19).
+#define SODAP_BAMBU_CLANGXX "@SODAP_BAMBU_CLANGXX@"
+
+#endif // SODAP_CONFIG_H

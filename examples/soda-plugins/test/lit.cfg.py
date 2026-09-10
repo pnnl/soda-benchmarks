@@ -64,6 +64,9 @@ tools = [
 
 llvm_config.add_tool_substitutions(tools, tool_dirs)
 
+if config.sodap_bambu_root:
+    config.available_features.add("panda")
+
 llvm_config.with_environment(
     "PYTHONPATH",
     [

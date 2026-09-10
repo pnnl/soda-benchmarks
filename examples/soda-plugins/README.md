@@ -21,10 +21,18 @@ mkdir build && cd build
 
 cmake -G Ninja .. \
   -DMLIR_DIR=/opt/llvm-project/lib/cmake/mlir \
-  -DLLVM_EXTERNAL_LIT=/workspaces/soda/builds/llvm-project/build/bin/llvm-lit
+  -DLLVM_EXTERNAL_LIT=/workspaces/soda/builds/llvm-project/build/bin/llvm-lit \
+  -DSODAP_BAMBU_ROOT=/opt/panda-host
 
 cmake --build . --target SODAPlugin
 ```
+
+`SODAP_BAMBU_ROOT` is the Bambu install (the directory holding `settings.sh`)
+used by the Bambu backend passes: its `include/panda/ac_channel.h` and
+`compilers/clang-19/bin/clang++-19` become their defaults. In the devcontainer
+the host's `/opt/panda-unified-ac-channel` is mounted at `/opt/panda-host`.
+Without it the plugin still builds, with a warning, and the Bambu tests are
+reported as unsupported.
 
 
 ## Testing

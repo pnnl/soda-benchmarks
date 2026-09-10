@@ -23,3 +23,4 @@ add_public_tablegen_target(SODAPAnalysisPassesIncGen)
 
 add_subdirectory(Dialect/Dataflow)
 add_subdirectory(Conversion/AffineToDataflow)
+add_subdirectory(Conversion/DataflowToLLVM)
