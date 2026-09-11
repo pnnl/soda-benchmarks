@@ -54,12 +54,11 @@ if(NOT SODAP_BAMBU_ROOT)
     "defaults. Configure with -DSODAP_BAMBU_ROOT=/opt/panda")
 else()
   message(STATUS "Using Bambu install in: ${SODAP_BAMBU_ROOT}")
+  # Those two paths become the defaults of the bambu backend pass options
+  set(SODAP_BAMBU_INCLUDE "${SODAP_BAMBU_ROOT}/include/panda")
+  set(SODAP_BAMBU_CLANGXX "${SODAP_BAMBU_ROOT}/compilers/clang-19/bin/clang++-19")
 endif()
-
-# Those two paths become the defaults of the bambu backend pass options
-set(SODAP_BAMBU_INCLUDE "${SODAP_BAMBU_ROOT}/include/panda")
-set(SODAP_BAMBU_CLANGXX "${SODAP_BAMBU_ROOT}/compilers/clang-19/bin/clang++-19")
-
+  
 configure_file(
   ${SODAPLUGINS_SOURCE_DIR}/include/sodap/Config/Config.h.in
   ${SODAPLUGINS_BINARY_DIR}/include/sodap/Config.h

@@ -11,8 +11,7 @@
 // RUN: mlir-opt %S/Inputs/gemm_small.mlir \
 // RUN:     --load-dialect-plugin=%sodap_libs/SODAPlugin%shlibext \
 // RUN:     --load-pass-plugin=%sodap_libs/SODAPlugin%shlibext \
-// RUN:     --pass-pipeline="builtin.module(sodap-emit-bambu-architecture{file=%t.xml top-func=forward})" \
-// RUN:     -o /dev/null
+// RUN:     --pass-pipeline="builtin.module(sodap-emit-bambu-architecture{file=%t.xml top-func=forward})"
 // RUN: FileCheck %s < %t.xml
 
 // The top sees only the four memrefs of @forward -- the two channels are

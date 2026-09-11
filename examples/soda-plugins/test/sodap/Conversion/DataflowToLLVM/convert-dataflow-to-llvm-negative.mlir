@@ -9,21 +9,37 @@
 //
 // REQUIRES: panda
 
-// Run from a scratch directory, to prove that nothing was written to it.
-// RUN: rm -rf %t && mkdir -p %t && cd %t
 // RUN: not mlir-opt %s --load-dialect-plugin=%sodap_libs/SODAPlugin%shlibext \
 // RUN:     --load-pass-plugin=%sodap_libs/SODAPlugin%shlibext \
-// RUN:     --pass-pipeline="builtin.module(sodap-convert-dataflow-to-llvm{clangxx=})" \
-// RUN:     -o /dev/null 2>&1 | FileCheck %s
+// RUN:     --pass-pipeline="builtin.module(sodap-convert-dataflow-to-llvm{clangxx= include-panda-path=%sodap_bambu_include})" \
+// RUN:     2> %t.err
+// RUN: FileCheck --check-prefix=CLANGXX-EMPTY %s < %t.err
 
-// CHECK: error: clangxx and include-panda-path cannot be empty
+// CLANGXX-EMPTY: error: clangxx and include-panda-path cannot be empty
 
 // RUN: not mlir-opt %s --load-dialect-plugin=%sodap_libs/SODAPlugin%shlibext \
 // RUN:     --load-pass-plugin=%sodap_libs/SODAPlugin%shlibext \
-// RUN:     --pass-pipeline="builtin.module(sodap-convert-dataflow-to-llvm{clangxx=\"\"})" \
-// RUN:     -o /dev/null 2>&1 | FileCheck --check-prefix=QUOTED %s
+// RUN:     --pass-pipeline="builtin.module(sodap-convert-dataflow-to-llvm{clangxx=\"\" include-panda-path=%sodap_bambu_include})" \
+// RUN:     2> %t.err
+// RUN: FileCheck --check-prefix=CLANGXX-QUOTED %s < %t.err
 
-// QUOTED: error: clangxx and include-panda-path cannot be empty
+// CLANGXX-QUOTED: error: clangxx and include-panda-path cannot be empty
+
+// RUN: not mlir-opt %s --load-dialect-plugin=%sodap_libs/SODAPlugin%shlibext \
+// RUN:     --load-pass-plugin=%sodap_libs/SODAPlugin%shlibext \
+// RUN:     --pass-pipeline="builtin.module(sodap-convert-dataflow-to-llvm{clangxx=%sodap_bambu_clangxx include-panda-path=})" \
+// RUN:     2> %t.err
+// RUN: FileCheck --check-prefix=INCLUDE-PANDA-PATH-EMPTY %s < %t.err
+
+// INCLUDE-PANDA-PATH-EMPTY: error: clangxx and include-panda-path cannot be empty
+
+// RUN: not mlir-opt %s --load-dialect-plugin=%sodap_libs/SODAPlugin%shlibext \
+// RUN:     --load-pass-plugin=%sodap_libs/SODAPlugin%shlibext \
+// RUN:     --pass-pipeline="builtin.module(sodap-convert-dataflow-to-llvm{clangxx=%sodap_bambu_clangxx include-panda-path=\"\"})" \
+// RUN:     2> %t.err
+// RUN: FileCheck --check-prefix=INCLUDE-PANDA-PATH-QUOTED %s < %t.err
+
+// INCLUDE-PANDA-PATH-QUOTED: error: clangxx and include-panda-path cannot be empty
 
 func.func @top() {
   %c = dataflow.stream {depth = 4 : i32} : <f32, 4>
