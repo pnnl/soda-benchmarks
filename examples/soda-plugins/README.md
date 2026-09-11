@@ -26,6 +26,12 @@ cmake -G Ninja .. \
 cmake --build . --target SODAPlugin
 ```
 
+`SODAP_BAMBU_ROOT` can be specified to enable Bambu specific passes.
+To do that, add `-DSODAP_BAMBU_ROOT=<path/to/bambu>` (the directory holding `settings.sh`)
+when configuring the compilation build with cmake.
+Without it the plugin still builds, with a warning, and the Bambu tests are
+reported as unsupported.
+
 
 ## Testing
 
