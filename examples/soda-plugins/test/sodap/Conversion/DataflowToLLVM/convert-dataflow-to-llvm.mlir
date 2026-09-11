@@ -7,7 +7,7 @@
 
 // Each run drops ac_channel_specializations.{cpp,ll} in its working directory,
 // so each gets its own.
-// RUN: rm -rf %t && mkdir -p %t/default %t/explicit
+// RUN: mkdir -p %t/default %t/explicit
 // RUN: cd %t/default && mlir-opt %S/Inputs/gemm_small.mlir \
 // RUN:     --load-dialect-plugin=%sodap_libs/SODAPlugin%shlibext \
 // RUN:     --load-pass-plugin=%sodap_libs/SODAPlugin%shlibext \

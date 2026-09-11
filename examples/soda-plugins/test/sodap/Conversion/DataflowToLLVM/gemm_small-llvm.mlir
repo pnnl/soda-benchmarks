@@ -6,7 +6,7 @@
 
 // The pass drops ac_channel_specializations.{cpp,ll} in the working directory,
 // so run from a scratch one.
-// RUN: rm -rf %t && mkdir -p %t && cd %t
+// RUN: mkdir -p %t && cd %t
 // RUN: mlir-opt %S/Inputs/gemm_small.mlir \
 // RUN:     --load-dialect-plugin=%sodap_libs/SODAPlugin%shlibext \
 // RUN:     --load-pass-plugin=%sodap_libs/SODAPlugin%shlibext \
