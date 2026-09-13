@@ -16,6 +16,13 @@
 
 #include "testdata.h"
 
+/* esp_prof, declared here rather than via its header so the driver builds
+ * identically for the cpu backend (where the mock runtime provides it) and for
+ * ESP (where esp_prof.c is staged alongside). Region 0 is ESP_PROF_TOTAL. */
+extern void esp_prof_begin(unsigned id);
+extern void esp_prof_end(unsigned id);
+extern void esp_prof_report(void);
+
 /* Lowered with the bare-pointer memref convention, so every operand -- rank-0
  * scalars included -- arrives as exactly one pointer. TD_DECL spells the
  * prototype because only the generated header knows the arity. */
@@ -30,7 +37,9 @@ int main(void)
     printf("kernel=%s dataset=%s dtype=%s elements=%d tol=%g\n", TD_KERNEL,
            TD_DATASET, TD_DTYPE, (int)TD_OUT_N, (double)TD_TOL);
 
+    esp_prof_begin(0);
     TD_CALL(forward_kernel);
+    esp_prof_end(0);
 
     for (i = 0; i < (unsigned)TD_OUT_N; i++) {
         td_elem_t err = TD_OUT[i] - td_golden[i];
@@ -50,7 +59,19 @@ int main(void)
     else
         printf("TEST FAILED (%u/%d elements exceed tolerance %g)\n", errors,
                (int)TD_OUT_N, (double)TD_TOL);
+    /* ESP's baremetal printf has no float conversions, so %g prints literally
+     * there. The same number as a scaled integer, readable on both; capped so a
+     * gross failure (the mock runtime, which does not compute) stays legible. */
+    {
+        double e = (double)max_err * 1e9 + 0.5;
+        if (e > 4000000000.0) e = 4000000000.0;
+        printf("max error = %u e-9, tolerance = %u e-9\n", (unsigned)e,
+               (unsigned)((double)TD_TOL * 1e9 + 0.5));
+    }
     printf("---------------------------------\n");
+
+    /* Empty unless the kernel was lowered with profile=true. */
+    esp_prof_report();
 
     return 0;
 }
