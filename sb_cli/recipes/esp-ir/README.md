@@ -39,6 +39,12 @@ the shared buffer.
 
 ## Selecting it
 
+`transform.mlir` is the production Transform dialect schedule consumed by
+`sb-cli init`, not a standalone lit test. Recipe discovery requires that filename
+at the recipe root; moving it to `Inputs/` would require changing the recipe
+loader. The separate `esp-ir-recipe.mlir` test under
+`examples/soda-plugins/test/sodap/ESP/` applies this actual schedule.
+
 ```sh
 sb-cli init --benchmark_name gemm --flow transformed --backend esp --stage object \
     --instrumentation esp-ir --output_dir esp_ir_gemm
@@ -58,3 +64,7 @@ both (`mlir-opt` has them); the change is four lines in
 `tools/soda-opt/soda-opt.cpp`. The [validation guide](../../../docs/ESPValidation.md)
 includes an applicable companion patch, plugin-linking build flags, and complete
 test commands.
+
+The companion registrations are tracked in
+[pnnl/soda-opt#14](https://github.com/pnnl/soda-opt/issues/14). Retest with the
+updated base image before removing the documented local setup workarounds.

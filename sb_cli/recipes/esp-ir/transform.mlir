@@ -1,5 +1,7 @@
 // transform.mlir — offload linalg.batch_matmul to the ESP accelerator, with
 // the float<->token conversion generated as IR and fused with its consumer.
+// Production recipe input, not a standalone lit test. Exercised by
+// examples/soda-plugins/test/sodap/ESP/esp-ir-recipe.mlir.
 //
 // Same pass as the `esp` recipe, with marshal=ir: the conversions become
 // linalg.generic over strided views of the shared buffer instead of runtime

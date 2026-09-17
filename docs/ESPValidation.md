@@ -1,9 +1,16 @@
 # Reproducing the ESP runtime and profiling checks
 
-This is a single-GEMM prototype validated against the existing Q16.16 FFN
-accelerator on VC707, not validation of newly generated Bambu/dataflow hardware.
+This is a prototype validated against the existing Q16.16 FFN accelerator on
+VC707, not validation of newly generated Bambu/dataflow hardware. It began with
+GEMM; broader PolyBench coverage and known failures are recorded below.
 The hardware-free checks below are runnable tests, not a newly installed CI job.
 The mock checks the host/runtime interface; it does not compute GEMM.
+
+**Latest board evidence (17 September 2026):** see
+[ESP PolyBench CLI validation](ESPPolyBenchValidation.md) for the 13-kernel
+generation recipe, 31 linked artifacts and 28 completed board cases (25 accuracy
+passes). It includes the UART log, numerical/timing tables, campaign support
+prerequisites and explicit exclusions.
 
 ## Compiler and plugin setup
 
@@ -51,31 +58,51 @@ soda-opt --load-pass-plugin="$MLIR_PLUGIN_PATH" \
   --load-dialect-plugin="$MLIR_PLUGIN_PATH" --help > /dev/null
 ```
 
-`--export-dynamic` fixes the plugin symbol-resolution failure observed with the
-image's original executable. It is a build setting, separate from the source
-patch. The two registrations are needed by the fused `esp-ir` recipe, not by
-basic runtime/profiling support or conversion-IR emission alone.
+`--export-dynamic` is a workaround for the **tested image**, not an ESP runtime
+ABI requirement or a proposed permanent global linker setting. The observed
+plugin-loading failure was an unresolved `mlir::Pass::initializeOptions(...)`:
+an MLIR compiler symbol, not an `esp_*` function. Rebuilding with this flag made
+that symbol visible in the executable's dynamic symbol table (`nm -D`) and
+allowed `SODAPlugin.so` to load. This does not establish the minimal export set.
+
+Retest plugin loading on the updated base image without this override first;
+keep it only if the same failure is reproduced. It is separate from the source
+patch tracked in [pnnl/soda-opt#14](https://github.com/pnnl/soda-opt/issues/14),
+which is now closed upstream. The campaign used the pinned local toolchain;
+an updated official image has not yet been validated here.
+The two pass registrations are needed by the fused `esp-ir` recipe, not by
+basic runtime/profiling support or conversion-IR emission alone. Updated Bambu
+support is a separate prerequisite for newly generated hardware, not for the
+existing FFN bitstream used in these tests.
 
 ## Focused lowering, mock and profiler tests
 
-With the environment above, run:
+The cleanup was rechecked on 17 September 2026 with the pinned local image:
+**7/7 ESP tests and 21/21 plugin tests passed**, including the actual-recipe
+test added below. This was local test execution, not a remote CI run or a
+validation of a new official image. These tests retain the current rejection
+of multiple IR offloads; passing them does not establish multi-offload IR support.
+
+The lit `RUN` lines under `examples/soda-plugins/test/sodap/ESP/` are the
+authoritative regression tests. With the plugin built, run an installed lit:
 
 ```sh
-bash scripts/test_esp.sh
+llvm-lit -v --filter='sodap/ESP/' examples/soda-plugins/build/test
 ```
 
-The script uses `set -euo pipefail` and runs the three basic lowering checks
-(default, profiling, IR conversion), sequential-offload checks, expected-error
-tests, the batch=1 mock under `mlir-cpu-runner`, and the native profiler self-test.
-It fails on an unexpected diagnostic, output mismatch, accepted invalid case,
-or profiler assertion. It does not need lit installed.
+Use `lit` instead if that is the installed executable's name. For the full
+`check-sodap` target, configure `LLVM_EXTERNAL_LIT` to that executable's absolute
+path. The previously tested image did not contain lit and its default path
+pointed to a missing `build/bin/llvm-lit`; this setup issue must not be reported
+as a passing CI run.
 
-The equivalent tests have `RUN` lines under
-`examples/soda-plugins/test/sodap/ESP/`. The `esp-prof.mlir` wrapper makes the C
-self-test discoverable by lit. In the tested image, `check-sodap` points to a
-missing `build/bin/llvm-lit`; configuring `LLVM_EXTERNAL_LIT` to an installed
-lit executable is still necessary to use that target. Passing this script is
-not a claim that the entire repository's lit suite or remote CI passed.
+The optional `examples/esp-validation/run-tests.sh` helper selects the same lit
+tests; it contains no duplicated lowering/mock commands. The tests include
+default/profiling/IR lowering, expected diagnostics, the batch=1 mock under
+`mlir-cpu-runner`, and the native profiler self-test via `esp-prof.mlir`.
+`esp-ir-recipe.mlir` exercises the actual CLI Transform schedule. It remains a
+compiler test, not proof of numerical accelerator correctness. Passing the
+ESP subset is not a claim that the entire repository suite or remote CI passed.
 
 The compiler rejects non-f32/non-memref operands and batches that are not
 statically known to be 1. IR marshalling additionally rejects dynamic shapes
