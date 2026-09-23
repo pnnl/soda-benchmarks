@@ -10,8 +10,14 @@ Examples included:
 
 - assert
 - change-location
+- change-location-exposed-ports
 - hw-counters
 - vector-dot
+
+`change-location-exposed-ports` is a derived version of `change-location` that
+exposes the selected location and its counter value on the top-level interface
+(via `is_global`/`is_extern` ports), so the counts can be read back without a
+memory-bus interface. See its README for details.
 
 
 ### How to extend?

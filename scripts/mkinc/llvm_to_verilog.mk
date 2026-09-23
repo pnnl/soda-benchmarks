@@ -1,10 +1,17 @@
 # This file provides rules to generate Verilog and Simulation results using Bambu
 
+# Location selected by the change-location-exposed-ports recipe's testbench patch
+# hook (IPs/patch_tb.sh). Ignored by every other recipe. Override per run:
+#   make SODA_TARGET_LOCATION=1
+SODA_TARGET_LOCATION ?= 0
+
 BAMBU_SETTINGS = \
   BAMBU_DEVICE=$(BAMBU_DEVICE) \
   BAMBU_CLOCK_PERIOD=$(BAMBU_CLOCK_PERIOD) \
   BAMBU_MEMPOLICY=$(BAMBU_MEMPOLICY) \
   BAMBU_IP_INTEGRATION=$(BAMBU_IP_INTEGRATION) \
+  IPDIR=$(IPDIR) \
+  SODA_TARGET_LOCATION=$(SODA_TARGET_LOCATION) \
   IP_C_EXCLUDE=$(IP_C_EXCLUDE) \
   IP_VERILOG_INPUTS=$(IP_VERILOG_INPUTS) \
   IP_MODULE_LIB=$(IP_MODULE_LIB) \

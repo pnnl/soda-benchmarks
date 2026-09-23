@@ -22,6 +22,11 @@ namespaces = false
 
 [tool.setuptools.package-data]
 "sb_cli.templates" = ["*.tmpl"]
+# Recipe and schedule payloads live in plain (non-package) subdirectories, so
+# they have to be declared as data of the package above them. Without this a
+# non-editable install ships neither.
+"sb_cli.recipes" = ["*/transform.mlir", "*/README.md", "*/IPs/*"]
+"sb_cli.schedules" = ["*/*/*.mlir", "README.md"]
 
 [tool.ruff]
 line-length = 88

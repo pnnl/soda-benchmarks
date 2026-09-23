@@ -5,6 +5,7 @@ Uses pytest tmp_path fixtures — no real synthesis runs or torch-mlir required.
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pytest
@@ -729,6 +730,46 @@ class TestInstrumentation:
         xfm = (exp_dir / "transform.mlir").read_text()
         assert "soda-instr-scf-for-assert-bounds" in xfm
 
+    def test_change_location_exposed_ports_recipe(self, tmp_path: Path) -> None:
+        """The exposed-ports recipe ships the IP with top-level ports."""
+        base = _make_base_dir(tmp_path)
+        exp_dir = _run_scaffold(
+            base,
+            output_dir="clx_exp",
+            instrumentation="change-location-exposed-ports",
+        )
+
+        ips = exp_dir / "IPs"
+        assert (ips / "sodaInstrChangeLocation.v").exists()
+
+        # The pass name is unchanged: the SODA plugin hardcodes the callee
+        # name, so this recipe must reuse the original IP/function names.
+        xfm = (exp_dir / "transform.mlir").read_text()
+        assert "soda-instr-change-location" in xfm
+
+        # The feature under test: is_global/is_extern is what makes Bambu
+        # hoist these two ports onto the generated top module.
+        lib = (ips / "module_lib.xml").read_text()
+        assert 'id="target_location" dir="IN" is_global="1" is_extern="1"' in lib
+        assert 'id="final_result" dir="OUT" is_global="1" is_extern="1"' in lib
+
+        # Fixed-width ports must stay out of NP_functionality LIBRARY, which
+        # names only ports whose width Bambu has to specialize; listing them
+        # would emit BITSIZE_* parameters the provided .v does not declare.
+        assert 'LIBRARY="sodaInstrChangeLocation "' in lib
+
+        verilog = (ips / "sodaInstrChangeLocation.v").read_text()
+        assert "target_location" in verilog
+        assert "final_result" in verilog
+
+        # The testbench patch hook must stay executable through copytree, or
+        # ll_to_verilog.sh silently skips it.
+        hook = ips / "patch_tb.sh"
+        assert hook.exists() and os.access(hook, os.X_OK)
+
+        mk = (exp_dir / "Makefile").read_text()
+        assert "IP_VERILOG_INPUTS=$(IPDIR)/sodaInstrChangeLocation.v" in mk
+
     def test_unknown_recipe_raises(self, tmp_path: Path) -> None:
         """An unknown recipe name is rejected."""
         base = _make_base_dir(tmp_path)
@@ -743,6 +784,8 @@ class TestInstrumentation:
         assert "none" in recipes
         assert "hw-counters" in recipes
         assert "assert" in recipes
+        assert "change-location" in recipes
+        assert "change-location-exposed-ports" in recipes
 
 
 # ---------------------------------------------------------------------------
@@ -1267,6 +1310,46 @@ Run 1 execution time 14028 cycles;
         assert events["sw_counter_event_counts"] == {"STARTED": 1, "STOPED": 1}
         assert events["assertion_results"] == {"true": 1, "false": 1}
         assert events["assertion_total"] == 2
+
+    def test_collect_change_location_events(self, tmp_path: Path) -> None:
+        """Change-location counts and the exposed-port read-back are parsed."""
+        from sb_cli.collect import _parse_instrumentation_events
+
+        log = tmp_path / "bambu-log"
+        log.write_text(
+            "[HW] sodaInstrChangeLocation: FINAL location 0 count     174239\n"
+            "[HW] sodaInstrChangeLocation: FINAL location 1 count         20\n"
+            "[HW] sodaInstrChangeLocation: FINAL location 2 count          0\n"
+            "[HW] sodaInstrChangeLocation: SELECTED location 1 "
+            "final_result         20\n"
+        )
+
+        events = _parse_instrumentation_events(log)
+
+        assert events["change_location_final_count_by_location"] == {
+            "0": 174239,
+            "1": 20,
+            "2": 0,
+        }
+        # The read-back must agree with the dump for the selected location;
+        # that equality is what proves the exposed top-level ports work.
+        assert events["change_location_selected"] == {"1": 20}
+
+    def test_collect_change_location_selected_absent_for_plain_recipe(
+        self, tmp_path: Path
+    ) -> None:
+        """The plain change-location recipe emits no SELECTED read-back."""
+        from sb_cli.collect import _parse_instrumentation_events
+
+        log = tmp_path / "bambu-log"
+        log.write_text(
+            "[HW] sodaInstrChangeLocation: FINAL location 0 count     174239\n"
+        )
+
+        events = _parse_instrumentation_events(log)
+
+        assert events["change_location_final_count_by_location"] == {"0": 174239}
+        assert events["change_location_selected"] == {}
 
     def test_collect_bambu_log_missing_returns_empty(self, tmp_path: Path) -> None:
         """New Bambu-log collectors are empty (not raising) when no log exists."""
