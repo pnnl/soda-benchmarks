@@ -23,6 +23,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from sb_cli.recipes import NONE_RECIPE, Recipe
+from sb_cli.schedules import SIMPLE_SCHEDULE
 
 FLOWS: tuple[str, ...] = ("baseline", "optimized", "transformed")
 
@@ -49,6 +50,17 @@ STAGES: tuple[str, ...] = (
 # as one SiliconCompiler job. It is not a `backend` value: SiliconCompiler still
 # has Bambu consume the LLVM IR, so the two axes are independent.
 BUILDERS: tuple[str, ...] = ("make", "siliconcompiler")
+
+# Devices scripts/ll_to_verilog.sh writes OpenROAD scripts for. Every other
+# device reaches verilog and simulation but has no synthesis path in this repo:
+# scripts/to_copy/ carries no other PDK, and there is no Vivado here. Kept in
+# sync with the `case "$BAMBU_DEVICE"` near the end of that script.
+_OPENROAD_DEVICES: tuple[str, ...] = (
+    "asap7-BC",
+    "asap7-TC",
+    "asap7-WC",
+    "nangate45",
+)
 
 # Default Bambu top function name. It is also baked into ll_to_verilog.sh and
 # the soda_to_llvm_*.sh scripts, so it is a default here rather than a knob.
@@ -155,6 +167,7 @@ class ExperimentConfig:
     stage: str
     instrumentation: str = NONE_RECIPE  # recipe name; "none" = no instrumentation
     builder: str = "make"  # one of BUILDERS; "make" scaffolds the Makefile only
+    default_ts: str = SIMPLE_SCHEDULE
 
     @property
     def target_name(self) -> str:
@@ -164,6 +177,43 @@ class ExperimentConfig:
     def target_path(self) -> str:
         """Return the Makefile TARGET path for this config."""
         return resolve_target(self.flow, self.backend, self.stage, device=self.device)
+
+# TODO: adjust to pick a path such as xilinx tools mounted in the container
+def stage_targets_block(
+    flow: str,
+    backend: str,
+    *,
+    device: str,
+    top_fname: str = DEFAULT_TOP_FNAME,
+) -> str:
+    """Render `.PHONY` stage aliases for every stage `backend` can reach.
+
+    `make simulation` and `make gds` then name the same artifacts TARGET would,
+    so a driver script never has to re-spell them -- the paths come from
+    `_TARGET_TEMPLATES`, the same source TARGET itself is resolved from.
+
+    Only the stages the backend actually supports get an alias, so a cpu or esp
+    experiment carries no `gds:` line pointing at a path it can never build.
+
+    Returns:
+        The Makefile fragment, with `$(ODIR)` left unexpanded.
+    """
+    stages = _supported_stages(backend)
+    lines = [f".PHONY: all {' '.join(stages)}", ""]
+    for stage in stages:
+        if stage == "gds" and device not in _OPENROAD_DEVICES:
+            # The path would resolve to a PDK directory OpenROAD never creates,
+            # so make would report a missing rule for a 100-character artifact.
+            # Say why instead.
+            lines.append(
+                f"gds:\n"
+                f"\t@echo 'No synthesis path for device {device}: only "
+                f"{', '.join(_OPENROAD_DEVICES)} get OpenROAD scripts.' >&2; exit 1"
+            )
+            continue
+        path = resolve_target(flow, backend, stage, device=device, top_fname=top_fname)
+        lines.append(f"{stage}: {path}")
+    return "\n".join(lines) + "\n"
 
 
 def ip_integration_block(recipe: Recipe | None) -> str:

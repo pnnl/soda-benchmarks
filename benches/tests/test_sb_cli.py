@@ -35,6 +35,7 @@ def _run_scaffold(
     stage: str = "verilog",
     instrumentation: str = "none",
     builder: str = "make",
+    default_ts: str = "simple",
 ) -> Path:
     """Run scaffold() with given args and return the experiment dir."""
     from sb_cli.flow import ExperimentConfig
@@ -52,6 +53,7 @@ def _run_scaffold(
         stage=stage,
         instrumentation=instrumentation,
         builder=builder,
+        default_ts=default_ts,
     )
     return scaffold(config, output_dir, tmp_path)
 
@@ -249,9 +251,10 @@ class TestCpuAndEspBackends:
             stage="simulation",
         )
 
-        assert "sodap-linalg-batch-matmul-to-esp" not in (
-            exp_dir / "transform.mlir"
-        ).read_text()
+        assert (
+            "sodap-linalg-batch-matmul-to-esp"
+            not in (exp_dir / "transform.mlir").read_text()
+        )
 
     def test_esp_recipe_is_discoverable(self) -> None:
         """The recipe is a directory, so it needs no registration -- check that."""
@@ -343,7 +346,9 @@ class TestInit:
         )
 
         mk = (exp_dir / "Makefile").read_text()
-        assert "SCRIPTS_DIR=../../../scripts" in mk
+        # Absolute, so the experiment builds under any --base_dir. The path
+        # itself is checked by test_scripts_dir_points_at_real_mkinc_files.
+        assert "SCRIPTS_DIR?=" in mk
         assert "BAMBU_DEVICE?=nangate45" in mk
         assert "BAMBU_CLOCK_PERIOD?=5.0" in mk
         assert "tosa_to_llvm.mk" in mk
@@ -1546,3 +1551,270 @@ class TestSiliconCompilerBuilder:
         text = sdc.read_text()
         assert "-period 2.0" in text
         assert "-period 5.0" not in text
+
+
+# ---------------------------------------------------------------------------
+# Stage alias targets
+# ---------------------------------------------------------------------------
+
+
+class TestStageTargets:
+    def test_makefile_declares_phony_stage_aliases(self, tmp_path: Path) -> None:
+        """Bambu experiments get an alias for every stage bambu can reach."""
+        base = _make_base_dir(tmp_path)
+        exp_dir = _run_scaffold(base, output_dir="alias_exp")
+
+        mk = (exp_dir / "Makefile").read_text()
+        assert ".PHONY: all llvm verilog simulation gds" in mk
+
+    @pytest.mark.parametrize("stage", ["llvm", "verilog", "simulation", "gds"])
+    def test_stage_alias_matches_resolve_target(
+        self, tmp_path: Path, stage: str
+    ) -> None:
+        """Aliases come from the same source as TARGET, never hand-copied."""
+        from sb_cli.flow import resolve_target
+
+        base = _make_base_dir(tmp_path)
+        exp_dir = _run_scaffold(
+            base, output_dir=f"alias_{stage}", flow="transformed", device="nangate45"
+        )
+
+        expected = resolve_target("transformed", "bambu", stage, device="nangate45")
+        assert f"{stage}: {expected}" in (exp_dir / "Makefile").read_text()
+
+    def test_cpu_backend_gets_no_gds_alias(self, tmp_path: Path) -> None:
+        """A backend that cannot reach gds never advertises it."""
+        base = _make_base_dir(tmp_path)
+        exp_dir = _run_scaffold(
+            base, output_dir="cpu_alias", backend="cpu", stage="binary"
+        )
+
+        mk = (exp_dir / "Makefile").read_text()
+        assert "binary: " in mk
+        assert "gds: " not in mk
+
+    def test_gds_alias_explains_itself_for_a_device_without_openroad(
+        self, tmp_path: Path
+    ) -> None:
+        """xcu280 has no OpenROAD scripts, so `make gds` should say so."""
+        base = _make_base_dir(tmp_path)
+        exp_dir = _run_scaffold(
+            base, output_dir="xcu_alias", device="xcu280-2Lfsvh2892-VVD"
+        )
+
+        mk = (exp_dir / "Makefile").read_text()
+        assert "No synthesis path for device xcu280-2Lfsvh2892-VVD" in mk
+        assert "6_final.gds" not in mk
+
+    def test_scripts_dir_points_at_real_mkinc_files(self, tmp_path: Path) -> None:
+        """SCRIPTS_DIR must resolve from any base_dir, not just benches/."""
+        base = _make_base_dir(tmp_path)
+        exp_dir = _run_scaffold(base, output_dir="scripts_exp")
+
+        line = next(
+            ln
+            for ln in (exp_dir / "Makefile").read_text().splitlines()
+            if ln.startswith("SCRIPTS_DIR")
+        )
+        scripts = Path(line.split("=", 1)[1].strip())
+        assert (scripts / "mkinc" / "soda_to_llvm.mk").is_file()
+
+
+# ---------------------------------------------------------------------------
+# Transform schedule libraries (--default_ts)
+# ---------------------------------------------------------------------------
+
+
+class TestTransformSchedules:
+    def test_available_schedules_lists_simple_and_alo_soda(self) -> None:
+        from sb_cli.schedules import available_schedules
+
+        assert available_schedules() == ["simple", "alo_soda"]
+
+    def test_simple_none_is_still_the_noop_template(self, tmp_path: Path) -> None:
+        """The default path is untouched by the schedule library."""
+        base = _make_base_dir(tmp_path)
+        exp_dir = _run_scaffold(base, output_dir="simple_none")
+
+        xfm = (exp_dir / "transform.mlir").read_text()
+        assert "transform.yield" in xfm
+        assert "apply_registered_pass" not in xfm
+
+    def test_simple_recipe_still_copies_the_recipe_schedule(
+        self, tmp_path: Path
+    ) -> None:
+        """--default_ts simple keeps using the recipe's own schedule verbatim."""
+        from sb_cli.recipes import resolve_recipe
+
+        base = _make_base_dir(tmp_path)
+        exp_dir = _run_scaffold(
+            base, output_dir="simple_hwc", instrumentation="hw-counters"
+        )
+
+        recipe = resolve_recipe("hw-counters")
+        assert recipe is not None
+        assert (exp_dir / "transform.mlir").read_text() == (
+            recipe.transform_mlir.read_text()
+        )
+
+    def test_alo_soda_none_copies_the_bare_schedule(self, tmp_path: Path) -> None:
+        base = _make_base_dir(tmp_path)
+        exp_dir = _run_scaffold(
+            base,
+            output_dir="alo_none",
+            benchmark_name="gemm",
+            flow="transformed",
+            default_ts="alo_soda",
+        )
+
+        xfm = (exp_dir / "transform.mlir").read_text()
+        assert "tile_using_for" in xfm
+        assert "convert-linalg-to-affine-loops" in xfm
+        assert "soda-instr" not in xfm
+
+    def test_alo_soda_splices_instrumentation_after_tiling(
+        self, tmp_path: Path
+    ) -> None:
+        """The load-bearing invariant: instrumentation runs last.
+
+        The instrumentation passes walk scf::ForOp only, and the loops they are
+        meant to annotate are the scf.for tile loops `tile_using_for` produces.
+        Those survive the rest of the schedule -- the affine lowering rewrites
+        only linalg ops, and the unrolls target affine.for -- so the pass has to
+        come after tiling but is free to come last.
+
+        It must also come last: the pass declares a `func.func private` for the
+        IP call, so a `match ops{["func.func"]}` running after it binds two
+        funcs, and `apply_registered_pass` then sets its results twice and
+        aborts soda-opt. Moving this splice earlier crashes the build.
+        """
+        base = _make_base_dir(tmp_path)
+        exp_dir = _run_scaffold(
+            base,
+            output_dir="alo_hwc",
+            benchmark_name="gemm",
+            flow="transformed",
+            instrumentation="hw-counters",
+            default_ts="alo_soda",
+        )
+
+        # Comments are stripped: the spliced block explains itself by naming
+        # the very ops this asserts on, which would otherwise match first.
+        code = [
+            ln
+            for ln in (exp_dir / "transform.mlir").read_text().splitlines()
+            if not ln.lstrip().startswith("//")
+        ]
+        joined = "\n".join(code)
+        instr = joined.index("soda-instr-hw-counters-at-loop-bounds")
+        assert instr > joined.rindex("tile_using_for"), "must run after tiling"
+        # Nothing may re-match func.func after the instrumentation pass.
+        assert 'match ops{["func.func"]}' not in joined[instr:]
+
+    def test_alo_soda_still_wires_the_recipe_ips(self, tmp_path: Path) -> None:
+        """IPs come from the recipe whichever schedule was selected."""
+        base = _make_base_dir(tmp_path)
+        exp_dir = _run_scaffold(
+            base,
+            output_dir="alo_ips",
+            benchmark_name="gemm",
+            flow="transformed",
+            instrumentation="hw-counters",
+            default_ts="alo_soda",
+        )
+
+        assert (exp_dir / "IPs" / "sodaInstrHWCounters.v").is_file()
+        assert "BAMBU_IP_INTEGRATION=true" in (exp_dir / "Makefile").read_text()
+
+    def test_every_kernel_has_a_full_alo_soda_mini_set(self) -> None:
+        """65 files: 13 bare schedules plus one per instrumentation recipe."""
+        from benches import catalog
+        from sb_cli.schedules import resolve_schedule
+
+        recipes = [
+            "none",
+            "assert",
+            "change-location",
+            "change-location-exposed-ports",
+            "hw-counters",
+        ]
+        for kernel in catalog.available():
+            for recipe in recipes:
+                path = resolve_schedule(
+                    "alo_soda",
+                    benchmark=kernel,
+                    dataset="MINI",
+                    instrumentation=recipe,
+                )
+                assert path is not None and path.is_file(), f"{kernel}+{recipe}"
+
+    def test_every_merged_schedule_names_its_pass(self) -> None:
+        from sb_cli.schedules import resolve_schedule
+
+        passes = {
+            "assert": "soda-instr-scf-for-assert-bounds",
+            "change-location": "soda-instr-change-location",
+            "change-location-exposed-ports": "soda-instr-change-location",
+            "hw-counters": "soda-instr-hw-counters-at-loop-bounds",
+        }
+        for recipe, pass_name in passes.items():
+            path = resolve_schedule(
+                "alo_soda",
+                benchmark="gemm",
+                dataset="MINI",
+                instrumentation=recipe,
+            )
+            assert path is not None
+            assert pass_name in path.read_text()
+
+    def test_alo_soda_rejects_a_dataset_it_has_no_schedules_for(
+        self, tmp_path: Path
+    ) -> None:
+        base = _make_base_dir(tmp_path)
+        with pytest.raises(ValueError, match="MINI"):
+            _run_scaffold(
+                base,
+                output_dir="alo_large",
+                benchmark_name="gemm",
+                dataset="LARGE",
+                flow="transformed",
+                default_ts="alo_soda",
+            )
+
+    def test_alo_soda_rejects_a_recipe_with_no_merged_variant(
+        self, tmp_path: Path
+    ) -> None:
+        """esp and vector-dot anchor on builtin.module, so they are not merged."""
+        base = _make_base_dir(tmp_path)
+        with pytest.raises(ValueError, match="vector-dot"):
+            _run_scaffold(
+                base,
+                output_dir="alo_vdot",
+                benchmark_name="gemm",
+                flow="transformed",
+                instrumentation="vector-dot",
+                default_ts="alo_soda",
+            )
+
+    def test_alo_soda_requires_a_benchmark_name(self, tmp_path: Path) -> None:
+        base = _make_base_dir(tmp_path)
+        with pytest.raises(ValueError, match="--benchmark_name"):
+            _run_scaffold(
+                base,
+                output_dir="alo_nobench",
+                benchmark_name=None,
+                flow="transformed",
+                default_ts="alo_soda",
+            )
+
+    def test_flow_py_records_the_schedule(self, tmp_path: Path) -> None:
+        base = _make_base_dir(tmp_path)
+        exp_dir = _run_scaffold(
+            base,
+            output_dir="alo_flowpy",
+            benchmark_name="gemm",
+            flow="transformed",
+            default_ts="alo_soda",
+        )
+
+        assert 'default_ts: str = "alo_soda"' in (exp_dir / "flow.py").read_text()

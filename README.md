@@ -67,6 +67,17 @@ cd benches/experiments/gemm_mini_test
 pixi run make
 ```
 
+`init` writes a `transform.mlir` alongside the Makefile. By default that is the
+schedule `sb-cli` generates itself; `--default_ts` selects a pre-built library
+instead — `--default_ts alo_soda` uses the design-space-exploration schedule for
+that kernel, with the `--instrumentation` recipe already merged in. See
+[sb_cli/schedules](sb_cli/schedules/README.md).
+
+The generated Makefile carries an absolute `SCRIPTS_DIR?=`, so an experiment
+scaffolded with `--base_dir` outside the repo builds without patching. It also
+defines a phony target per stage, so `make simulation` and `make gds` work from
+any experiment directory regardless of which `--stage` it was scaffolded with.
+
 `--output_dir` is optional. When omitted, `init` names the experiment
 `<benchmark>-<dataset>-<dtype>` (here, `gemm-MINI-float32`) and `fork` names it
 after its source, both appending the first free `-000`, `-001`, ... counter if
@@ -86,6 +97,7 @@ ever silently overwritten. Deriving a name for `init` requires
 ### Additional flows
 
 - Claude code generation of transformation schedules for PolyBench kernels: [Agentic Polybench Runner](docs/AgenticPolybenchRunner.md)
+- Sweeping a matrix of kernels, devices, instrumentation recipes and transform schedules in parallel: [Running many experiments](examples/run-many-experiments/README.md)
 - Triggering instrumentation and IP integration flows using the `sb-cli` command line interface: [Instrumentation](docs/Intrumentation.md)
 - Building a scaffolded experiment with SiliconCompiler instead of the generated Makefile: [A SiliconCompiler builder for `sb-cli`](docs/SiliconCompilerBackend.md)
 

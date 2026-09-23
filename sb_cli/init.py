@@ -13,10 +13,11 @@ from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
 
-from benches import catalog
-from sb_cli.flow import ExperimentConfig, ip_integration_block
+from benches import REPO_ROOT, catalog
+from sb_cli.flow import ExperimentConfig, ip_integration_block, stage_targets_block
 from sb_cli.recipes import NONE_RECIPE, resolve_recipe
 from sb_cli.registry import Registry
+from sb_cli.schedules import resolve_schedule
 from sb_cli.templates import render
 
 # Files written into each experiment directory
@@ -41,6 +42,10 @@ _SC_FLOW_FILE = "sc_flow.py"
 # experiment carry a schedule that does something else as well.
 _ESP_BACKEND = "esp"
 _ESP_RECIPE = "esp"
+
+# The only flow whose mkinc rule feeds transform.mlir to the transform
+# interpreter; the others never read the schedule at all.
+_TRANSFORMED_FLOW = "transformed"
 
 
 # Trailing "-000" style counter appended to auto-generated experiment names
@@ -254,6 +259,22 @@ def scaffold(config: ExperimentConfig, output_dir: str | None, base_dir: Path) -
         )
     recipe = resolve_recipe(config.instrumentation)
 
+    # Resolved here, beside the recipe, so an unavailable schedule fails before
+    # any directory is created. None means the 'simple' sentinel: fall back to
+    # the recipe's own schedule, or the no-op template.
+    schedule_path = resolve_schedule(
+        config.default_ts,
+        benchmark=bench.name if bench is not None else None,
+        dataset=config.dataset,
+        instrumentation=config.instrumentation,
+    )
+    if schedule_path is not None and config.flow != _TRANSFORMED_FLOW:
+        print(
+            f"[sb-cli] WARNING: --default_ts '{config.default_ts}' only takes "
+            f"effect with --flow {_TRANSFORMED_FLOW}; '{config.flow}' never reads "
+            "transform.mlir."
+        )
+
     ts = _timestamp(base_dir)
     exp_dir = _create_experiment_dir(ts, base_dir)
     rel_path = f"experiments/{ts}"
@@ -278,6 +299,11 @@ def scaffold(config: ExperimentConfig, output_dir: str | None, base_dir: Path) -
         "instrumentation": config.instrumentation,
         "builder": config.builder,
         "ip_integration_block": ip_integration_block(recipe),
+        "default_ts": config.default_ts,
+        "scripts_dir": str(REPO_ROOT / "scripts"),
+        "stage_targets_block": stage_targets_block(
+            config.flow, config.backend, device=config.device
+        ),
         "created_at": created_at,
     }
 
@@ -307,19 +333,29 @@ def scaffold(config: ExperimentConfig, output_dir: str | None, base_dir: Path) -
         # Its docstring says `./sc_flow.py`, so make that true.
         sc_flow.chmod(sc_flow.stat().st_mode | 0o111)
 
-    # transform.mlir + IP files come from the selected recipe, or fall back to
-    # the no-op template when no instrumentation is requested.
-    if recipe is not None:
+    # transform.mlir comes from the selected schedule library, else the recipe's
+    # own schedule, else the no-op template.
+    if schedule_path is not None:
+        shutil.copyfile(schedule_path, exp_dir / "transform.mlir")
+        print(
+            f"[sb-cli] Transform schedule: '{config.default_ts}' ({schedule_path.name})"
+        )
+    elif recipe is not None:
         shutil.copyfile(recipe.transform_mlir, exp_dir / "transform.mlir")
+    else:
+        (exp_dir / "transform.mlir").write_text(
+            render("transform.mlir.tmpl", ctx), encoding="utf-8"
+        )
+
+    # IPs come from the recipe whichever schedule was chosen: a merged schedule
+    # calls the same instrumentation passes, so it needs the same Verilog and XML
+    # wired into Bambu.
+    if recipe is not None:
         note = "schedule only"
         if recipe.ip_dir.is_dir():
             shutil.copytree(recipe.ip_dir, exp_dir / "IPs")
             note = "IPs copied to IPs/"
         print(f"[sb-cli] Instrumentation recipe: '{recipe.name}' ({note})")
-    else:
-        (exp_dir / "transform.mlir").write_text(
-            render("transform.mlir.tmpl", ctx), encoding="utf-8"
-        )
 
     # Create symlink and register
     _create_symlink(exp_dir, output_dir, base_dir)

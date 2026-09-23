@@ -16,6 +16,7 @@ from pathlib import Path
 import benches
 from sb_cli.flow import BACKENDS, BUILDERS, FLOWS, STAGES
 from sb_cli.recipes import NONE_RECIPE, available_recipes
+from sb_cli.schedules import SIMPLE_SCHEDULE, available_schedules
 
 _DATASET_CHOICES = ["TEST", "MINI", "SMALL", "MEDIUM", "LARGE", "EXTRALARGE"]
 _DTYPE_CHOICES = ["float16", "float32", "float64"]
@@ -104,6 +105,16 @@ def _add_init_parser(
         default=NONE_RECIPE,
         choices=available_recipes(),
         help="Instrumentation recipe to integrate (default: none)",
+    )
+    p.add_argument(
+        "--default_ts",
+        default=SIMPLE_SCHEDULE,
+        choices=available_schedules(),
+        help=(
+            "Transform schedule library. 'simple' uses the schedule sb-cli "
+            "writes itself -- the recipe's, or a no-op; a library name uses its "
+            "pre-merged schedule for this kernel and dataset (default: simple)"
+        ),
     )
     p.add_argument(
         "--builder",
@@ -218,8 +229,15 @@ def main() -> None:
             stage=args.stage,
             instrumentation=args.instrumentation,
             builder=args.builder,
+            default_ts=args.default_ts,
         )
-        scaffold(config, args.output_dir, base_dir)
+        # An unknown recipe or an unavailable schedule is a usage error, so it
+        # reaches the user as a message rather than a traceback.
+        try:
+            scaffold(config, args.output_dir, base_dir)
+        except ValueError as exc:
+            print(f"[sb-cli] ERROR: {exc}")
+            raise SystemExit(1) from exc
 
     elif args.command == "fork":
         from sb_cli.fork import fork_experiment
