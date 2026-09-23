@@ -1,0 +1,87 @@
+module attributes {transform.with_named_sequence} {
+  transform.named_sequence @__transform_main(%arg0: !transform.any_op {transform.readonly}) {
+    // Match the convolution operation
+    %func_op = transform.structured.match ops{["func.func"]} in %arg0 : (!transform.any_op) -> !transform.any_op
+     
+    %linalg_ops = transform.collect_matching @match_linalg in %func_op : (!transform.any_op) -> !transform.any_op
+    transform.sodap.tag_ops %linalg_ops, "tag" : !transform.any_op
+
+    %generic1 = transform.structured.match attributes{uid = "tag_0"} in %arg0 : (!transform.any_op) -> !transform.any_op
+    %generic2 = transform.structured.match attributes{uid = "tag_1"} in %arg0 : (!transform.any_op) -> !transform.any_op
+    %generic3 = transform.structured.match attributes{uid = "tag_2"} in %arg0 : (!transform.any_op) -> !transform.any_op
+    %generic4 = transform.structured.match attributes{uid = "tag_3"} in %arg0 : (!transform.any_op) -> !transform.any_op
+    %generic5 = transform.structured.match attributes{uid = "tag_5"} in %arg0 : (!transform.any_op) -> !transform.any_op
+    %generic6 = transform.structured.match attributes{uid = "tag_6"} in %arg0 : (!transform.any_op) -> !transform.any_op
+    %generic7 = transform.structured.match attributes{uid = "tag_7"} in %arg0 : (!transform.any_op) -> !transform.any_op
+    %matmul1 = transform.structured.match attributes{uid = "tag_4"} in %arg0 : (!transform.any_op) -> !transform.any_op
+    %tiled_op1, %loops1:2 = transform.structured.tile_using_for %generic1 tile_sizes [10,10] : (!transform.any_op) -> (!transform.any_op, !transform.any_op, !transform.any_op)
+    %tiled_op2, %loops2:2 = transform.structured.tile_using_for %generic2 tile_sizes [10,10] : (!transform.any_op) -> (!transform.any_op, !transform.any_op, !transform.any_op)
+    %tiled_op3, %loops3:2 = transform.structured.tile_using_for %generic3 tile_sizes [10,10] : (!transform.any_op) -> (!transform.any_op, !transform.any_op, !transform.any_op)
+    %tiled_op4, %loops4:2 = transform.structured.tile_using_for %generic4 tile_sizes [10,10] : (!transform.any_op) -> (!transform.any_op, !transform.any_op, !transform.any_op)
+    %tiled_op5, %loops5:2 = transform.structured.tile_using_for %generic5 tile_sizes [10,10] : (!transform.any_op) -> (!transform.any_op, !transform.any_op, !transform.any_op)
+    %tiled_op6, %loops6:2 = transform.structured.tile_using_for %generic6 tile_sizes [10,10] : (!transform.any_op) -> (!transform.any_op, !transform.any_op, !transform.any_op)
+    %tiled_op7, %loops7:2 = transform.structured.tile_using_for %generic7 tile_sizes [10,10] : (!transform.any_op) -> (!transform.any_op, !transform.any_op, !transform.any_op)
+    %tiled_op8, %loops8:2 = transform.structured.tile_using_for %matmul1 tile_sizes [10,10] : (!transform.any_op) -> (!transform.any_op, !transform.any_op, !transform.any_op)
+
+    %func_op2 = transform.structured.match ops{["func.func"]} in %arg0 : (!transform.any_op) -> !transform.any_op
+    %lowered = transform.apply_registered_pass "convert-linalg-to-affine-loops" to %func_op2 : (!transform.any_op) -> !transform.any_op
+    
+    %4 = transform.apply_registered_pass "affine-data-copy-generate" to %lowered {options = "generate-dma=false fast-mem-space=0"} : (!transform.any_op) -> !transform.any_op
+    %5 = transform.apply_registered_pass "erase-buffer-deallocation" to %4 : (!transform.any_op) -> !transform.any_op
+    %2 = transform.apply_registered_pass "promote-buffers-to-stack" to %5 {options = "max-rank-of-allocated-memref=4 max-alloc-size-in-bytes=4096"} : (!transform.any_op) -> !transform.any_op
+
+    %affine_for_ops = transform.collect_matching @match_affinefors in %2 : (!transform.any_op) -> !transform.any_op
+    transform.sodap.tag_ops %affine_for_ops, "loop" : !transform.any_op
+
+    //full 0,1,2,3,4,5,6,7,12,13,15,16,17,18,19,20
+    %loop0 = transform.structured.match attributes{uid = "loop_0"} in %2 : (!transform.any_op) -> !transform.any_op
+    transform.loop.fullunroll %loop0 : !transform.any_op
+    %loop1 = transform.structured.match attributes{uid = "loop_1"} in %2 : (!transform.any_op) -> !transform.any_op
+    transform.loop.fullunroll %loop1 : !transform.any_op
+    %loop2 = transform.structured.match attributes{uid = "loop_2"} in %2 : (!transform.any_op) -> !transform.any_op
+    transform.loop.fullunroll %loop2 : !transform.any_op
+    %loop3 = transform.structured.match attributes{uid = "loop_3"} in %2 : (!transform.any_op) -> !transform.any_op
+    transform.loop.fullunroll %loop3 : !transform.any_op
+    %loop4 = transform.structured.match attributes{uid = "loop_4"} in %2 : (!transform.any_op) -> !transform.any_op
+    transform.loop.fullunroll %loop4 : !transform.any_op
+    %loop5 = transform.structured.match attributes{uid = "loop_5"} in %2 : (!transform.any_op) -> !transform.any_op
+    transform.loop.fullunroll %loop5 : !transform.any_op
+    %loop6 = transform.structured.match attributes{uid = "loop_6"} in %2 : (!transform.any_op) -> !transform.any_op
+    transform.loop.fullunroll %loop6 : !transform.any_op
+    %loop7 = transform.structured.match attributes{uid = "loop_7"} in %2 : (!transform.any_op) -> !transform.any_op
+    transform.loop.fullunroll %loop7 : !transform.any_op
+    %loop12 = transform.structured.match attributes{uid = "loop_12"} in %2 : (!transform.any_op) -> !transform.any_op
+    transform.loop.fullunroll %loop12 : !transform.any_op
+    %loop13 = transform.structured.match attributes{uid = "loop_13"} in %2 : (!transform.any_op) -> !transform.any_op
+    transform.loop.fullunroll %loop13 : !transform.any_op
+    %loop15 = transform.structured.match attributes{uid = "loop_15"} in %2 : (!transform.any_op) -> !transform.any_op
+    transform.loop.fullunroll %loop15 : !transform.any_op
+    %loop16 = transform.structured.match attributes{uid = "loop_16"} in %2 : (!transform.any_op) -> !transform.any_op
+    transform.loop.fullunroll %loop16 : !transform.any_op
+    %loop17 = transform.structured.match attributes{uid = "loop_17"} in %2 : (!transform.any_op) -> !transform.any_op
+    transform.loop.fullunroll %loop17 : !transform.any_op
+    %loop18 = transform.structured.match attributes{uid = "loop_18"} in %2 : (!transform.any_op) -> !transform.any_op
+    transform.loop.fullunroll %loop18 : !transform.any_op
+    %loop19 = transform.structured.match attributes{uid = "loop_19"} in %2 : (!transform.any_op) -> !transform.any_op
+    transform.loop.fullunroll %loop19 : !transform.any_op
+    %loop20 = transform.structured.match attributes{uid = "loop_20"} in %2 : (!transform.any_op) -> !transform.any_op
+    transform.loop.fullunroll %loop20 : !transform.any_op
+    //by 2: 8,10
+    %loop8 = transform.structured.match attributes{uid = "loop_8"} in %2 : (!transform.any_op) -> !transform.any_op
+    transform.loop.unroll %loop8 {factor = 2} : !transform.any_op
+    %loop10 = transform.structured.match attributes{uid = "loop_10"} in %2 : (!transform.any_op) -> !transform.any_op
+    transform.loop.unroll %loop10 {factor = 2} : !transform.any_op
+
+    %sroa = transform.apply_registered_pass "affine-scalrep" to %2 : (!transform.any_op) -> !transform.any_op
+    transform.yield
+  }
+  transform.named_sequence @match_affinefors(%arg0: !transform.any_op {transform.readonly}) -> !transform.any_op {
+    transform.match.operation_name %arg0 ["affine.for"] : !transform.any_op
+    transform.yield %arg0 : !transform.any_op
+  }
+
+  transform.named_sequence @match_linalg(%arg0: !transform.any_op {transform.readonly}) -> !transform.any_op {
+    transform.match.operation_name %arg0 ["linalg.matmul", "linalg.generic", "linalg.batch_matmul"] : !transform.any_op
+    transform.yield %arg0 : !transform.any_op
+  }
+}
