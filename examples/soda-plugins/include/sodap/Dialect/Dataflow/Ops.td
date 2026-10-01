@@ -114,6 +114,27 @@ def StreamWriteOp : DataflowOp<"stream_write", []> {
   let hasVerifier = 1;
 }
 
+def StreamPeekOp : DataflowOp<"stream_peek", []> {
+  let summary = "Peek on a stream channel";
+  let description = [{
+    Peek a value to a stream channel.
+
+    Example:
+
+    ```mlir
+    %v = dataflow.stream_read %c : (!dataflow.stream<f32, 1024>) -> f32
+    ```
+  }];
+
+  let arguments = (ins AnyStream:$channel);
+  let results = (outs Optional<AnyType>:$result);
+  let assemblyFormat = [{
+    $channel attr-dict `:` functional-type($channel, $result)
+  }];
+
+  // let hasVerifier = 1;
+}
+
 //===----------------------------------------------------------------------===//
 // Stage hierarchy operations
 //===----------------------------------------------------------------------===//
