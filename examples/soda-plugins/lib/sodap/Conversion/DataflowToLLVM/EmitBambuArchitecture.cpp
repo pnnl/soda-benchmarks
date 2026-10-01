@@ -86,8 +86,14 @@ static std::string xmlEscape(StringRef in) {
   return out;
 }
 
-static unsigned byteWidth(Type type) {
-  return (type.getIntOrFloatBitWidth() + 7) / 8;
+/// The scalar every parameter bottoms out in: the payload of a stream, the
+/// element of an array, or the argument itself.
+static Type scalarTypeOf(Type type) {
+  if (auto streamType = dyn_cast<StreamType>(type))
+    return streamType.getElementType();
+  if (auto memrefType = dyn_cast<MemRefType>(type))
+    return memrefType.getElementType();
+  return type;
 }
 
 /// One <parameter> plus the <bundle> it belongs to.
@@ -98,11 +104,15 @@ struct ParamInfo {
   /// so Bambu falls back to positional P<index> names and the XML has to
   /// match: anything else is rejected with "Not matched parameter name".
   std::string port;
-  /// Design-wide name of the connection. Bundle names are global, so two
-  /// modules sharing a buffer must agree on it and two unrelated buffers must
-  /// not collide -- which is why this is not the same string as `port`.
+  /// Name of the connection this parameter is wired to. Bambu names the RTL
+  /// ports of the top after `port` but names the testbench interface modules
+  /// after `bundle`, so on the top the two have to be the same string or the
+  /// two sides fail to connect with "Port <bundle>_TDATA not found in DUT".
+  /// Nothing forces them apart on a module, so they are kept equal there too.
   std::string bundle;
-  std::string bundleMode; // "fifo", "array", or "default" for scalars
+  /// "axis" on a stream of the top, "fifo" on an internal one, "array" for a
+  /// memref, "default" for a scalar.
+  std::string bundleMode;
   /// FIFO depth, straight from !dataflow.stream<T, N>. Emitted on the bundle
   /// of a stream and on nothing else.
   unsigned depth = 0;
@@ -126,12 +136,18 @@ struct EmitBambuArchitecture
   void runOnOperation() override;
 
 private:
-  /// Describes every parameter of `func`. `ports` maps an argument index to
-  /// the design-wide bundle name that argument was wired to; bundle names are
-  /// global in Bambu, so two functions sharing a buffer must agree on it.
-  SmallVector<ParamInfo>
-  describeParams(func::FuncOp func,
-                 const DenseMap<unsigned, std::string> &ports);
+  /// Describes every parameter of `func`.
+  SmallVector<ParamInfo> describeParams(func::FuncOp func);
+
+  std::string getBundleMode(BlockArgument arg);
+  unsigned getDepth(BlockArgument arg);
+  std::string getTypeName(BlockArgument arg);
+  std::string getOriginalTypeName(BlockArgument arg);
+  std::string getIncludes(BlockArgument arg);
+  unsigned byteWidth(Type type);
+  unsigned getSizeInBytes(BlockArgument arg);
+  std::string getArrayDims(BlockArgument arg);
+  int64_t getElemCount(BlockArgument arg);
 
   void emitFunction(llvm::raw_ostream &os, func::FuncOp func, bool isTop,
                     ArrayRef<ParamInfo> params);
@@ -140,81 +156,153 @@ private:
   std::string channelInclude;
 };
 
-SmallVector<ParamInfo> EmitBambuArchitecture::describeParams(
-    func::FuncOp func, const DenseMap<unsigned, std::string> &ports) {
+std::string EmitBambuArchitecture::getBundleMode(BlockArgument arg)
+{
+  // TODO: the interface a parameter asks for is not in its type. The same
+  // !dataflow.stream is an AXI-Stream port on the top, where Bambu wants
+  // mode="axis", and a FIFO between two modules, where it wants mode="fifo",
+  // so the guess below is wrong for every top-level stream. Read it from the
+  // argument instead, once the attribute exists:
+  //
+  //   auto func = cast<func::FuncOp>(arg.getOwner()->getParentOp());
+  //   auto index = arg.getArgNumber();
+  //   if (auto port = func.getArgAttrOfType<PortAttr>(index, "dataflow.port"))
+  //     return bambuModeName(port.getKind());   // STREAM -> "axis", MM -> "m_axi"
+  //
+  // and keep what follows as the fallback for an argument that carries none.
+  Type type = arg.getType();
+  return isa<StreamType>(type) ? "fifo"  :
+         isa<MemRefType>(type) ? "array" :
+         "default";
+}
+
+unsigned EmitBambuArchitecture::getDepth(BlockArgument arg)
+{
+  if(auto streamTy = dyn_cast<StreamType>(arg.getType()))
+  {
+    return streamTy.getDepth();
+  }
+  return 0;
+}
+
+std::string EmitBambuArchitecture::getTypeName(BlockArgument arg)
+{
+  Type type = arg.getType();
+  auto scalarName = bambuTypeName(scalarTypeOf(type));
+  if(isa<StreamType>(type))
+  {
+    // The very template ConvertDataflowToLLVM instantiates for this stream.
+    return "ac_channel<" + scalarName + ">&";
+  }
+  if(isa<MemRefType>(type))
+  {
+    // The lowering linearizes the indexing, so what the IR carries is a
+    // pointer to the first element whatever the rank.
+    return scalarName + "*";
+  }
+  return scalarName;
+}
+
+std::string EmitBambuArchitecture::getOriginalTypeName(BlockArgument arg)
+{
+  // Only an array of rank two or more is declared differently from the
+  // pointer the IR carries: "int32_t (*)[16]" for an int32_t[2][16].
+  auto memrefTy = dyn_cast<MemRefType>(arg.getType());
+  if(!memrefTy || memrefTy.getRank() < 2)
+  {
+    return getTypeName(arg);
+  }
+
+  std::string name = bambuTypeName(memrefTy.getElementType()) + " (*)";
+  llvm::raw_string_ostream rows(name);
+  for(auto extent : memrefTy.getShape().drop_front())
+  {
+    rows << "[" << extent << "]";
+  }
+  return name;
+}
+
+std::string EmitBambuArchitecture::getIncludes(BlockArgument arg)
+{
+  // Bambu has to see the ac_channel declaration to interface a stream; an
+  // array or a scalar needs no header.
+  return isa<StreamType>(arg.getType()) ? channelInclude : "";
+}
+
+unsigned EmitBambuArchitecture::byteWidth(Type type) {
+  return (type.getIntOrFloatBitWidth() + 7) / 8;
+}
+
+unsigned EmitBambuArchitecture::getSizeInBytes(BlockArgument arg)
+{
+  // The data behind the parameter: the whole array for an array, one payload
+  // for a stream or a scalar.
+  auto scalarBytes = byteWidth(scalarTypeOf(arg.getType()));
+  auto elemCount = getElemCount(arg);
+  return elemCount ? scalarBytes * elemCount : scalarBytes;
+}
+
+std::string EmitBambuArchitecture::getArrayDims(BlockArgument arg)
+{
+  auto memrefTy = dyn_cast<MemRefType>(arg.getType());
+  if(!memrefTy)
+  {
+    return "";
+  }
+
+  // One extent per dimension, "2,16" for a memref<2x16xi32>.
+  std::string dims;
+  llvm::raw_string_ostream os(dims);
+  llvm::interleave(memrefTy.getShape(), os, ",");
+  return dims;
+}
+
+int64_t EmitBambuArchitecture::getElemCount(BlockArgument arg)
+{
+  // Flat length, the product of the extents. Zero marks a parameter that is
+  // not an array, and is what keeps elem_count out of its <parameter>.
+  auto memrefTy = dyn_cast<MemRefType>(arg.getType());
+  return memrefTy ? memrefTy.getNumElements() : 0;
+}
+
+SmallVector<ParamInfo> EmitBambuArchitecture::describeParams(func::FuncOp func) {
   SmallVector<ParamInfo> params;
 
   for (auto [index, arg] : llvm::enumerate(func.getArguments())) {
-    ParamInfo info;
-    info.index = index;
-
-    info.port = ("P" + Twine(index)).str();
-
-    auto it = ports.find(index);
-    if (it != ports.end())
-      info.bundle = it->second;
-    else
-      // Values that never cross the top: scalar constants materialized in
-      // the caller. Qualify the name so it cannot collide with another
-      // module's.
-      info.bundle = (func.getName() + "_" + info.port).str();
-
-    // Every parameter bottoms out in a scalar: the payload of a stream, the
-    // element of an array, or the argument itself.
-    Type scalarType = arg.getType();
-    if (auto streamType = dyn_cast<StreamType>(scalarType))
-      scalarType = streamType.getElementType();
-    else if (auto memrefType = dyn_cast<MemRefType>(scalarType))
-      scalarType = memrefType.getElementType();
-
-    auto scalarName = bambuTypeName(scalarType);
-    if (scalarName.empty()) {
+    // Rejected here rather than in the helpers, which would otherwise have to
+    // answer for a type Bambu cannot interface at all.
+    if (bambuTypeName(scalarTypeOf(arg.getType())).empty()) {
       func.emitError() << "argument " << index << ": no Bambu typename for "
-                       << scalarType;
+                       << scalarTypeOf(arg.getType());
       signalPassFailure();
       continue;
     }
-    info.sizeInBytes = byteWidth(scalarType);
-
-    if (auto streamType = dyn_cast<StreamType>(arg.getType())) {
-      info.bundleMode = "fifo";
-      info.depth = streamType.getDepth();
-      info.typeName = "ac_channel<" + scalarName + ">&";
-      info.includes = channelInclude;
-    } else if (auto memrefType = dyn_cast<MemRefType>(arg.getType())) {
-      if (!memrefType.hasStaticShape()) {
-        func.emitError() << "argument " << index
-                         << " has a dynamic shape, which Bambu's array "
-                            "protocol cannot describe";
-        signalPassFailure();
-        continue;
-      }
-      info.bundleMode = "array";
-      info.typeName = scalarName + "*";
-      info.elemCount = memrefType.getNumElements();
-      info.sizeInBytes *= info.elemCount;
-
-      auto shape = memrefType.getShape();
-      llvm::raw_string_ostream dims(info.arrayDims);
-      llvm::interleave(shape, dims, ",");
-
-      if (shape.size() > 1) {
-        info.originalTypeName = scalarName + " (*)";
-        llvm::raw_string_ostream rows(info.originalTypeName);
-        for (auto extent : shape.drop_front())
-          rows << "[" << extent << "]";
-      }
-    } else {
-      // Bambu wants a bundle for every parameter, scalars included: without
-      // one it stops at "Missing parameter bundle name".
-      info.bundleMode = "default";
-      info.typeName = scalarName;
+    if (auto memrefType = dyn_cast<MemRefType>(arg.getType());
+        memrefType && !memrefType.hasStaticShape()) {
+      func.emitError() << "argument " << index
+                       << " has a dynamic shape, which Bambu's array "
+                          "protocol cannot describe";
+      signalPassFailure();
+      continue;
     }
 
-    // Only a multidimensional array declares itself differently from the
-    // pointer the IR carries.
-    if (info.originalTypeName.empty())
-      info.originalTypeName = info.typeName;
+    ParamInfo info;
+
+    // Bambu recovers source-level parameter names through its AST plugin,
+    // which does not run on LLVM IR input: what it sees here are the
+    // positional names, and the XML has to agree. Port and bundle are the
+    // same string because the top would not connect to its testbench
+    // otherwise, and nothing asks them to differ on a module.
+    info.index = index;
+    info.bundle = info.port = ("P" + Twine(index)).str();
+    info.bundleMode = getBundleMode(arg);
+    info.depth = getDepth(arg);
+    info.typeName = getTypeName(arg);
+    info.originalTypeName = getOriginalTypeName(arg);
+    info.includes = getIncludes(arg);
+    info.sizeInBytes = getSizeInBytes(arg);
+    info.arrayDims = getArrayDims(arg);
+    info.elemCount = getElemCount(arg);
 
     params.push_back(info);
   }
@@ -289,39 +377,6 @@ void EmitBambuArchitecture::runOnOperation() {
     return signalPassFailure();
   }
 
-  // Bundle names live in one design-wide namespace: two modules connected by
-  // the same buffer must name it identically, and two unrelated buffers must
-  // not collide. So names are minted once, at the top, and propagated to the
-  // callees through the call operands.
-  DenseMap<Value, std::string> portNames;
-  DenseMap<unsigned, std::string> topPorts;
-  for (auto [index, arg] : llvm::enumerate(top.getArguments())) {
-    auto name = ("arg" + Twine(index)).str();
-    portNames[arg] = name;
-    topPorts[index] = name;
-  }
-  // Internal FIFOs follow the "fifo_N" convention of the Vivado backend, so
-  // the two backends agree on port names for the same design.
-  unsigned fifoCounter = 0;
-  top.walk([&](StreamOp streamOp) {
-    portNames[streamOp.getChannel()] = ("fifo_" + Twine(fifoCounter++)).str();
-  });
-
-  DenseMap<StringRef, DenseMap<unsigned, std::string>> calleePorts;
-  SmallVector<func::FuncOp> callees;
-  top.walk([&](func::CallOp callOp) {
-    auto callee = module.lookupSymbol<func::FuncOp>(callOp.getCallee());
-    if (!callee)
-      return;
-    if (!llvm::is_contained(callees, callee))
-      callees.push_back(callee);
-    for (auto [index, operand] : llvm::enumerate(callOp.getOperands())) {
-      auto it = portNames.find(operand);
-      if (it != portNames.end())
-        calleePorts[callee.getName()][index] = it->second;
-    }
-  });
-
   std::error_code error;
   llvm::raw_fd_ostream file(xmlFileName, error);
   if (error) {
@@ -330,10 +385,13 @@ void EmitBambuArchitecture::runOnOperation() {
   }
 
   file << "<?xml version=\"1.0\"?>\n<module>\n";
-  emitFunction(file, top, /*isTop=*/true, describeParams(top, topPorts));
-  for (auto callee : callees)
-    emitFunction(file, callee, /*isTop=*/false,
-                 describeParams(callee, calleePorts[callee.getName()]));
+  for (auto func : module.getOps<func::FuncOp>()) {
+    if (func.isExternal())
+      continue;
+
+    bool isTop = func.getName() == topFunc;
+    emitFunction(file, func, isTop, describeParams(func));
+  }
   file << "</module>\n";
 }
 
