@@ -3,7 +3,7 @@ set -e
 
 echo "Installing or updating dev tools..."
 pushd /tmp
-curl -fsSL https://pixi.sh/install.sh | sh
+# pixi is provided by the soda image (/usr/local/bin/pixi)
 # curl -fsSL https://claude.ai/install.sh | bash
 popd
 echo "Completed."
