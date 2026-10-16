@@ -19,7 +19,7 @@ REPO_ROOT="$(cd "$HERE/../.." && pwd)"
 # --- knobs -----------------------------------------------------------------
 # BASE_DIR must match the one the runner scripts use: they read the job files
 # from it, and `parallel --resume` keys off the joblog stored beside them.
-BASE_DIR="${BASE_DIR:-$HOME/soda-runs/polybench-mini}"
+BASE_DIR="${BASE_DIR:-$HOME/soda-runs/polybench-mini-none-simple}"
 PIXI_CMD="${PIXI_CMD:-pixi run --manifest-path $REPO_ROOT/pixi.toml}"
 
 DATASET="${DATASET:-MINI}"        # alo_soda schedules exist for MINI only
@@ -29,10 +29,16 @@ FLOW="${FLOW:-transformed}"       # the only flow that reads transform.mlir
 BACKEND="${BACKEND:-bambu}"
 STAGE="${STAGE:-simulation}"
 
+# Available options
+# KERNELS=(atax bicg doitgen gemm gemver gesummv mvt symm syr2k syrk threemm trmm twomm)
+# DEVICES=(nangate45 xcu280-2Lfsvh2892-VVD)
+# INSTRUMENTATIONS=(none assert change-location change-location-exposed-ports hw-counters)
+# SCHEDULES=(simple alo_soda)
+
 KERNELS=(atax bicg doitgen gemm gemver gesummv mvt symm syr2k syrk threemm trmm twomm)
-DEVICES=(nangate45 xcu280-2Lfsvh2892-VVD)
-INSTRUMENTATIONS=(none assert change-location change-location-exposed-ports hw-counters)
-SCHEDULES=(simple alo_soda)
+DEVICES=(nangate45)
+INSTRUMENTATIONS=(none)
+SCHEDULES=(simple)
 
 # Only these reach OpenROAD. scripts/ll_to_verilog.sh writes an OpenROAD config
 # for asap7*/nangate45 and nothing else, and scripts/to_copy/ carries no Xilinx

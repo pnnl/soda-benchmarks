@@ -80,6 +80,76 @@ reorder or hand-edit a job file between runs.
 `experiments/registry.py` and creates a symlink, so parallelising it would race
 both.
 
+## Collecting results and building the report
+
+`results/` holds one directory per campaign (e.g. `mini-none-simple`,
+`mini-none-alo_soda`) and an `index.html` report comparing them. The scripts
+live in `results/tools/`:
+
+```bash
+cd results
+tools/collect.sh $HOME/soda-runs/polybench-mini-none-simple mini-none-simple
+tools/collect.sh $HOME/soda-runs/polybench-mini-none        mini-none-alo_soda
+pixi run --manifest-path ../../../pixi.toml python tools/parse_logs.py .    # -> data.json
+pixi run --manifest-path ../../../pixi.toml python tools/build_report.py .  # -> index.html
+```
+
+| Script | Does |
+|---|---|
+| `collect.sh <campaign> <dest> [--with-layout]` | Copies the joblogs, each experiment's `build-*.log`, the OpenROAD `reports/.../base` (`.rpt`, `synth_stat.txt`, layout PNGs) and the per-stage ORFS metrics JSON. `--with-layout` also copies `.odb`/`.gds`/`6_final.v`, which the report does not need. |
+| `parse_logs.py <results> [config ...]` | Streams every log into `data.json`. Defaults to every directory holding a `jobs-*.joblog`. Stdlib only. |
+| `build_report.py <results>` | Inlines `data.json` into `tools/report_template.html` and writes `index.html`. |
+
+`index.html` opens straight from disk (the data is inlined; Chart.js comes from
+cdnjs). Layout images are linked relatively, so keep it in `results/`.
+
+Each campaign is collected as:
+
+```
+results/<config>/
+  jobs-simulation.joblog  jobs-synthesis.joblog  jobs-*.txt
+  logs/<kernel>/
+    build-simulation.log   # Bambu HLS + Verilator: cycles, FFs, est. area/Fmax, FU summary
+    build-gds.log          # Yosys + OpenROAD: per-step elapsed time and peak memory, errors
+    base/                  # 6_finish.rpt (slack, power), synth_stat.txt (cell area), *.webp.png
+    metrics/<stage>.json   # ORFS metrics, 2_1_floorplan.json ... 6_report.json
+```
+
+### Where each number comes from
+
+| Report section | Source |
+|---|---|
+| Job status | `build-*.log`: a sim run is ok when it prints `Total cycles`; a GDS run fails on `[ERROR`, `Error:` or a `make *** Error`, and the step that failed is taken from `Command exited with non-zero status`. |
+| Job time / timeline | `jobs-*.joblog` (`Starttime`, `JobRuntime`). |
+| Cycles, flip-flops, Bambu resources | `build-simulation.log`, section for `forward_kernel`. |
+| Cell area | `base/synth_stat.txt` (`Chip area for module`). |
+| Slack, power | `base/6_finish.rpt`. |
+| ORFS metrics (instance count, explorer) | `metrics/<stage>.json`. |
+| Layout die size and ratio | `design__die__area`, `design__instance__area__stdcell` and `design__instance__utilization` from `6_report.json`, or from the last stage reached. The side length is √area, assuming a square die. |
+| Flow step time and memory | the `Elapsed time: … Peak memory:` line after each ORFS step in `build-gds.log`. Unlike the summary table ORFS prints at the end, this also covers runs that failed. |
+
+**Do not rely on the joblog alone to tell whether a job worked.** In
+`mini-none-alo_soda`, syrk's `make gds` failed in global routing
+(`GRT-0116`, after 197 h and 92 GB) but its joblog row says `Exitval 0`. The
+report reads status from the logs.
+
+### ORFS metrics JSON
+
+OpenROAD writes `logs/nangate45/forward_kernel/base/<stage>.json` after each
+stage. Every stage uses one schema: the keys are prefixed with the stage name
+(`floorplan__`, `globalplace__`, `placeopt__`, `detailedplace__`, `cts__`,
+`globalroute__`, `detailedroute__`, `finish__`) and cover instance count/area,
+utilization, die/core area, setup/hold slack and violation counts, power,
+wirelength, DRC errors per routing iteration, and warning/error counts. For
+example, `finish__design__instance__count` in `6_report.json` is the number of
+standard-cell instances without fill.
+
+They are the most convenient OpenROAD source. One parser covers every stage,
+and a run that fails later still keeps the stages it finished: syrk/alo_soda
+stops at `5_1_grt.json`, and the report falls back to its CTS instance count.
+The report's metric explorer can plot any numeric key at any stage for every
+configuration, and trace one metric across the stages for one kernel.
+
 ## `polybench_mini_TS/`
 
 The upstream DSE output these runs came from, kept for provenance. It is not

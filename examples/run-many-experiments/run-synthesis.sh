@@ -19,7 +19,7 @@ set -euo pipefail
 
 BASE_DIR="${BASE_DIR:-$HOME/soda-runs/polybench-mini}"   # must match setup.sh
 # OpenROAD parallelises internally, so keep this lower than the simulation run.
-JOBS="${JOBS:-2}"
+JOBS="${JOBS:-4}"
 
 JOBFILE="$BASE_DIR/jobs-synthesis.txt"
 JOBLOG="$BASE_DIR/jobs-synthesis.joblog"
