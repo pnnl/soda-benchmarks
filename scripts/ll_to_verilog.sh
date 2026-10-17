@@ -109,6 +109,30 @@ bambu -v3 --print-dot \
 
 cp forward_kernel.v 06_verilog.v
 
+
+# TODO: This is required for different runs of change location with exposed ports
+# Optional per-recipe testbench patch hook.
+#
+# Bambu is invoked with --simulate, so it generates *and* runs the Verilator
+# simulation in one shot; there is no seam between the two. A recipe that needs
+# to drive a signal the generated testbench leaves unconnected (for example an
+# is_global/is_extern port exposed on the top level) can ship an executable
+# IPs/patch_tb.sh. It is run here, after generation, and the standalone
+# simulate script Bambu also emits is then re-run so the patch takes effect.
+# if [ "$BAMBU_RUN_SIMULATION" = "true" ] && [ -n "$IPDIR" ] && [ -x "$IPDIR/patch_tb.sh" ]; then
+#   echo "[ll_to_verilog] Applying testbench patch hook: $IPDIR/patch_tb.sh"
+#   "$IPDIR/patch_tb.sh" "$PWD" || { echo "Error: patch_tb.sh failed." >&2; exit 1; }
+#   if [ -x ./simulate_forward_kernel.sh ]; then
+#     echo "[ll_to_verilog] Re-running simulation with the patched testbench."
+#     # `set -e -o pipefail` at the top of this script aborts here if the re-run
+#     # fails, so the pre-patch results are never reported as the patched ones.
+#     ./simulate_forward_kernel.sh 2>&1 | tee -a bambu-log
+#   else
+#     echo "Error: simulate_forward_kernel.sh not found; cannot re-run simulation." >&2
+#     exit 1
+#   fi
+# fi
+
 # If simulation was requested, copy results from results.txt to 07_results.txt
 if [ "$BAMBU_RUN_SIMULATION" = "true" ]; then
   # Newer bambu writes the same timing data to bambu_time_simulation.txt
