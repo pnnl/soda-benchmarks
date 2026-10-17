@@ -29,14 +29,14 @@ module @transforms attributes {transform.with_named_sequence} {
       transform.loop.fullunroll %loop6 : !transform.any_op
       %loop7 = transform.structured.match attributes{uid = "loop_7"} in %2 : (!transform.any_op) -> !transform.any_op
       transform.loop.fullunroll %loop7 : !transform.any_op
+      %loop18 = transform.structured.match attributes{uid = "loop_18"} in %2 : (!transform.any_op) -> !transform.any_op
+      transform.loop.fullunroll %loop18 : !transform.any_op
+      %loop19 = transform.structured.match attributes{uid = "loop_19"} in %2 : (!transform.any_op) -> !transform.any_op
+      transform.loop.fullunroll %loop19 : !transform.any_op
+      %loop20 = transform.structured.match attributes{uid = "loop_20"} in %2 : (!transform.any_op) -> !transform.any_op
+      transform.loop.fullunroll %loop20 : !transform.any_op
       %loop21 = transform.structured.match attributes{uid = "loop_21"} in %2 : (!transform.any_op) -> !transform.any_op
       transform.loop.fullunroll %loop21 : !transform.any_op
-      %loop22 = transform.structured.match attributes{uid = "loop_22"} in %2 : (!transform.any_op) -> !transform.any_op
-      transform.loop.fullunroll %loop22 : !transform.any_op
-      %loop23 = transform.structured.match attributes{uid = "loop_23"} in %2 : (!transform.any_op) -> !transform.any_op
-      transform.loop.fullunroll %loop23 : !transform.any_op
-      %loop24 = transform.structured.match attributes{uid = "loop_24"} in %2 : (!transform.any_op) -> !transform.any_op
-      transform.loop.fullunroll %loop24 : !transform.any_op
       
       %loop3 = transform.structured.match attributes{uid = "loop_3"} in %2 : (!transform.any_op) -> !transform.any_op
       transform.loop.unroll %loop3 {factor = 2} : !transform.any_op
@@ -46,12 +46,8 @@ module @transforms attributes {transform.with_named_sequence} {
       transform.loop.unroll %loop10 {factor = 2} : !transform.any_op
       %loop12 = transform.structured.match attributes{uid = "loop_12"} in %2 : (!transform.any_op) -> !transform.any_op
       transform.loop.unroll %loop12 {factor = 2} : !transform.any_op
-      %loop19 = transform.structured.match attributes{uid = "loop_19"} in %2 : (!transform.any_op) -> !transform.any_op
-      transform.loop.unroll %loop19 {factor = 2} : !transform.any_op
-      %loop20 = transform.structured.match attributes{uid = "loop_20"} in %2 : (!transform.any_op) -> !transform.any_op
-      transform.loop.unroll %loop20 {factor = 2} : !transform.any_op
-      %loop25 = transform.structured.match attributes{uid = "loop_25"} in %2 : (!transform.any_op) -> !transform.any_op
-      transform.loop.unroll %loop25 {factor = 2} : !transform.any_op
+      %loop17 = transform.structured.match attributes{uid = "loop_17"} in %2 : (!transform.any_op) -> !transform.any_op
+      transform.loop.unroll %loop17 {factor = 2} : !transform.any_op
       
 
       // Apply the scalrep pass.
