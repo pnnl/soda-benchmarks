@@ -17,6 +17,14 @@ func.func @stream_read_type_mismatch(%c: !dataflow.stream<f32, 8>) {
 
 // -----
 
+func.func @stream_peek_type_mismatch(%c: !dataflow.stream<f32, 8>) {
+  // expected-error @+1 {{result type doesn't align with channel type}}
+  %r = dataflow.stream_peek %c : (!dataflow.stream<f32, 8>) -> i32
+  return
+}
+
+// -----
+
 func.func @stream_write_type_mismatch(%c: !dataflow.stream<f32, 8>, %v: i32) {
   // expected-error @+1 {{value type doesn't align with channel type}}
   dataflow.stream_write %c, %v : <f32, 8>, i32

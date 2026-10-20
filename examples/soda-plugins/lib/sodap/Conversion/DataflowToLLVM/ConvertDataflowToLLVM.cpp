@@ -208,9 +208,10 @@ ConvertDataflowToLLVM::buildSpecializations(ArrayRef<Type> elementTypes) {
          << " __df_read_" << id << "(C_" << id << " *p) { return p->read(); }\n"
          << "extern \"C\" __attribute__((always_inline)) void __df_write_" << id
          << "(C_" << id << " *p, " << bambuTypeNameStr
-         << " v) { p->write(v); }\n\n"
+         << " v) { p->write(v); }\n"
          << "extern \"C\" __attribute__((always_inline)) " << bambuTypeNameStr
-         << " __df_peek_" << id << "(C_" << id << " *p) { return p->peek(); }\n";
+         << " __df_peek_" << id << "(C_" << id
+         << " *p) { return p->peek(); }\n\n";
     }
   }
 
@@ -401,17 +402,11 @@ void ConvertDataflowToLLVM::runOnOperation() {
       auto call = builder.create<LLVM::CallOp>(
           loc, getOrInsertFunc(info.peekSymbol, info.peekType),
           ValueRange{peekOp.getChannel()});
-      // The result is optional: an absent one means the peeked value is
-      // dropped, but the call still has to happen.
-      if (auto result = peekOp.getResult()) {
-        Value payload = call.getResult();
-        // A plain type travels as itself, so this is normally a no-op; it
-        // stays for the element types whose payload is narrower than their
-        // object representation.
-        if (payload.getType() != elementType)
-          payload = builder.create<LLVM::BitcastOp>(loc, elementType, payload);
-        result.replaceAllUsesWith(payload);
-      }
+      Value payload = call.getResult();
+      // Same payload fix-up as stream_read.
+      if (payload.getType() != elementType)
+        payload = builder.create<LLVM::BitcastOp>(loc, elementType, payload);
+      peekOp.getResult().replaceAllUsesWith(payload);
       toErase.push_back(op);
       return;
     }

@@ -23,6 +23,14 @@ func.func @stream_read_dropped(%c: !dataflow.stream<i32, 4>) {
   return
 }
 
+// A stream_peek reads the front value without popping it.
+// CHECK-LABEL: func.func @stream_peek
+func.func @stream_peek(%c: !dataflow.stream<i32, 4>) -> i32 {
+  // CHECK: %{{.*}} = dataflow.stream_peek %{{.*}} : (!dataflow.stream<i32, 4>) -> i32
+  %r = dataflow.stream_peek %c : (!dataflow.stream<i32, 4>) -> i32
+  return %r : i32
+}
+
 // Stream of a non-scalar element type.
 // CHECK-LABEL: func.func @stream_of_vector
 func.func @stream_of_vector(%c: !dataflow.stream<vector<4xf32>, 16>) {
