@@ -52,9 +52,9 @@ void mlir::sodap::registerDataflowToLLVMPipeline() {
       [](OpPassManager &pm, const DataflowToLLVMPipelineOptions &opts) {
         // Must run first: it needs the stream types to tell a FIFO from an
         // array, and the next pass erases them.
-        pm.addPass(createEmitBambuArchitecture(
-            {opts.archFile, opts.topFunc, opts.includePandaPath,
-             opts.writeToTerminal}));
+        pm.addPass(createEmitBambuArchitecture({opts.archFile, opts.topFunc,
+                                                opts.includePandaPath,
+                                                opts.writeToTerminal}));
         pm.addPass(
             createConvertDataflowToLLVM({opts.clangxx, opts.includePandaPath}));
 
