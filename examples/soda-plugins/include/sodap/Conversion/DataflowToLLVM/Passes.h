@@ -12,8 +12,8 @@
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Pass/Pass.h"
-#include "sodap/Dialect/Dataflow/Dataflow.h"
 #include "sodap/Config.h"
+#include "sodap/Dialect/Dataflow/Dataflow.h"
 
 #include <memory>
 #include <string>
