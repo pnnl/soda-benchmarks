@@ -111,8 +111,8 @@ struct ParamInfo {
   /// two sides fail to connect with "Port <bundle>_TDATA not found in DUT".
   /// Nothing forces them apart on a module, so they are kept equal there too.
   std::string bundle;
-  /// "axis" on a stream of the top, "fifo" on an internal one, "array" for a
-  /// memref, "default" for a scalar.
+  /// "fifo" for a stream, "array" for a memref, "default" for a scalar. See
+  /// getBundleMode for why a stream of the top should become "axis".
   std::string bundleMode;
   /// FIFO depth, straight from !dataflow.stream<T, N>. Emitted on the bundle
   /// of a stream and on nothing else.
@@ -157,8 +157,7 @@ private:
   std::string channelInclude;
 };
 
-std::string EmitBambuArchitecture::getBundleMode(BlockArgument arg)
-{
+std::string EmitBambuArchitecture::getBundleMode(BlockArgument arg) {
   // TODO: the interface a parameter asks for is not in its type. The same
   // !dataflow.stream is an AXI-Stream port on the top, where Bambu wants
   // mode="axis", and a FIFO between two modules, where it wants mode="fifo",
@@ -168,35 +167,30 @@ std::string EmitBambuArchitecture::getBundleMode(BlockArgument arg)
   //   auto func = cast<func::FuncOp>(arg.getOwner()->getParentOp());
   //   auto index = arg.getArgNumber();
   //   if (auto port = func.getArgAttrOfType<PortAttr>(index, "dataflow.port"))
-  //     return bambuModeName(port.getKind());   // STREAM -> "axis", MM -> "m_axi"
+  //     return bambuModeName(port.getKind()); // STREAM: axis, MM: m_axi
   //
   // and keep what follows as the fallback for an argument that carries none.
   Type type = arg.getType();
-  return isa<StreamType>(type) ? "fifo"  :
-         isa<MemRefType>(type) ? "array" :
-         "default";
+  return isa<StreamType>(type)   ? "fifo"
+         : isa<MemRefType>(type) ? "array"
+                                 : "default";
 }
 
-unsigned EmitBambuArchitecture::getDepth(BlockArgument arg)
-{
-  if(auto streamTy = dyn_cast<StreamType>(arg.getType()))
-  {
+unsigned EmitBambuArchitecture::getDepth(BlockArgument arg) {
+  if (auto streamTy = dyn_cast<StreamType>(arg.getType())) {
     return streamTy.getDepth();
   }
   return 0;
 }
 
-std::string EmitBambuArchitecture::getTypeName(BlockArgument arg)
-{
+std::string EmitBambuArchitecture::getTypeName(BlockArgument arg) {
   Type type = arg.getType();
   auto scalarName = bambuTypeName(scalarTypeOf(type));
-  if(isa<StreamType>(type))
-  {
+  if (isa<StreamType>(type)) {
     // The very template ConvertDataflowToLLVM instantiates for this stream.
     return "ac_channel<" + scalarName + ">&";
   }
-  if(isa<MemRefType>(type))
-  {
+  if (isa<MemRefType>(type)) {
     // The lowering linearizes the indexing, so what the IR carries is a
     // pointer to the first element whatever the rank.
     return scalarName + "*";
@@ -204,27 +198,23 @@ std::string EmitBambuArchitecture::getTypeName(BlockArgument arg)
   return scalarName;
 }
 
-std::string EmitBambuArchitecture::getOriginalTypeName(BlockArgument arg)
-{
+std::string EmitBambuArchitecture::getOriginalTypeName(BlockArgument arg) {
   // Only an array of rank two or more is declared differently from the
   // pointer the IR carries: "int32_t (*)[16]" for an int32_t[2][16].
   auto memrefTy = dyn_cast<MemRefType>(arg.getType());
-  if(!memrefTy || memrefTy.getRank() < 2)
-  {
+  if (!memrefTy || memrefTy.getRank() < 2) {
     return getTypeName(arg);
   }
 
   std::string name = bambuTypeName(memrefTy.getElementType()) + " (*)";
   llvm::raw_string_ostream rows(name);
-  for(auto extent : memrefTy.getShape().drop_front())
-  {
+  for (auto extent : memrefTy.getShape().drop_front()) {
     rows << "[" << extent << "]";
   }
   return name;
 }
 
-std::string EmitBambuArchitecture::getIncludes(BlockArgument arg)
-{
+std::string EmitBambuArchitecture::getIncludes(BlockArgument arg) {
   // Bambu has to see the ac_channel declaration to interface a stream; an
   // array or a scalar needs no header.
   return isa<StreamType>(arg.getType()) ? channelInclude : "";
@@ -234,8 +224,7 @@ unsigned EmitBambuArchitecture::byteWidth(Type type) {
   return (type.getIntOrFloatBitWidth() + 7) / 8;
 }
 
-unsigned EmitBambuArchitecture::getSizeInBytes(BlockArgument arg)
-{
+unsigned EmitBambuArchitecture::getSizeInBytes(BlockArgument arg) {
   // The data behind the parameter: the whole array for an array, one payload
   // for a stream or a scalar.
   auto scalarBytes = byteWidth(scalarTypeOf(arg.getType()));
@@ -243,11 +232,9 @@ unsigned EmitBambuArchitecture::getSizeInBytes(BlockArgument arg)
   return elemCount ? scalarBytes * elemCount : scalarBytes;
 }
 
-std::string EmitBambuArchitecture::getArrayDims(BlockArgument arg)
-{
+std::string EmitBambuArchitecture::getArrayDims(BlockArgument arg) {
   auto memrefTy = dyn_cast<MemRefType>(arg.getType());
-  if(!memrefTy)
-  {
+  if (!memrefTy) {
     return "";
   }
 
@@ -258,15 +245,15 @@ std::string EmitBambuArchitecture::getArrayDims(BlockArgument arg)
   return dims;
 }
 
-int64_t EmitBambuArchitecture::getElemCount(BlockArgument arg)
-{
+int64_t EmitBambuArchitecture::getElemCount(BlockArgument arg) {
   // Flat length, the product of the extents. Zero marks a parameter that is
   // not an array, and is what keeps elem_count out of its <parameter>.
   auto memrefTy = dyn_cast<MemRefType>(arg.getType());
   return memrefTy ? memrefTy.getNumElements() : 0;
 }
 
-SmallVector<ParamInfo> EmitBambuArchitecture::describeParams(func::FuncOp func) {
+SmallVector<ParamInfo>
+EmitBambuArchitecture::describeParams(func::FuncOp func) {
   SmallVector<ParamInfo> params;
 
   for (auto [index, arg] : llvm::enumerate(func.getArguments())) {
