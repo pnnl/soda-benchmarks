@@ -39,8 +39,9 @@ def EmitBambuArchitecture :
   let summary = "Emit the Bambu --architecture-xml description of the design";
   let description = [{
     Must run while the stream types are still present. Emits one <function>
-    per node: the top as dataflow_top, every callee as dataflow_module, with a
-    fifo bundle for every stream and an array bundle for every memref.
+    per non-external func.func: the top as dataflow_top, the rest as
+    dataflow_module. Each parameter gets a positional bundle P<index>: fifo
+    for a stream, array for a memref, default for a scalar.
   }];
   let options = [
     Option<"xmlFileName", "file", "std::string",

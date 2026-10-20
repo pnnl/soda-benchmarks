@@ -36,6 +36,7 @@
 // CPP-NEXT: extern "C" __attribute__((always_inline)) void __df_dtor_f32(C_f32 *p) { p->~C_f32(); }
 // CPP-NEXT: extern "C" __attribute__((always_inline)) float __df_read_f32(C_f32 *p) { return p->read(); }
 // CPP-NEXT: extern "C" __attribute__((always_inline)) void __df_write_f32(C_f32 *p, float v) { p->write(v); }
+// CPP-NEXT: extern "C" __attribute__((always_inline)) float __df_peek_f32(C_f32 *p) { return p->peek(); }
 // The design has two f32 channels, but one specialization serves both.
 // CPP-NOT:  using C_
 

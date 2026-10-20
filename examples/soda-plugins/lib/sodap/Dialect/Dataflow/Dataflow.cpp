@@ -48,7 +48,7 @@ void DataflowDialect::initialize() {
 }
 
 //===----------------------------------------------------------------------===//
-// StreamOp, StreamReadOp, and StreamWriteOp
+// StreamOp, StreamReadOp, StreamPeekOp, and StreamWriteOp
 //===----------------------------------------------------------------------===//
 
 LogicalResult StreamOp::verify() {
@@ -70,6 +70,13 @@ LogicalResult StreamReadOp::verify() {
     if (llvm::cast<StreamType>(getChannel().getType()).getElementType() !=
         getResult().getType())
       return emitOpError("result type doesn't align with channel type");
+  return success();
+}
+
+LogicalResult StreamPeekOp::verify() {
+  if (llvm::cast<StreamType>(getChannel().getType()).getElementType() !=
+      getResult().getType())
+    return emitOpError("result type doesn't align with channel type");
   return success();
 }
 

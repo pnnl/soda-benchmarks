@@ -21,13 +21,16 @@ func.func @forward(%arg0: memref<16xf32>, %arg1: memref<8x6xf32>,
     return
 }
 
-
+// Functions come out in module order. Every bundle is named after its
+// positional port, P<index>, in the top and in every module alike.
 // CHECK:      <function dataflow_module="1" inline="off" name="node0"
 // CHECK:        <bundle mode="array" name="P0">
 // CHECK-NEXT:   <bundle depth="8" mode="fifo" name="P1">
 // CHECK:      <parameter array_dims="2,3,4" bundle="P0" elem_count="24" {{.*}}original_typename="float (*)[3][4]" port="P0" size_in_bytes="96" typename="float*"
 
-
+// A rank-1 array declares itself as the plain pointer it decays to; rank 2
+// and up drop only the leading extent. i8 keeps size_in_bytes apart from
+// elem_count.
 // CHECK:      <function dataflow_top="1" inline="off" name="forward"
 // CHECK:      <parameter array_dims="16" bundle="P0" elem_count="16" {{.*}}original_typename="float*" {{.*}}size_in_bytes="64" typename="float*"
 // CHECK:      <parameter array_dims="8,6" bundle="P1" elem_count="48" {{.*}}original_typename="float (*)[6]" {{.*}}size_in_bytes="192" typename="float*"
