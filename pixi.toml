@@ -25,6 +25,7 @@ pytest-cov = ">=6.0,<7"
 mkdocs = "*"
 mkdocs-material = "*"
 ipykernel = "*"
+lit = "==19.1.7"
 
 # The repo itself, installed editable: this is what makes `benches` and `sb_cli`
 # importable. Both live in the one distribution declared by pyproject.toml.

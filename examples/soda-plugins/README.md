@@ -19,18 +19,27 @@ To build the plugins, run the following commands:
 ```sh
 mkdir build && cd build
 
-cmake -G Ninja .. \
+pixi run cmake -G Ninja .. \
   -DMLIR_DIR=/opt/llvm-project/lib/cmake/mlir \
-  -DLLVM_EXTERNAL_LIT=/workspaces/soda/builds/llvm-project/build/bin/llvm-lit
+  -DLLVM_EXTERNAL_LIT=$(pixi run which lit) \
+  -DSODAP_BAMBU_ROOT=/opt/panda
 
 cmake --build . --target SODAPlugin
 ```
 
-`SODAP_BAMBU_ROOT` can be specified to enable Bambu specific passes.
-To do that, add `-DSODAP_BAMBU_ROOT=<path/to/bambu>` (the directory holding `settings.sh`)
-when configuring the compilation build with cmake.
+`lit` comes from the pixi environment (see `pixi.toml`). Configure through
+`pixi run` so CMake picks the pixi Python, the one that can import `lit`.
+
+`SODAP_BAMBU_ROOT` enables the Bambu specific passes. It is the directory
+holding `settings.sh` (`/opt/panda` in the devcontainer).
 Without it the plugin still builds, with a warning, and the Bambu tests are
 reported as unsupported.
+
+To compile a single target, e.g. the passes library:
+
+```sh
+cmake --build . --target MLIRSODAP
+```
 
 
 ## Testing
