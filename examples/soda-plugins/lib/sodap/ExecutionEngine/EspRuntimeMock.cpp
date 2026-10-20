@@ -14,6 +14,7 @@
 
 #include "sodap/ExecutionEngine/ESPRuntime.h"
 
+#include <cstdlib>
 #include <iostream>
 
 namespace {
@@ -32,44 +33,41 @@ void printMemRef(const char *label, int64_t rank, void *ptr) {
 }
 } // namespace
 
+// Real, zeroed memory: with marshal=ir the generated loops write through the
+// handle, so it has to point somewhere.
 extern "C" int64_t esp_alloc_shared(int64_t total_bytes) {
   std::cout << "Called: " << __func__ << std::endl;
   std::cout << "\t"
             << "total_bytes=" << total_bytes << std::endl;
-  return 0; // opaque handle (mock)
+  return reinterpret_cast<int64_t>(std::calloc(total_bytes, 1));
 }
 
 extern "C" void esp_free_shared(int64_t mem_handle) {
   std::cout << "Called: " << __func__ << std::endl;
+  std::free(reinterpret_cast<void *>(mem_handle));
 }
 
 extern "C" void esp_float2fixed_f32(int64_t rank, void *ptr, int64_t mem_handle,
-                                    int64_t offset) {
+                                    int64_t offset, int64_t ld) {
   std::cout << "Called: " << __func__ << std::endl;
   printMemRef("src", rank, ptr);
   std::cout << "\t"
-            << "offset=" << offset << std::endl;
+            << "offset=" << offset << ", ld=" << ld << std::endl;
 }
 
 extern "C" void esp_fixed2float_f32(int64_t mem_handle, int64_t offset,
-                                    int64_t rank, void *ptr) {
+                                    int64_t ld, int64_t rank, void *ptr) {
   std::cout << "Called: " << __func__ << std::endl;
   printMemRef("dst", rank, ptr);
   std::cout << "\t"
-            << "offset=" << offset << std::endl;
+            << "offset=" << offset << ", ld=" << ld << std::endl;
 }
 
-extern "C" void esp_accel_cfg_regs(int64_t seq_len, int64_t indim,
-                                   int64_t outdim, int64_t off_in,
-                                   int64_t off_w, int64_t off_b,
-                                   int64_t off_o) {
+extern "C" void esp_accel_write_reg(uint32_t offset, uint32_t value) {
   std::cout << "Called: " << __func__ << std::endl;
   std::cout << "\t"
-            << "seq_len=" << seq_len << ", indim=" << indim
-            << ", outdim=" << outdim << std::endl;
-  std::cout << "\t"
-            << "off_in=" << off_in << ", off_w=" << off_w << ", off_b=" << off_b
-            << ", off_o=" << off_o << std::endl;
+            << "offset=0x" << std::hex << offset << std::dec
+            << ", value=" << value << std::endl;
 }
 
 extern "C" void esp_accel_start() {

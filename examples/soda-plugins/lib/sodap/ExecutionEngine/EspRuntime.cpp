@@ -6,29 +6,30 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// The hardware implementation of the runtime declared in ESPRuntime.h, driving
-// the FFN accelerator ("sld,ffn_sysc_catapult", device 0x074) over its
-// memory-mapped registers. EspRuntimeMock.cpp is the other implementation; the
-// two are interchangeable from the kernel's point of view, which is what lets
-// the cpu backend exercise the lowering on a workstation.
+// The hardware implementation of the runtime declared in ESPRuntime.h.
+// EspRuntimeMock.cpp is the other implementation; the two are interchangeable
+// from the kernel's point of view, which is what lets the cpu backend exercise
+// the lowering on a workstation.
+//
+// This runtime knows nothing about the accelerator it drives. It has no
+// register map, no notion of a vector length or a tile, and no idea what any
+// operand is for. The pass computes the layout and the register values; this
+// file allocates, copies with the stride it is told, writes the registers it
+// is told, and runs the ESP socket protocol -- probe, page table, flush, start,
+// wait -- which is the same for every accelerator ESP has ever had.
 //
 // It is built only inside an ESP checkout: <esp_accelerator.h> and
 // <esp_probe.h> come from ESP's baremetal support library, along with probe(),
-// aligned_malloc() and the register names. See ll_to_riscv.sh, which stages
+// aligned_malloc() and the register names. See link_esp_app.sh, which stages
 // this file into a buildable esp-app/ directory, and the CMake option
 // SODAP_ENABLE_ESP_RUNTIME.
-//
-// The register map and the shared-memory layout are the ones documented in
-// .specs/esp_invok.h and exercised by .specs/matmul_test.c; the platform setup
-// (page table, coherence, the "is there anything to flush" probe) follows
-// examples/bambu-esp-example/polybench_gemm/runtime/esp_gemm.c, which is a
-// working runtime measured on a VC707.
 //
 //===----------------------------------------------------------------------===//
 
 #include "sodap/ExecutionEngine/ESPRuntime.h"
 
 #include <cstdio>
+#include <cstddef>
 #include <cstdlib>
 
 extern "C" {
@@ -36,23 +37,20 @@ extern "C" {
 #include <esp_probe.h>
 }
 
+// ESP applications declare their own token type; esp_accelerator.h does not
+// provide one. Q16.16 in a 32-bit word.
+typedef int32_t token_t;
+
 namespace {
 
 // --- Accelerator identity ---------------------------------------------------
-constexpr unsigned kDevFFN = 0x074;
-constexpr const char *kNameFFN = "sld,ffn_sysc_catapult";
-
-// --- User-defined registers (esp_invok.h) -----------------------------------
-constexpr unsigned kFFNSeqLen = 0x58; // rows of the input / output   (M)
-constexpr unsigned kFFNInDim = 0x54;  // shared dimension             (K)
-constexpr unsigned kFFNOutDim = 0x50; // cols of the weight / output  (N)
-constexpr unsigned kFFNAddrI = 0x4c;  // element offset of the input
-constexpr unsigned kFFNAddrW = 0x48;  // element offset of the weights
-constexpr unsigned kFFNAddrB = 0x44;  // element offset of the bias
-constexpr unsigned kFFNAddrO = 0x40;  // element offset of the output
+// The one thing the runtime has to know: which device to probe for. Everything
+// else about the accelerator arrives through esp_accel_write_reg.
+constexpr unsigned kDevId = 0x074;
+constexpr const char *kDevName = "sld,ffn_sysc_catapult";
 
 // --- Fixed point ------------------------------------------------------------
-// Q16.16, matching matmul_test.c's FX_WL/FX_IL and the accelerator's datapath.
+// Q16.16, matching the accelerator's datapath.
 constexpr int kFxFracBits = 16;
 constexpr float kFxScale = static_cast<float>(1 << kFxFracBits);
 
@@ -84,8 +82,7 @@ EspState g_state;
 ///
 /// esp_flush() prints over the UART and probes for LLC/L2 devices on every
 /// call. On an SoC built without ESP caches both probes come back empty and the
-/// call does nothing but cost cycles, so ask once. (esp_gemm.c:68-79 measured
-/// this at ~576k cycles per invocation.)
+/// call does nothing but cost cycles, so ask once.
 bool cachesPresent() {
   struct esp_device *cdev = nullptr;
   int nllc = probe(&cdev, VENDOR_CACHE, DEVID_LLC_CACHE, DEVNAME_LLC_CACHE);
@@ -93,28 +90,75 @@ bool cachesPresent() {
   return nllc > 0 || nl2 > 0;
 }
 
+/// A memref seen as rows x cols, with the batch dimension folded into rows.
+/// The kernels this runtime serves have static contiguous shapes, so this is
+/// exact; `cols` is the innermost dimension and `rows` everything else.
+struct RowMajor {
+  const sodap::MemRefViewF32 view;
+  int64_t rows;
+  int64_t cols;
+  explicit RowMajor(int64_t rank, void *ptr)
+      : view(sodap::decodeMemRefF32(rank, ptr)) {
+    cols = (rank > 0) ? view.sizes[rank - 1] : 1;
+    rows = (cols > 0) ? view.numElements / cols : 0;
+  }
+};
+
 /// Reject a transfer that would run off the end of the shared buffer.
-///
-/// The offsets and the size come from two places that have to agree: the pass
-/// computed them from M, K and N (ignoring the batch dimension -- correct only
-/// while batch is 1, which is what TOSA gives these kernels), and the
-/// descriptor carries the operand's real element count. A batch of 2 shows up
-/// here as twice the elements the buffer was sized for, so check rather than
-/// corrupt memory.
-bool fitsInBuffer(const char *what, int64_t offset,
-                  const sodap::MemRefViewF32 &view) {
+bool fitsInBuffer(const char *what, int64_t offset, int64_t rows, int64_t ld,
+                  int64_t cols) {
   int64_t capacity = g_state.memSize / sizeof(token_t);
-  if (offset >= 0 && offset + view.numElements <= capacity)
+  int64_t last = (rows > 0) ? offset + (rows - 1) * ld + cols : offset;
+  if (offset >= 0 && ld >= cols && last <= capacity)
     return true;
-  std::printf(
-      "esp: %s of %lld elements at offset %lld overruns the %lld-element "
-      "shared buffer (batch > 1?)\n",
-      what, (long long)view.numElements, (long long)offset,
-      (long long)capacity);
+  std::printf("esp: %s of %lldx%lld (ld %lld) at offset %lld overruns the "
+              "%lld-element shared buffer\n",
+              what, (long long)rows, (long long)cols, (long long)ld,
+              (long long)offset, (long long)capacity);
   return false;
 }
 
 } // namespace
+
+// --- malloc for the generated kernel ---------------------------------------
+// The kernel calls malloc for the intermediates of whatever the pass left on
+// the CPU (for gemm: the alpha/beta epilogue). ESP's baremetal build is
+// -nostdlib and supplies only aligned_malloc(), which carves from the uncached
+// DMA region -- the wrong pool for CPU-side scratch, and a waste of the region
+// the accelerator needs. So provide a bump allocator: one static block and a
+// pointer that only moves forward. The generated code never frees, so that is
+// the whole allocator; MLIR over-allocates by its own alignment and aligns the
+// pointer itself, so 8-byte alignment is enough.
+//
+// The magic guard makes initialisation independent of whether .bss was zeroed:
+// malloc runs before any other entry point here, so it cannot rely on something
+// else having gone first. Only on the SoC -- on the host, libc's malloc serves.
+#ifdef __riscv
+namespace {
+constexpr unsigned long kBumpBytes = 64ul * 1024ul;
+constexpr unsigned long kBumpMagic = 0x45535042ul; // "ESPB"
+unsigned char g_bump[kBumpBytes];
+unsigned long g_bumpOff;
+unsigned long g_bumpMagic;
+} // namespace
+
+extern "C" void *malloc(std::size_t n) {
+  if (g_bumpMagic != kBumpMagic) {
+    g_bumpOff = 0;
+    g_bumpMagic = kBumpMagic;
+  }
+  n = (n + 7ul) & ~7ul;
+  if (g_bumpOff + n > kBumpBytes) {
+    std::printf("malloc: bump allocator exhausted (%lu of %lu bytes, "
+                "wanted %lu)\n",
+                g_bumpOff, kBumpBytes, (unsigned long)n);
+    return nullptr;
+  }
+  void *p = &g_bump[g_bumpOff];
+  g_bumpOff += n;
+  return p;
+}
+#endif // __riscv
 
 extern "C" int64_t esp_alloc_shared(int64_t total_bytes) {
   if (g_state.buf) {
@@ -123,9 +167,9 @@ extern "C" int64_t esp_alloc_shared(int64_t total_bytes) {
   }
 
   struct esp_device *devs = nullptr;
-  int ndev = probe(&devs, VENDOR_SLD, kDevFFN, kNameFFN);
+  int ndev = probe(&devs, VENDOR_SLD, kDevId, kDevName);
   if (ndev == 0) {
-    std::printf("esp_alloc_shared: %s not found\n", kNameFFN);
+    std::printf("esp_alloc_shared: %s not found\n", kDevName);
     return 0;
   }
   g_state.dev = &devs[0];
@@ -151,11 +195,12 @@ extern "C" int64_t esp_alloc_shared(int64_t total_bytes) {
   }
   g_state.memSize = memSize;
 
-  // Zeroed, and not merely allocated. The pass has no bias to offload, so it
-  // points FFN_ADDRB at the output region (ESPPasses.cpp: off_b == off_o); the
-  // accelerator still reads N bias words from there, and they have to be zero
-  // for C = A*B to come out right.
-  for (unsigned i = 0; i < memSize / sizeof(token_t); ++i)
+  // Zeroed, and not merely allocated: the pass leaves regions it never writes
+  // (the bias of a bias-less matmul, padding columns) and expects them to read
+  // as zero. Only the bytes the pass asked for -- the TLB rounding above is a
+  // DMA constraint, not something the accelerator will read.
+  for (unsigned i = 0; i < static_cast<unsigned>(total_bytes) / sizeof(token_t);
+       ++i)
     g_state.buf[i] = 0;
 
   g_state.ptable = static_cast<unsigned **>(
@@ -192,43 +237,39 @@ extern "C" void esp_free_shared(int64_t mem_handle) {
 }
 
 extern "C" void esp_float2fixed_f32(int64_t rank, void *ptr, int64_t mem_handle,
-                                    int64_t offset) {
+                                    int64_t offset, int64_t ld) {
   if (!g_state.buf)
     return;
-  sodap::MemRefViewF32 src = sodap::decodeMemRefF32(rank, ptr);
-  if (!fitsInBuffer("float2fixed", offset, src))
+  RowMajor src(rank, ptr);
+  if (!fitsInBuffer("float2fixed", offset, src.rows, ld, src.cols))
     return;
-  for (int64_t i = 0; i < src.numElements; ++i)
-    g_state.buf[offset + i] = static_cast<token_t>(src.data[i] * kFxScale);
+  for (int64_t r = 0; r < src.rows; ++r) {
+    const float *row = src.view.data + r * src.cols;
+    token_t *dst = g_state.buf + offset + r * ld;
+    for (int64_t c = 0; c < src.cols; ++c)
+      dst[c] = static_cast<token_t>(row[c] * kFxScale);
+  }
 }
 
 extern "C" void esp_fixed2float_f32(int64_t mem_handle, int64_t offset,
-                                    int64_t rank, void *ptr) {
+                                    int64_t ld, int64_t rank, void *ptr) {
   if (!g_state.buf)
     return;
-  sodap::MemRefViewF32 dst = sodap::decodeMemRefF32(rank, ptr);
-  if (!fitsInBuffer("fixed2float", offset, dst))
+  RowMajor dst(rank, ptr);
+  if (!fitsInBuffer("fixed2float", offset, dst.rows, ld, dst.cols))
     return;
-  for (int64_t i = 0; i < dst.numElements; ++i)
-    dst.data[i] = static_cast<float>(g_state.buf[offset + i]) / kFxScale;
+  for (int64_t r = 0; r < dst.rows; ++r) {
+    const token_t *row = g_state.buf + offset + r * ld;
+    float *out = dst.view.data + r * dst.cols;
+    for (int64_t c = 0; c < dst.cols; ++c)
+      out[c] = static_cast<float>(row[c]) / kFxScale;
+  }
 }
 
-// These memory mapped registers are tied to the the FFN accelerator
-extern "C" void esp_accel_cfg_regs(int64_t seq_len, int64_t indim,
-                                   int64_t outdim, int64_t off_in,
-                                   int64_t off_w, int64_t off_b,
-                                   int64_t off_o) {
+extern "C" void esp_accel_write_reg(uint32_t offset, uint32_t value) {
   if (!g_state.dev)
     return;
-  // Offsets are in token_t elements relative to the start of the buffer, not
-  // byte addresses -- the same units the pass computed them in.
-  iowrite32(g_state.dev, kFFNSeqLen, (unsigned)seq_len);
-  iowrite32(g_state.dev, kFFNInDim, (unsigned)indim);
-  iowrite32(g_state.dev, kFFNOutDim, (unsigned)outdim);
-  iowrite32(g_state.dev, kFFNAddrI, (unsigned)off_in);
-  iowrite32(g_state.dev, kFFNAddrW, (unsigned)off_w);
-  iowrite32(g_state.dev, kFFNAddrB, (unsigned)off_b);
-  iowrite32(g_state.dev, kFFNAddrO, (unsigned)off_o);
+  iowrite32(g_state.dev, offset, value);
 }
 
 extern "C" void esp_accel_start() {

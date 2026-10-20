@@ -1,0 +1,72 @@
+diff --git a/soft/ariane/common/bss_bounds.ld b/soft/ariane/common/bss_bounds.ld
+new file mode 100644
+--- /dev/null
++++ b/soft/ariane/common/bss_bounds.ld
+@@ -0,0 +1,14 @@
++/* Copyright (c) 2011-2026 Columbia University, System Level Design Group */
++/* SPDX-License-Identifier: Apache-2.0 */
++/*
++ * The Ariane baremetal crt.S (riscv-tests) never clears .bss, so zero-init
++ * statics boot as DRAM garbage (e.g. the baremetal malloc arena's `head`
++ * sentinel, or syscalls.c's cycle counters). This fragment grafts a _fbss
++ * marker at the START of the .bss region (right after .sdata, before
++ * .sbss/.bss) so the startup (syscalls.c _init) can zero [_fbss, _tls_data)
++ * exactly like the host/Linux C runtimes do.
++ *
++ * It is applied via  -Wl,-dT,test.ld  +  -T bss_bounds.ld  (see common_bare.mk):
++ * -dT makes test.ld the *default* script so INSERT can graft into it.
++ */
++SECTIONS { .bssmark : { PROVIDE(_fbss = .); } } INSERT BEFORE .sbss
+diff --git a/soft/ariane/common/syscalls.c b/soft/ariane/common/syscalls.c
+index 77de0002a..dd00cb49a 100644
+--- a/soft/ariane/common/syscalls.c
++++ b/soft/ariane/common/syscalls.c
+@@ -85,6 +85,20 @@ static void init_tls()
+
+ void _init(int cid, int nc)
+ {
++#ifdef ESP_BAREMETAL_BSS_CLEAR
++    /* Bare crt.S does not clear .bss; do it here (like the host/Linux C
++     * runtimes) so zero-init statics actually start at zero. Without this the
++     * baremetal malloc arena's `head` sentinel and the cycle counters below
++     * boot as garbage, and apps die before their first printf. Bounds: _fbss
++     * (start of .bss, from bss_bounds.ld) .. _tls_data (start of .tdata = end
++     * of .bss). Only core 0 clears; volatile store keeps it from becoming a
++     * memset() call under -nostdlib. */
++    if (cid == 0) {
++        extern char _fbss, _tls_data;   /* _fbss: start of .bss (bss_bounds.ld); _tls_data: end of .bss (.tdata start) */
++        volatile char *p = &_fbss;
++        while ((char *)p < &_tls_data) *p++ = 0;
++    }
++#endif
+     init_tls();
+     thread_entry(cid, nc);
+
+diff --git a/soft/common/drivers/baremetal/common_bare.mk b/soft/common/drivers/baremetal/common_bare.mk
+index baae80044..33bf52eb9 100644
+--- a/soft/common/drivers/baremetal/common_bare.mk
++++ b/soft/common/drivers/baremetal/common_bare.mk
+@@ -25,15 +25,22 @@ CFLAGS += -nostartfiles
+ LDFLAGS += -lgcc
+ LDFLAGS_RISCV = $(COMMON)/syscalls.c
+ LDFLAGS_RISCV += $(RISCV_TESTS)/benchmarks/common/crt.S
+-LDFLAGS_RISCV += -T $(RISCV_TESTS)/benchmarks/common/test.ld
+ OBJCPFLAGS :=
+ ifeq ("$(CPU_ARCH)", "ariane")
+ CFLAGS += -nostdlib
+ CROSS_COMPILE ?= riscv64-unknown-elf-
++# Bare crt.S never clears .bss, so zero-init statics boot as DRAM garbage (the
++# baremetal malloc arena's head sentinel, syscalls.c's cycle counters, ...).
++# Graft a _fbss marker at the start of .bss (bss_bounds.ld) via -dT/INSERT and
++# have syscalls.c _init zero .bss (guarded by -DESP_BAREMETAL_BSS_CLEAR).
++CFLAGS += -DESP_BAREMETAL_BSS_CLEAR
++LDFLAGS_RISCV += -Wl,-dT,$(RISCV_TESTS)/benchmarks/common/test.ld
++LDFLAGS_RISCV += -T $(COMMON)/bss_bounds.ld
+ else # ("$(CPU_ARCH)", "ibex")
+ CFLAGS += -march=rv32imc -mabi=ilp32
+ CFLAGS += -mstrict-align
+ LDFLAGS += -march=rv32imc -mabi=ilp32
+ CROSS_COMPILE ?= riscv32-unknown-elf-
++LDFLAGS_RISCV += -T $(RISCV_TESTS)/benchmarks/common/test.ld
+ endif
+ endif

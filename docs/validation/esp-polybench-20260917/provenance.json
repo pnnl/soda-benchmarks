@@ -1,0 +1,27 @@
+{
+  "date": "2026-09-17",
+  "soda_benchmarks_commit": "abac36b8cefe5638733dd677916e283cafa9b154",
+  "soda_opt_commit": "19377c05acd191f3ae4a639e3f827d3a0e533e00",
+  "container_image_id": "sha256:108c3a7602d6735158e131f576b4841a423b4657dd5681dcdfd12a01b8c37632",
+  "dataset": "MINI",
+  "dtype": "float32",
+  "absolute_tolerance": 0.001,
+  "local_bitstream_sha256": [
+    "f93f1ec08d81bc59f3f3224044d922c40831d1c0d4d613f675bd4848c7620863"
+  ],
+  "local_config_sha256": [
+    "ceb186983e5815fa2e440055d71f279ba363e41e4b17ff01ac1bd754bcb21941"
+  ],
+  "raw_captures": {
+    "polybench.log": "c954de4afdebcb81e95c3461de7a07005213de9d5cb971a570d2a2346df3cccc"
+  },
+  "full_log_reports": 39,
+  "earlier_reports_excluded": 11,
+  "full_suite_reports": 28,
+  "full_suite_passed": 25,
+  "full_suite_failed": 3,
+  "full_suite_start_line": 159,
+  "campaign_patch_sha256": "f4948a85bbe3de0f7688fce037e53c2cfa45c09a0cade9b9ec2e422a133f4791",
+  "campaign_driver_sha256": "2d911154ea2de43b4f460c554330dfd7cfde2f7e572b6617833500b8021c6ba7",
+  "scope": "Recorded local artifact hashes and manual UART capture, not independent attestation of programmed hardware. Full generated build trees and toolchain artifacts remain in the external campaign archive."
+}

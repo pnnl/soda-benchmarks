@@ -210,12 +210,45 @@ def LinalgBatchMatmulToESP : Pass<"sodap-linalg-batch-matmul-to-esp", "::mlir::M
 
     1. `esp_alloc_shared` — allocate shared memory buffer
     2. `esp_float2fixed_f32` — convert each input memref to fixed-point in shared mem
-    3. `esp_accel_cfg_regs` — configure accelerator registers with dimensions/offsets
+    3. `esp_accel_write_reg` — one call per accelerator register (offset, value)
     4. `esp_accel_start` — launch the accelerator
     5. `esp_accel_wait` — busy-wait for completion
     6. `esp_fixed2float_f32` — convert fixed-point output back to float
     7. `esp_free_shared` — free shared memory buffer
+
+    The pass owns the shared-memory layout. It pads the output dimension to a
+    multiple of `vec-len`, gives the bias its own region, and passes each
+    operand's leading dimension to the copy routines, so the runtime needs no
+    knowledge of the accelerator: it copies with the stride it is told and
+    writes the registers it is told.
+
+    With `marshal=ir`, steps 2 and 6 are not runtime calls but `linalg.generic`
+    ops over strided views (`memref.reinterpret_cast`) of the shared buffer,
+    which `esp_alloc_shared` then returns as a `memref<i32>`. The conversion
+    becomes ordinary IR that later transformations can fuse and optimize, and
+    the runtime no longer contains the token format.
+
+    With `profile`, the sequence is bracketed by `esp_prof_begin`/`esp_prof_end`
+    calls around the pack, accelerator and unpack phases, and -- when the block
+    holds a single matmul -- the rest of the block as the epilogue.
+
+    Operands must be rank-3 f32 memrefs with a statically known batch size of 1.
+    `marshal=ir` additionally requires static shapes and permits at most one
+    offload per function: its shared buffer stays live until the enclosing
+    block terminator. Use `marshal=runtime` for sequential offloads. Reentrant
+    offloads through calls while a shared buffer is live remain unsupported;
+    this pass does not perform interprocedural lifetime analysis.
   }];
+  let options = [
+    Option<"vecLen", "vec-len", "unsigned",
+           /*default=*/"8", "Accelerator vector length; outdim is padded to a multiple of it">,
+    Option<"profile", "profile", "bool",
+           /*default=*/"false", "Emit esp_prof_begin/end around pack, accel, unpack and epilogue">,
+    Option<"marshal", "marshal", "std::string",
+           /*default=*/"\"runtime\"",
+           "Where the float<->token conversion runs: 'runtime' (calls into the ESP runtime) "
+           "or 'ir' (linalg.generic over views of the shared buffer)">
+  ];
 }
 
 #endif // SODAP_PASS
