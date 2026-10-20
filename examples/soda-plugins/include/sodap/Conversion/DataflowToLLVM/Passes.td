@@ -51,7 +51,9 @@ def EmitBambuArchitecture :
     Option<"includePandaPath", "include-panda-path", "std::string",
            /*default=*/"SODAP_BAMBU_INCLUDE",
            "Directory holding ac_channel.h, named in the includes= of every "
-           "stream parameter">
+           "stream parameter">,
+    Option<"writeToTerminal", "write-to-terminal", "bool", /*default=*/"false",
+           "Print the XML to stdout instead of writing `file`">
   ];
   let dependentDialects = ["::mlir::sodap::dataflow::DataflowDialect"];
 }
