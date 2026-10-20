@@ -11,8 +11,8 @@
 // RUN: mlir-opt %S/Inputs/gemm_small.mlir \
 // RUN:     --load-dialect-plugin=%sodap_libs/SODAPlugin%shlibext \
 // RUN:     --load-pass-plugin=%sodap_libs/SODAPlugin%shlibext \
-// RUN:     --pass-pipeline="builtin.module(sodap-emit-bambu-architecture{file=%t.xml top-func=forward})"
-// RUN: FileCheck %s < %t.xml
+// RUN:     --pass-pipeline="builtin.module(sodap-emit-bambu-architecture{write-to-terminal=true top-func=forward})" \
+// RUN:     -o /dev/null | FileCheck %s
 
 // Functions come out in module order, the nodes as dataflow_module. Bundles
 // are positional (P<index>): streams are fifo, memrefs array, scalars default.

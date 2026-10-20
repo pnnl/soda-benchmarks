@@ -27,6 +27,10 @@ struct DataflowToLLVMPipelineOptions
   Option<std::string> archFile{
       *this, "arch-file", llvm::cl::init("architecture.xml"),
       llvm::cl::desc("Where to write the Bambu --architecture-xml file")};
+  Option<bool> writeToTerminal{
+      *this, "write-to-terminal", llvm::cl::init(false),
+      llvm::cl::desc("Print the --architecture-xml file to stdout instead of "
+                     "writing arch-file")};
   Option<std::string> clangxx{
       *this, "clangxx", llvm::cl::init(SODAP_BAMBU_CLANGXX),
       llvm::cl::desc("C++ compiler used to build the specialization unit")};
@@ -49,7 +53,8 @@ void mlir::sodap::registerDataflowToLLVMPipeline() {
         // Must run first: it needs the stream types to tell a FIFO from an
         // array, and the next pass erases them.
         pm.addPass(createEmitBambuArchitecture(
-            {opts.archFile, opts.topFunc, opts.includePandaPath}));
+            {opts.archFile, opts.topFunc, opts.includePandaPath,
+             opts.writeToTerminal}));
         pm.addPass(
             createConvertDataflowToLLVM({opts.clangxx, opts.includePandaPath}));
 

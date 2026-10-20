@@ -46,6 +46,7 @@
 #include "llvm/Support/Path.h"
 #include "llvm/Support/raw_ostream.h"
 
+#include <memory>
 #include <string>
 
 namespace mlir {
@@ -377,22 +378,27 @@ void EmitBambuArchitecture::runOnOperation() {
     return signalPassFailure();
   }
 
-  std::error_code error;
-  llvm::raw_fd_ostream file(xmlFileName, error);
-  if (error) {
-    module.emitError() << "cannot open '" << xmlFileName << "'";
-    return signalPassFailure();
+  // write-to-terminal wins over `file`: no file is opened at all.
+  std::unique_ptr<llvm::raw_fd_ostream> file;
+  if (!writeToTerminal) {
+    std::error_code error;
+    file = std::make_unique<llvm::raw_fd_ostream>(xmlFileName, error);
+    if (error) {
+      module.emitError() << "cannot open '" << xmlFileName << "'";
+      return signalPassFailure();
+    }
   }
+  llvm::raw_ostream &os = writeToTerminal ? llvm::outs() : *file;
 
-  file << "<?xml version=\"1.0\"?>\n<module>\n";
+  os << "<?xml version=\"1.0\"?>\n<module>\n";
   for (auto func : module.getOps<func::FuncOp>()) {
     if (func.isExternal())
       continue;
 
     bool isTop = func.getName() == topFunc;
-    emitFunction(file, func, isTop, describeParams(func));
+    emitFunction(os, func, isTop, describeParams(func));
   }
-  file << "</module>\n";
+  os << "</module>\n";
 }
 
 } // namespace

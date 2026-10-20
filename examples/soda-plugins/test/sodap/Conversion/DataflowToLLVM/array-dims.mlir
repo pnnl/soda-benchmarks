@@ -7,8 +7,8 @@
 
 // RUN: mlir-opt %s --load-dialect-plugin=%sodap_libs/SODAPlugin%shlibext \
 // RUN:     --load-pass-plugin=%sodap_libs/SODAPlugin%shlibext \
-// RUN:     --pass-pipeline="builtin.module(sodap-emit-bambu-architecture{file=%t.xml top-func=forward})"
-// RUN: FileCheck %s < %t.xml
+// RUN:     --pass-pipeline="builtin.module(sodap-emit-bambu-architecture{write-to-terminal=true top-func=forward})" \
+// RUN:     -o /dev/null | FileCheck %s
 
 func.func @node0(%arg0: memref<2x3x4xf32>, %arg1: !dataflow.stream<f32, 8>) {
     return

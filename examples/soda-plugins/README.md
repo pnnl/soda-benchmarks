@@ -65,5 +65,18 @@ mlir-opt \
   --load-pass-plugin=/workspaces/soda-benchmarks/examples/soda-plugins/build/lib/SODAPlugin.so \
   --load-dialect-plugin=/workspaces/soda-benchmarks/examples/soda-plugins/build/lib/SODAPlugin.so \
   --transform-interpreter \
-  /workspaces/soda-benchmarks/examples/soda-plugins/test/sodap/my-extension.mlir 
+  /workspaces/soda-benchmarks/examples/soda-plugins/test/sodap/my-extension.mlir
+```
+
+Passes that write report files take `write-to-terminal=true` to print to
+stdout instead, which is what the tests use. For example, the Bambu
+`--architecture-xml` description:
+
+```bash
+mlir-opt \
+  --load-pass-plugin=/workspaces/soda-benchmarks/examples/soda-plugins/build/lib/SODAPlugin.so \
+  --load-dialect-plugin=/workspaces/soda-benchmarks/examples/soda-plugins/build/lib/SODAPlugin.so \
+  --pass-pipeline="builtin.module(sodap-emit-bambu-architecture{top-func=forward write-to-terminal=true})" \
+  -o /dev/null \
+  /workspaces/soda-benchmarks/examples/soda-plugins/test/sodap/Conversion/DataflowToLLVM/Inputs/gemm_small.mlir
 ```
