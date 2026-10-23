@@ -41,7 +41,9 @@ def EmitBambuArchitecture :
     Must run while the stream types are still present. Emits one <function>
     per non-external func.func: the top as dataflow_top, the rest as
     dataflow_module. Each parameter gets a positional bundle P<index>: fifo
-    for a stream, array for a memref, default for a scalar.
+    for a stream, array for a memref, default for a scalar. A stream typed
+    `axis` (see sodap-dataflow-infer-top-interface) is an axis bundle on the
+    top and stays a fifo on the node it is passed to.
   }];
   let options = [
     Option<"xmlFileName", "file", "std::string",

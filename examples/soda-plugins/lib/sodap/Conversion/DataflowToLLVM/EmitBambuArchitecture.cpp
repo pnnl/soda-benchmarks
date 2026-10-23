@@ -22,6 +22,14 @@
 //   <parameter bundle="fifo_0" index="2" port="fifo_0" size_in_bytes="4"
 //              typename="ac_channel&lt;float&gt;&amp;" .../>
 //
+// A stream the type marks as axis (!dataflow.stream<T, D, axis>) is a port
+// of the design. On the top it gets an AXI4-Stream bundle, with no depth
+// since the FIFO is on the other side of the port:
+//
+//   <bundle mode="axis" name="P0"/>
+//
+// The node it is passed to keeps the fifo bundle and depth above.
+//
 // Memrefs. The pointer is flat -- the lowering emits a linearized
 // getelementptr -- but array_dims still carries the shape, one extent per
 // dimension, while elem_count is the flat length:
@@ -111,8 +119,8 @@ struct ParamInfo {
   /// two sides fail to connect with "Port <bundle>_TDATA not found in DUT".
   /// Nothing forces them apart on a module, so they are kept equal there too.
   std::string bundle;
-  /// "fifo" for a stream, "array" for a memref, "default" for a scalar. See
-  /// getBundleMode for why a stream of the top should become "axis".
+  /// "axis" for an axis stream of the top, "fifo" for any other stream,
+  /// "array" for a memref, "default" for a scalar.
   std::string bundleMode;
   /// FIFO depth, straight from !dataflow.stream<T, N>. Emitted on the bundle
   /// of a stream and on nothing else.
@@ -158,22 +166,17 @@ private:
 };
 
 std::string EmitBambuArchitecture::getBundleMode(BlockArgument arg) {
-  // TODO: the interface a parameter asks for is not in its type. The same
-  // !dataflow.stream is an AXI-Stream port on the top, where Bambu wants
-  // mode="axis", and a FIFO between two modules, where it wants mode="fifo",
-  // so the guess below is wrong for every top-level stream. Read it from the
-  // argument instead, once the attribute exists:
-  //
-  //   auto func = cast<func::FuncOp>(arg.getOwner()->getParentOp());
-  //   auto index = arg.getArgNumber();
-  //   if (auto port = func.getArgAttrOfType<PortAttr>(index, "dataflow.port"))
-  //     return bambuModeName(port.getKind()); // STREAM: axis, MM: m_axi
-  //
-  // and keep what follows as the fallback for an argument that carries none.
   Type type = arg.getType();
-  return isa<StreamType>(type)   ? "fifo"
-         : isa<MemRefType>(type) ? "array"
-                                 : "default";
+  if (auto streamType = dyn_cast<StreamType>(type)) {
+    // An axis stream is an AXI4-Stream port only where the design meets the
+    // outside world, on the top. The node it is passed to sees a plain
+    // channel and keeps a FIFO bundle with the stream's depth: that is the
+    // combination Bambu builds the dataflow wrapper from.
+    auto func = cast<func::FuncOp>(arg.getOwner()->getParentOp());
+    bool isTop = func.getName() == topFunc;
+    return streamType.isAxis() && isTop ? "axis" : "fifo";
+  }
+  return isa<MemRefType>(type) ? "array" : "default";
 }
 
 unsigned EmitBambuArchitecture::getDepth(BlockArgument arg) {
