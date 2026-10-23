@@ -22,6 +22,19 @@ def AxiKind : I32EnumAttr<"AxiKind", "Kind of AXI port", [MM, LITE, STREAM]> {
   let cppNamespace = "::mlir::sodap::dataflow";
 }
 
+// How a stream is connected. A fifo is a channel between two stages of the
+// design; an axis stream is a port of the design itself, an AXI4-Stream
+// interface driven or drained by something outside it (a DMA engine, another
+// accelerator). The names are the ones HLS tools use for these interfaces
+// (Bambu and Vitis both say mode=fifo / mode=axis).
+def StreamInterfaceFIFO : I32EnumAttrCase<"FIFO", 0, "fifo">;
+def StreamInterfaceAXIS : I32EnumAttrCase<"AXIS", 1, "axis">;
+def StreamInterface : I32EnumAttr<"StreamInterface",
+    "stream interface (fifo or axis)",
+    [StreamInterfaceFIFO, StreamInterfaceAXIS]> {
+  let cppNamespace = "::mlir::sodap::dataflow";
+}
+
 def Resource : DataflowAttr<"Resource"> {
   let summary = "Resource utilization information";
   let description = [{

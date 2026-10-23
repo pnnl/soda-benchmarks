@@ -25,16 +25,53 @@ def StreamType : DataflowType<"Stream"> {
     i.e. the MLIR analogue of an `hls::stream`. The depth parameter is the
     channel's FIFO depth.
 
+    The optional interface says how the stream is connected:
+
+    - `fifo` (the default, not printed): a channel between two stages.
+    - `axis`: an AXI4-Stream port of the design, read or written by something
+      outside it, such as the DMA engine of an accelerator platform. Only an
+      argument can be one; a `dataflow.stream` op declares a channel inside
+      the design and is always a fifo. The depth is kept because the stage
+      the port is passed to still sees it as a FIFO.
+
     Example:
 
     ```mlir
     !dataflow.stream<f32, 1024>
+    !dataflow.stream<i64, 8, axis>
     ```
   }];
   let mnemonic = "stream";
 
-  let parameters = (ins "mlir::Type":$elementType, "unsigned":$depth);
-  let assemblyFormat = "`<` qualified($elementType) `,` $depth `>`";
+  let parameters = (ins "mlir::Type":$elementType, "unsigned":$depth,
+      DefaultValuedParameter<"::mlir::sodap::dataflow::StreamInterface",
+                             "::mlir::sodap::dataflow::StreamInterface::FIFO",
+                             "how the stream is connected">:$interface);
+  let assemblyFormat =
+      "`<` qualified($elementType) `,` $depth (`,` $interface^)? `>`";
+
+  let skipDefaultBuilders = 1;
+  let builders = [
+    TypeBuilder<(ins "mlir::Type":$elementType, "unsigned":$depth,
+        CArg<"::mlir::sodap::dataflow::StreamInterface",
+             "::mlir::sodap::dataflow::StreamInterface::FIFO">:$interface), [{
+      return $_get($_ctxt, elementType, depth, interface);
+    }]>
+  ];
+
+  let extraClassDeclaration = [{
+    /// Whether this stream is an AXI4-Stream port of the design.
+    bool isAxis() const {
+      return getInterface() == ::mlir::sodap::dataflow::StreamInterface::AXIS;
+    }
+
+    /// The same stream connected through `interface`.
+    StreamType withInterface(
+        ::mlir::sodap::dataflow::StreamInterface interface) const {
+      return StreamType::get(getContext(), getElementType(), getDepth(),
+                             interface);
+    }
+  }];
 }
 
 #endif // SODAP_DIALECT_DATAFLOW_TYPES_TD

@@ -110,3 +110,18 @@ func.func @node_with_params(%arg0: memref<8xf32>, %p: index) {
   }
   return
 }
+
+// The interface is the optional third parameter of the stream type: axis
+// survives a print/parse cycle, and fifo, the default, is not printed at all.
+// CHECK-LABEL: func.func @stream_interfaces
+// CHECK-SAME: %{{.*}}: !dataflow.stream<i64, 8, axis>
+// CHECK-SAME: %{{.*}}: !dataflow.stream<i32, 16>)
+func.func @stream_interfaces(%req: !dataflow.stream<i64, 8, axis>,
+                             %data: !dataflow.stream<i32, 16, fifo>) {
+  // CHECK: dataflow.stream_read %{{.*}} : (!dataflow.stream<i32, 16>) -> i32
+  %v = dataflow.stream_read %data : (!dataflow.stream<i32, 16, fifo>) -> i32
+  %r = arith.extui %v : i32 to i64
+  // CHECK: dataflow.stream_write %{{.*}}, %{{.*}} : <i64, 8, axis>, i64
+  dataflow.stream_write %req, %r : <i64, 8, axis>, i64
+  return
+}
