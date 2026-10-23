@@ -45,4 +45,43 @@ def NodesToFunc :
   ];
 }
 
+def InferTopInterface :
+    Pass<"sodap-dataflow-infer-top-interface", "::mlir::ModuleOp"> {
+  let summary = "Turn the external streams of the top into axis ports";
+  let description = [{
+    Works on the call-graph form `sodap-dataflow-nodes-to-func` produces. A
+    stream argument of the top is part of the design's external interface
+    when some stage actually reads or writes it; those are retyped from
+    `!dataflow.stream<T, D>` to `!dataflow.stream<T, D, axis>`, in the top and
+    in every function the stream is passed to, so the calls still type-check.
+
+    A stream nobody touches is left a fifo, and so is every channel declared
+    inside the design. A stream that is both read and written is rejected:
+    an AXI4-Stream port carries data in one direction only. So is a function
+    that receives an axis port at one call site and a fifo at another, since
+    one signature cannot be both.
+
+    Example:
+
+    ```mlir
+    func.func @top_node0(%req: !dataflow.stream<i64, 8>, ...)
+    func.func @top(%req: !dataflow.stream<i64, 8>, ...) {
+      call @top_node0(%req, ...) : ...
+    }
+    // after sodap-dataflow-infer-top-interface{top-func=top}, if top_node0
+    // writes %req:
+    func.func @top_node0(%req: !dataflow.stream<i64, 8, axis>, ...)
+    func.func @top(%req: !dataflow.stream<i64, 8, axis>, ...)
+    ```
+  }];
+  let options = [
+    Option<"topFunc", "top-func", "std::string", /*default=*/"",
+           "Top function of the design (required)">
+  ];
+  let dependentDialects = [
+    "::mlir::sodap::dataflow::DataflowDialect",
+    "::mlir::func::FuncDialect"
+  ];
+}
+
 #endif // SODAP_DIALECT_DATAFLOW_TRANSFORMS_PASSES_TD

@@ -1,4 +1,5 @@
 add_mlir_dialect_library(MLIRSODAPDataflowTransforms
+        InferTopInterface.cpp
         NodesToFunc.cpp
         TasksToNodes.cpp
 
