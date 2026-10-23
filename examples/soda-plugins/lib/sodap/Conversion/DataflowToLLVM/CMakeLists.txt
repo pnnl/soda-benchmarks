@@ -8,6 +8,7 @@ add_mlir_dialect_library(MLIRSODAPDataflowToLLVM
 
         DEPENDS
         SODAPDataflowToLLVMPassesIncGen
+        SODAPDataflowTransformsPassesIncGen
 
         LINK_COMPONENTS
         Core
@@ -16,6 +17,7 @@ add_mlir_dialect_library(MLIRSODAPDataflowToLLVM
 
         LINK_LIBS PUBLIC
         MLIRSODAPDataflow
+        MLIRSODAPDataflowTransforms
         MLIRIR
         MLIRPass
         MLIRFuncDialect

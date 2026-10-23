@@ -7,6 +7,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "sodap/Conversion/DataflowToLLVM/Passes.h"
+#include "sodap/Dialect/Dataflow/Transforms/Passes.h"
 
 #include "mlir/Conversion/Passes.h"
 #include "mlir/Dialect/Bufferization/Transforms/Passes.h"
@@ -31,6 +32,10 @@ struct DataflowToLLVMPipelineOptions
       *this, "write-to-terminal", llvm::cl::init(false),
       llvm::cl::desc("Print the --architecture-xml file to stdout instead of "
                      "writing arch-file")};
+  Option<bool> axisTopStreams{
+      *this, "axis-top-streams", llvm::cl::init(false),
+      llvm::cl::desc("Make the streams of the top that the design reads or "
+                     "writes AXI4-Stream ports (axis) instead of FIFOs")};
   Option<std::string> clangxx{
       *this, "clangxx", llvm::cl::init(SODAP_BAMBU_CLANGXX),
       llvm::cl::desc("C++ compiler used to build the specialization unit")};
@@ -50,8 +55,11 @@ void mlir::sodap::registerDataflowToLLVMPipeline() {
       "emitting the --architecture-xml file on the way. Anchor this on "
       "builtin.module.",
       [](OpPassManager &pm, const DataflowToLLVMPipelineOptions &opts) {
-        // Must run first: it needs the stream types to tell a FIFO from an
-        // array, and the next pass erases them.
+        // Ahead of the XML: which streams are ports is in their type.
+        if (opts.axisTopStreams)
+          pm.addPass(dataflow::createInferTopInterface({opts.topFunc}));
+        // Must run before the lowering: it needs the stream types to tell a
+        // FIFO from an array, and the next pass erases them.
         pm.addPass(createEmitBambuArchitecture({opts.archFile, opts.topFunc,
                                                 opts.includePandaPath,
                                                 opts.writeToTerminal}));
