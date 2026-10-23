@@ -92,3 +92,20 @@ func.func @bad_resource_keyword() attributes {
     resource = #dataflow.r<lut=1, dspX=2, bram=3>} {
   return
 }
+
+// -----
+
+func.func @stream_op_axis() {
+  // A channel declared inside the design cannot be one of its ports.
+  // expected-error @+1 {{declares a channel inside the design, which cannot be an axis port}}
+  %c = dataflow.stream {depth = 8 : i32} : <f32, 8, axis>
+  return
+}
+
+// -----
+
+// expected-error @+2 {{invalid stream interface (fifo or axis) specification: m_axi}}
+// expected-error @+1 {{failed to parse StreamType parameter 'interface'}}
+func.func @bad_stream_interface(%c: !dataflow.stream<f32, 8, m_axi>) {
+  return
+}
