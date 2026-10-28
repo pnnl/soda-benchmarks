@@ -19,6 +19,10 @@ add_mlir_dialect_library(MLIRSODAP
         MLIRIR
         MLIRInferTypeOpInterface
         MLIRFuncDialect
+        MLIRAffineDialect
+        MLIRLinalgDialect
+        MLIRMemRefDialect
+        MLIRSCFDialect
         )
 
 add_subdirectory(Dialect)

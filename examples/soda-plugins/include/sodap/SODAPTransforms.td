@@ -14,6 +14,7 @@
 #define SODAP_TRANSFORMS
 
 include "mlir/Dialect/Transform/IR/TransformDialect.td"
+include "mlir/Dialect/Transform/IR/TransformTypes.td"
 include "mlir/Dialect/Transform/Interfaces/TransformInterfaces.td"
 include "mlir/IR/OpBase.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
@@ -40,6 +41,82 @@ def TagOpsOp : Op<Transform_Dialect, "sodap.tag_ops",
   let results = (outs);
 
   let assemblyFormat = "$target `,` $prefix attr-dict `:` type($target)";
+}
+
+// Not PromoteOp: that class is transform.structured.promote, and a second one
+// would share its TypeID and never get registered.
+def PromoteTilesOp : Op<Transform_Dialect, "sodap.promote",
+    [FunctionalStyleTransformOpTrait, MemoryEffectsOpInterface,
+     DeclareOpInterfaceMethods<TransformOpInterface>]> {
+  let summary = "Copies the tiles of the function arguments into local buffers";
+  let description = [{
+    Like `transform.structured.promote`, gives the operands of the targeted
+    linalg ops local buffers, with these differences:
+
+    - The operands are chosen, not listed: every operand that is a
+      `memref.subview` of a function argument, of an op inside an `scf.for`.
+    - The buffer is a typed `memref.alloc` placed before the outermost
+      enclosing loop, not an `i8` buffer behind a `memref.view` inside it,
+      which is what `transform.sodap.multibuffer` needs.
+    - The tile is copied in (`memref.copy`) before its first user when that
+      user reads it, and copied out after its last writer. Both copies sit in
+      the block of the subview, so a tile used by an inner loop is copied
+      around that loop, not at every iteration of it.
+    - Targeted ops using the same subview share one buffer.
+
+    Arguments used whole inside the loop are left untouched.
+
+    #### Return modes
+
+    Returns the targeted ops. Fails silenceably, without changing the IR, if
+    a target is not a linalg op or a tile has a dynamic shape.
+  }];
+
+  let arguments = (ins TransformHandleTypeInterface:$target);
+
+  let results = (outs TransformHandleTypeInterface:$transformed);
+
+  let assemblyFormat =
+    "$target attr-dict `:` functional-type(operands, results)";
+}
+
+def MultiBufferOp : Op<Transform_Dialect, "sodap.multibuffer",
+    [FunctionalStyleTransformOpTrait, MemoryEffectsOpInterface,
+     DeclareOpInterfaceMethods<TransformOpInterface>]> {
+  let summary = "Multibuffers an allocation over the whole loop nest";
+  let description = [{
+    Like `transform.memref.multibuffer`, expands the allocation by `factor`
+    along a new leading dimension and makes its users, which must be linalg
+    ops or `memref.copy` inside an `scf.for`, access one slot of it.
+
+    The difference is the slot index. Upstream uses the iteration of the
+    innermost loop alone, which restarts every time that loop does. Here the
+    slot is the position of the iteration in the whole nest, counting all the
+    `scf.for`s around the users that do not contain the allocation:
+
+        for i, for j, for k: slot = (i' * Tj * Tk + j' * Tk + k') mod factor
+
+    with `x' = (x - lb) / step` and `T` the trip counts, so consecutive tiles
+    of the nest always use different slots. This needs static loop bounds.
+
+    There is no analysis: nothing may be carried in the buffer from one
+    iteration to the next.
+
+    #### Return modes
+
+    Returns the new allocations. Fails silenceably if an allocation has a
+    dynamic shape, a user of another kind or outside a loop, or a loop with
+    dynamic bounds.
+  }];
+
+  let arguments =
+      (ins Transform_ConcreteOpType<"memref.alloc">:$target,
+           ConfinedAttr<I64Attr, [IntPositive]>:$factor);
+
+  let results = (outs TransformHandleTypeInterface:$transformed);
+
+  let assemblyFormat =
+    "$target attr-dict `:` functional-type(operands, results)";
 }
 
 #endif // SODAP_TRANSFORMS
