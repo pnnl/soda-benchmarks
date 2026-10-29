@@ -132,6 +132,34 @@ func.func @shared_and_accumulate(%A: memref<8x8xf32>, %Y: memref<8x8xf32>) {
   return
 }
 
+// A scalar cannot be tiled: alpha gets a buffer of its own, copied in once,
+// before the nest.
+// CHECK-LABEL: func.func @scale
+// CHECK-SAME: (%[[ALPHA:.*]]: memref<f32>, %[[X:.*]]: memref<8x8xf32>, %[[Y:.*]]: memref<8x8xf32>)
+// CHECK: %[[BA:.*]] = memref.alloc() : memref<f32>
+// CHECK-NEXT: memref.copy %[[ALPHA]], %[[BA]] : memref<f32> to memref<f32>
+// CHECK: scf.for
+// CHECK-NOT: memref.copy %[[ALPHA]]
+// CHECK: linalg.generic {{.*}} ins(%[[BA]], %{{.*}} : memref<f32>,
+func.func @scale(%alpha: memref<f32>, %X: memref<8x8xf32>, %Y: memref<8x8xf32>) {
+  %c0 = arith.constant 0 : index
+  %c4 = arith.constant 4 : index
+  %c8 = arith.constant 8 : index
+  scf.for %i = %c0 to %c8 step %c4 {
+    scf.for %j = %c0 to %c8 step %c4 {
+      %Xt = memref.subview %X[%i, %j] [4, 4] [1, 1] : memref<8x8xf32> to memref<4x4xf32, strided<[8, 1], offset: ?>>
+      %Yt = memref.subview %Y[%i, %j] [4, 4] [1, 1] : memref<8x8xf32> to memref<4x4xf32, strided<[8, 1], offset: ?>>
+      linalg.generic {indexing_maps = [affine_map<(d0, d1) -> ()>, #id, #id], iterator_types = ["parallel", "parallel"]}
+          ins(%alpha, %Xt : memref<f32>, memref<4x4xf32, strided<[8, 1], offset: ?>>) outs(%Yt : memref<4x4xf32, strided<[8, 1], offset: ?>>) {
+      ^bb0(%a: f32, %x: f32, %y: f32):
+        %0 = arith.mulf %a, %x : f32
+        linalg.yield %0 : f32
+      }
+    }
+  }
+  return
+}
+
 module attributes {transform.with_named_sequence} {
   transform.named_sequence @__transform_main(%root: !transform.any_op {transform.readonly}) {
     %ops = transform.structured.match interface{LinalgOp} in %root : (!transform.any_op) -> !transform.any_op

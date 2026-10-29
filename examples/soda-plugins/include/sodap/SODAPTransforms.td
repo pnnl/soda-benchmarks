@@ -64,12 +64,15 @@ def PromoteTilesOp : Op<Transform_Dialect, "sodap.promote",
       around that loop, not at every iteration of it.
     - Targeted ops using the same subview share one buffer.
 
-    Arguments used whole inside the loop are left untouched.
+    A scalar argument (`memref<f32>`), which cannot be tiled, is a tile of
+    its own: a buffer per nest, copied in once, right before the outermost
+    loop. Other arguments used whole inside the loop are left untouched.
 
     #### Return modes
 
     Returns the targeted ops. Fails silenceably, without changing the IR, if
-    a target is not a linalg op or a tile has a dynamic shape.
+    a target is not a linalg op, a tile has a dynamic shape or a scalar is
+    written.
   }];
 
   let arguments = (ins TransformHandleTypeInterface:$target);
@@ -102,6 +105,10 @@ def MultiBufferOp : Op<Transform_Dialect, "sodap.multibuffer",
     There is no analysis: nothing may be carried in the buffer from one
     iteration to the next.
 
+    An allocation filled by a `memref.copy` outside the loops, once before
+    the nest (a scalar, see `transform.sodap.promote`), has nothing to
+    alternate: it is left as it is, and not returned.
+
     #### Return modes
 
     Returns the new allocations. Fails silenceably if an allocation has a
@@ -129,7 +136,9 @@ def SplitStagesOp : Op<Transform_Dialect, "sodap.split_stages",
     once, through its outermost loop) and replaces each nest with a
     `dataflow.dispatch` holding one `dataflow.task` per stage:
 
-    - load: the `memref.copy`s from a tile of a function argument,
+    - load: the `memref.copy`s from a tile of a function argument, and the
+      copies of a whole one right before the nest (a scalar,
+      `transform.sodap.promote`), which go before the nest in the task,
     - one compute task per group of linalg ops writing the same buffer (a
       fill lands with the op it initializes),
     - store: the `memref.copy`s into a tile of a function argument.
@@ -141,13 +150,21 @@ def SplitStagesOp : Op<Transform_Dialect, "sodap.split_stages",
     and be multibuffered: used only through one `memref.subview` whose first
     offset is the slot. Each consumer of it gets a token, a
     `!dataflow.stream<i8, 1>`, in the loop body where the slot is computed:
-    the producer writes the slot at the end of the body, the consumer peeks
-    it at the start and reads it at the end, so a slot is refilled only once
-    its previous reader has released it.
+    the producer writes the slot before the first loop after its last write
+    of the buffer in that body, or at the end of the body if there is none
+    (not always at the end: a load at an outer level would wait for the inner
+    loops after it, which wait for the consumer), the consumer peeks it at the
+    start and reads it at the end, so a slot is refilled only once its
+    previous reader has released it.
+
+    A buffer loaded before the nest is not multibuffered: it has one token
+    for the whole task, which carries 0. Load writes it after the copies,
+    before the nest; a consumer peeks it before its loops and reads it after
+    them.
 
     A producer that also reads the buffer, like a matmul accumulating its
     tile, works on a private buffer instead, copied into the slot
-    (`linalg.copy`) at the end of that loop body, before the token: Bambu
+    (`linalg.copy`) at the end of that loop body, and signals after it: Bambu
     requires every stage connected to a ping-pong buffer to be either a
     writer or a reader of it.
 

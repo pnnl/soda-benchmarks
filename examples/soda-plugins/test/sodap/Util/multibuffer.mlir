@@ -51,6 +51,34 @@ func.func @matmul(%A: memref<8x12xf32>, %B: memref<12x16xf32>, %C: memref<8x16xf
   return
 }
 
+// A scalar copied in once before the nest has nothing to alternate: its
+// buffer stays as it is; the tile buffer next to it is doubled.
+// CHECK-LABEL: func.func @scalar
+// CHECK-DAG: %[[BS:.*]] = memref.alloc() : memref<f32>
+// CHECK-DAG: memref.alloc() : memref<2x4xf32>
+// CHECK: memref.copy %{{.*}}, %[[BS]] : memref<f32> to memref<f32>
+// CHECK: scf.for
+// CHECK: linalg.generic {{.*}} ins(%[[BS]] : memref<f32>)
+func.func @scalar(%alpha: memref<f32>, %X: memref<8xf32>) {
+  %c0 = arith.constant 0 : index
+  %c4 = arith.constant 4 : index
+  %c8 = arith.constant 8 : index
+  %bS = memref.alloc() : memref<f32>
+  %bX = memref.alloc() : memref<4xf32>
+  memref.copy %alpha, %bS : memref<f32> to memref<f32>
+  scf.for %i = %c0 to %c8 step %c4 {
+    %Xt = memref.subview %X[%i] [4] [1] : memref<8xf32> to memref<4xf32, strided<[1], offset: ?>>
+    memref.copy %Xt, %bX : memref<4xf32, strided<[1], offset: ?>> to memref<4xf32>
+    linalg.generic {indexing_maps = [affine_map<(d0) -> ()>, affine_map<(d0) -> (d0)>], iterator_types = ["parallel"]}
+        ins(%bS : memref<f32>) outs(%bX : memref<4xf32>) {
+    ^bb0(%a: f32, %x: f32):
+      %0 = arith.mulf %a, %x : f32
+      linalg.yield %0 : f32
+    }
+  }
+  return
+}
+
 module attributes {transform.with_named_sequence} {
   transform.named_sequence @__transform_main(%root: !transform.any_op {transform.readonly}) {
     %allocs = transform.structured.match ops{["memref.alloc"]} in %root : (!transform.any_op) -> !transform.op<"memref.alloc">

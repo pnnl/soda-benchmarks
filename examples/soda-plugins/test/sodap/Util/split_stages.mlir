@@ -3,7 +3,7 @@
 // matmul tiled 4x4x4, promoted and multibuffered. Three stages: load (the
 // copies from A and B), compute (the fill and the matmul, both writing bC),
 // store (the copy into C). bA and bB have a token from load to compute, read
-// in the k loop where their slot is; bC one from compute to store, in the j
+// in the k loop where their slot is, written after both copies; bC one from compute to store, in the j
 // loop. The store task keeps no k loop.
 
 // CHECK-LABEL: func.func @matmul
@@ -89,6 +89,96 @@ func.func @matmul(%A: memref<8x12xf32>, %B: memref<12x16xf32>, %C: memref<8x16xf
       }
       memref.copy %vC, %Ct : memref<4x4xf32, strided<[4, 1], offset: ?>> to memref<4x4xf32, strided<[16, 1], offset: ?>>
     }
+  }
+  return
+}
+
+// A strip of A loaded in the i loop, ahead of the j loop that loads B: its
+// token is written before the j loop, not at the end of the i body. There
+// load would first run the j loop, whose second B token waits for compute to
+// read the first one, while compute waits for the A token before its j loop.
+// CHECK-LABEL: func.func @outer_load
+// CHECK: dataflow.task {
+// CHECK-NEXT: scf.for
+// CHECK:        memref.copy %{{.*}}, %{{.*}} : memref<4x8xf32
+// CHECK-NEXT:   %[[SA:.*]] = arith.index_cast %{{.*}} : index to i8
+// CHECK-NEXT:   dataflow.stream_write %{{.*}}, %[[SA]]
+// CHECK-NEXT:   scf.for
+// CHECK:          memref.copy %{{.*}}, %{{.*}} : memref<8x4xf32
+// CHECK-NEXT:     %[[SB:.*]] = arith.index_cast %{{.*}} : index to i8
+// CHECK-NEXT:     dataflow.stream_write %{{.*}}, %[[SB]]
+// CHECK-NEXT:   }
+// CHECK-NEXT: }
+#islot = affine_map<(d0) -> ((d0 floordiv 4) mod 2)>
+#jslot = affine_map<(d0, d1) -> ((d1 floordiv 4 + (d0 floordiv 4) * 2) mod 2)>
+func.func @outer_load(%A: memref<8x8xf32>, %B: memref<8x8xf32>, %C: memref<8x8xf32>) {
+  %c0 = arith.constant 0 : index
+  %c4 = arith.constant 4 : index
+  %c8 = arith.constant 8 : index
+  %bA = memref.alloc() : memref<2x4x8xf32>
+  %bB = memref.alloc() : memref<2x8x4xf32>
+  %bC = memref.alloc() : memref<2x4x4xf32>
+  scf.for %i = %c0 to %c8 step %c4 {
+    %sa = affine.apply #islot(%i)
+    %vA = memref.subview %bA[%sa, 0, 0] [1, 4, 8] [1, 1, 1] : memref<2x4x8xf32> to memref<4x8xf32, strided<[8, 1], offset: ?>>
+    %At = memref.subview %A[%i, 0] [4, 8] [1, 1] : memref<8x8xf32> to memref<4x8xf32, strided<[8, 1], offset: ?>>
+    memref.copy %At, %vA : memref<4x8xf32, strided<[8, 1], offset: ?>> to memref<4x8xf32, strided<[8, 1], offset: ?>>
+    scf.for %j = %c0 to %c8 step %c4 {
+      %sb = affine.apply #jslot(%i, %j)
+      %vB = memref.subview %bB[%sb, 0, 0] [1, 8, 4] [1, 1, 1] : memref<2x8x4xf32> to memref<8x4xf32, strided<[4, 1], offset: ?>>
+      %vC = memref.subview %bC[%sb, 0, 0] [1, 4, 4] [1, 1, 1] : memref<2x4x4xf32> to memref<4x4xf32, strided<[4, 1], offset: ?>>
+      %Bt = memref.subview %B[0, %j] [8, 4] [1, 1] : memref<8x8xf32> to memref<8x4xf32, strided<[8, 1], offset: ?>>
+      memref.copy %Bt, %vB : memref<8x4xf32, strided<[8, 1], offset: ?>> to memref<8x4xf32, strided<[4, 1], offset: ?>>
+      linalg.matmul ins(%vA, %vB : memref<4x8xf32, strided<[8, 1], offset: ?>>, memref<8x4xf32, strided<[4, 1], offset: ?>>)
+                    outs(%vC : memref<4x4xf32, strided<[4, 1], offset: ?>>)
+      %Ct = memref.subview %C[%i, %j] [4, 4] [1, 1] : memref<8x8xf32> to memref<4x4xf32, strided<[8, 1], offset: ?>>
+      memref.copy %vC, %Ct : memref<4x4xf32, strided<[4, 1], offset: ?>> to memref<4x4xf32, strided<[8, 1], offset: ?>>
+    }
+  }
+  return
+}
+
+// A scalar loaded once before the nest: its copy goes into the load task,
+// before the nest, followed by its token, which carries 0 and is for the
+// whole task: the consumer peeks it before its loops and reads it after them.
+// CHECK-LABEL: func.func @scalar
+// CHECK: %[[T:.*]] = dataflow.stream {depth = 1 : i32} : <i8, 1>
+// CHECK: dataflow.task {
+// CHECK-NEXT: memref.copy %{{.*}}, %{{.*}} : memref<f32> to memref<f32>
+// CHECK-NEXT: %[[ZERO:.*]] = arith.constant 0 : i8
+// CHECK-NEXT: dataflow.stream_write %[[T]], %[[ZERO]]
+// CHECK-NEXT: scf.for
+// CHECK: dataflow.task {
+// CHECK-NEXT: dataflow.stream_peek %[[T]]
+// CHECK-NEXT: scf.for
+// CHECK:        dataflow.stream_write
+// CHECK-NEXT: }
+// CHECK-NEXT: dataflow.stream_read %[[T]]
+// CHECK-NEXT: }
+// CHECK-NOT: memref.copy %{{.*}} : memref<f32> to memref<f32>
+#xslot = affine_map<(d0) -> ((d0 floordiv 4) mod 2)>
+func.func @scalar(%alpha: memref<f32>, %X: memref<8xf32>, %Y: memref<8xf32>) {
+  %c0 = arith.constant 0 : index
+  %c4 = arith.constant 4 : index
+  %c8 = arith.constant 8 : index
+  %bS = memref.alloc() : memref<f32>
+  %bX = memref.alloc() : memref<2x4xf32>
+  %bY = memref.alloc() : memref<2x4xf32>
+  memref.copy %alpha, %bS : memref<f32> to memref<f32>
+  scf.for %i = %c0 to %c8 step %c4 {
+    %s = affine.apply #xslot(%i)
+    %vX = memref.subview %bX[%s, 0] [1, 4] [1, 1] : memref<2x4xf32> to memref<4xf32, strided<[1], offset: ?>>
+    %vY = memref.subview %bY[%s, 0] [1, 4] [1, 1] : memref<2x4xf32> to memref<4xf32, strided<[1], offset: ?>>
+    %Xt = memref.subview %X[%i] [4] [1] : memref<8xf32> to memref<4xf32, strided<[1], offset: ?>>
+    memref.copy %Xt, %vX : memref<4xf32, strided<[1], offset: ?>> to memref<4xf32, strided<[1], offset: ?>>
+    linalg.generic {indexing_maps = [affine_map<(d0) -> ()>, affine_map<(d0) -> (d0)>, affine_map<(d0) -> (d0)>], iterator_types = ["parallel"]}
+        ins(%bS, %vX : memref<f32>, memref<4xf32, strided<[1], offset: ?>>) outs(%vY : memref<4xf32, strided<[1], offset: ?>>) {
+    ^bb0(%a: f32, %x: f32, %y: f32):
+      %0 = arith.mulf %a, %x : f32
+      linalg.yield %0 : f32
+    }
+    %Yt = memref.subview %Y[%i] [4] [1] : memref<8xf32> to memref<4xf32, strided<[1], offset: ?>>
+    memref.copy %vY, %Yt : memref<4xf32, strided<[1], offset: ?>> to memref<4xf32, strided<[1], offset: ?>>
   }
   return
 }
