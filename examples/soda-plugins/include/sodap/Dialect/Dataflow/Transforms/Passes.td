@@ -84,4 +84,44 @@ def InferTopInterface :
   ];
 }
 
+def CopyToDMA :
+    Pass<"sodap-dataflow-copy-to-dma", "::mlir::ModuleOp"> {
+  let summary = "Turn the copies of the top's tiles into DMA transfers";
+  let description = [{
+    The memref arguments of the top become one DMA address space, laid out
+    one after the other in argument order, in words. They are replaced by the
+    four streams of a DMA engine, appended to the top's arguments:
+
+        read requests  !dataflow.stream<i64, 8>
+        read data      !dataflow.stream<i32, 16>
+        write requests !dataflow.stream<i64, 8>
+        write data     !dataflow.stream<i32, 16>
+
+    Every `memref.copy` from a tile (`memref.subview`) of such an argument
+    becomes, for each row of the tile along its innermost dimension, a read
+    request `(length << 32) | address` and `length` reads of the data, stored
+    into the copy's target. A copy into a tile is the same with writes. The
+    data is 32-bit: `f32` goes through the channel as its bits.
+
+    Every use of a memref argument must be such a tile, with static sizes and
+    unit strides, copied from or into a local buffer, and the arguments must
+    have static shapes, the identity layout, and 32-bit elements.
+
+    Run it before `sodap-dataflow-tasks-to-nodes`, which then makes the
+    streams ports of the load and store nodes, and let
+    `sodap-dataflow-infer-top-interface` turn them into axis ports.
+  }];
+  let options = [
+    Option<"topFunc", "top-func", "std::string", /*default=*/"",
+           "Top function of the design (required)">
+  ];
+  let dependentDialects = [
+    "::mlir::sodap::dataflow::DataflowDialect",
+    "::mlir::affine::AffineDialect",
+    "::mlir::arith::ArithDialect",
+    "::mlir::memref::MemRefDialect",
+    "::mlir::scf::SCFDialect"
+  ];
+}
+
 #endif // SODAP_DIALECT_DATAFLOW_TRANSFORMS_PASSES_TD
