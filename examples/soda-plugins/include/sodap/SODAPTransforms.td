@@ -58,10 +58,10 @@ def PromoteTilesOp : Op<Transform_Dialect, "sodap.promote",
     - The buffer is a typed `memref.alloc` placed before the outermost
       enclosing loop, not an `i8` buffer behind a `memref.view` inside it,
       which is what `transform.sodap.multibuffer` needs.
-    - The tile is copied in (`memref.copy`) before its first user when that
-      user reads it, and copied out after its last writer. Both copies sit in
-      the block of the subview, so a tile used by an inner loop is copied
-      around that loop, not at every iteration of it.
+    - The tile is copied in (`memref.copy`) right after its subview when its
+      first user reads it, and copied out after its last writer. Both copies
+      sit in the block of the subview, so a tile used by an inner loop is
+      copied around that loop, not at every iteration of it.
     - Targeted ops using the same subview share one buffer.
 
     A scalar argument (`memref<f32>`), which cannot be tiled, is a tile of

@@ -19,9 +19,9 @@
 // CHECK:     linalg.fill ins(%{{.*}} : f32) outs(%[[BC]] :
 // CHECK:     scf.for %[[K:.*]] =
 // CHECK:       %[[AT:.*]] = memref.subview %[[A]][%[[I]], %[[K]]]
-// CHECK:       %[[BT:.*]] = memref.subview %[[B]][%[[K]], %[[J]]]
-// CHECK:       memref.copy %[[AT]], %[[BA]]
-// CHECK:       memref.copy %[[BT]], %[[BB]]
+// CHECK-NEXT:  memref.copy %[[AT]], %[[BA]]
+// CHECK-NEXT:  %[[BT:.*]] = memref.subview %[[B]][%[[K]], %[[J]]]
+// CHECK-NEXT:  memref.copy %[[BT]], %[[BB]]
 // CHECK:       linalg.generic {{.*}} ins(%[[BA]], %[[BB]] : {{.*}}) outs(%[[BC]] :
 // CHECK:     }
 // CHECK:     memref.copy %[[BC]], %[[CT]]
@@ -53,7 +53,8 @@ func.func @matmul(%A: memref<8x12xf32>, %B: memref<12x16xf32>, %C: memref<8x16xf
   return
 }
 
-// gemm after tiling and bufferization: the A and C tiles are copied in, the
+// gemm after tiling and bufferization: the A and C tiles are copied in, each
+// right after its subview (C before the matmul that does not read it), the
 // output tile is only copied out, B (used whole) and the local %mm stay.
 // CHECK-LABEL: func.func @gemm
 // CHECK-SAME: (%[[C:.*]]: memref<20x25xf32>, %[[A:.*]]: memref<20x30xf32>, %[[B:.*]]: memref<30x25xf32>, %[[OUT:.*]]: memref<20x25xf32>)
@@ -62,13 +63,13 @@ func.func @matmul(%A: memref<8x12xf32>, %B: memref<12x16xf32>, %C: memref<8x16xf
 // CHECK: %[[BO:.*]] = memref.alloc() : memref<4x25xf32>
 // CHECK: scf.for %[[I:.*]] =
 // CHECK:   %[[CT:.*]] = memref.subview %[[C]][%[[I]], 0]
-// CHECK:   %[[AT:.*]] = memref.subview %[[A]][%[[I]], 0]
-// CHECK:   %[[MM:.*]] = memref.alloc() : memref<4x25xf32>
-// CHECK:   memref.copy %[[AT]], %[[BA]]
+// CHECK-NEXT: memref.copy %[[CT]], %[[BC]]
+// CHECK-NEXT: %[[AT:.*]] = memref.subview %[[A]][%[[I]], 0]
+// CHECK-NEXT: memref.copy %[[AT]], %[[BA]]
+// CHECK-NEXT: %[[MM:.*]] = memref.alloc() : memref<4x25xf32>
 // CHECK:   linalg.generic {{.*}} ins(%[[BA]], %[[B]] : {{.*}}) outs(%[[MM]] :
 // CHECK:   %[[OT:.*]] = memref.subview %[[OUT]][%[[I]], 0]
 // CHECK-NOT: memref.copy %[[OT]]
-// CHECK:   memref.copy %[[CT]], %[[BC]]
 // CHECK:   linalg.generic {{.*}} ins(%[[BC]], %[[MM]] : {{.*}}) outs(%[[BO]] :
 // CHECK:   memref.copy %[[BO]], %[[OT]]
 func.func @gemm(%C: memref<20x25xf32>, %A: memref<20x30xf32>, %B: memref<30x25xf32>, %Out: memref<20x25xf32>) {

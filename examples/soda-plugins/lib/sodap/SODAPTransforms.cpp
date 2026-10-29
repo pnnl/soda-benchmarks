@@ -199,11 +199,12 @@ static ::mlir::memref::SubViewOp argumentTile(::mlir::Value value) {
 
     // The tile is the same for the whole block of the subview, so the copies
     // wrap the users at that level: a C tile defined in the j loop is copied
-    // around the k loop, not at every k.
+    // around the k loop, not at every k. In as soon as the subview exists, so
+    // that the C tile comes in before the k loop even if only the epilogue
+    // after it reads it.
     Block *block = region.getDefiningOp()->getBlock();
     if (tile.copyIn) {
-      rewriter.setInsertionPoint(
-          block->findAncestorOpInBlock(*tile.uses.front()->getOwner()));
+      rewriter.setInsertionPointAfter(region.getDefiningOp());
       rewriter.create<memref::CopyOp>(loc, region, buffer);
     }
     if (tile.lastWriter) {
