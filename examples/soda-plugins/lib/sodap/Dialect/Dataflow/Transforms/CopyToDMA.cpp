@@ -13,7 +13,8 @@
 // The arguments form one address space, in words, in argument order: for
 // matmul(A: 8x12, B: 12x16, C: 8x16), A starts at 0, B at 96, C at 288. A 4x4
 // tile of A at (i, k) is then 4 requests, one per row r, at i*12 + k + r*12,
-// each of length 4.
+// each of length 4. A copy of a whole argument is a tile of it at 0; a
+// scalar, memref<f32>, is one request of length 1.
 //
 //===----------------------------------------------------------------------===//
 
@@ -57,7 +58,7 @@ struct DMAStreams {
 /// One copy of a tile of a top argument, and where that argument starts.
 struct Transfer {
   memref::CopyOp copy;
-  memref::SubViewOp tile;
+  memref::SubViewOp tile; // Null for a copy of the whole argument.
   int64_t base;
   bool read;
 };
@@ -78,12 +79,17 @@ static LogicalResult collectTransfers(BlockArgument arg, int64_t base,
                           << type;
 
   for (Operation *user : arg.getUsers()) {
+    if (auto copy = dyn_cast<memref::CopyOp>(user)) {
+      transfers.push_back({copy, {}, base, copy.getSource() == arg});
+      continue;
+    }
     auto tile = dyn_cast<memref::SubViewOp>(user);
     if (!tile || !tile.hasUnitStride() ||
         ShapedType::isDynamicShape(tile.getStaticSizes()))
       return user->emitError()
              << "argument #" << arg.getArgNumber()
-             << " is used other than by a static tile with unit strides";
+             << " is used other than by a copy or a static tile with unit "
+                "strides";
     for (Operation *tileUser : tile->getUsers()) {
       auto copy = dyn_cast<memref::CopyOp>(tileUser);
       if (!copy)
@@ -102,11 +108,17 @@ static void lowerTransfer(OpBuilder &b, Transfer &transfer,
                           const DMAStreams &dma) {
   memref::SubViewOp tile = transfer.tile;
   Location loc = transfer.copy.getLoc();
-  ArrayRef<int64_t> sizes = tile.getStaticSizes();
-  SmallVector<int64_t> strides =
-      computeSuffixProduct(tile.getSourceType().getShape());
   Value buffer = transfer.read ? transfer.copy.getTarget()
                                : transfer.copy.getSource();
+  // A whole argument: a tile the shape of the buffer, at 0.
+  auto argType = tile ? tile.getSourceType()
+                      : cast<MemRefType>(buffer.getType());
+  SmallVector<int64_t> sizes = llvm::to_vector(
+      tile ? tile.getStaticSizes() : argType.getShape());
+  SmallVector<OpFoldResult> offsets(argType.getRank(), b.getIndexAttr(0));
+  if (tile)
+    offsets = tile.getMixedOffsets();
+  SmallVector<int64_t> strides = computeSuffixProduct(argType.getShape());
   Value ctrl = transfer.read ? dma.readCtrl : dma.writeCtrl;
   Value data = transfer.read ? dma.readData : dma.writeData;
   unsigned rank = sizes.size();
@@ -125,8 +137,8 @@ static void lowerTransfer(OpBuilder &b, Transfer &transfer,
 
   // address = base + sum_d (offset_d + iv_d) * stride_d, over the dims
   // (offsets..., ivs...); the innermost dimension has no iv here.
-  SmallVector<Value> operands = getValueOrCreateConstantIndexOp(
-      b, loc, tile.getMixedOffsets());
+  SmallVector<Value> operands =
+      getValueOrCreateConstantIndexOp(b, loc, offsets);
   llvm::append_range(operands, ivs);
   AffineExpr address = b.getAffineConstantExpr(transfer.base);
   for (unsigned d = 0; d < rank; ++d)
@@ -136,7 +148,8 @@ static void lowerTransfer(OpBuilder &b, Transfer &transfer,
   Value addr = b.create<affine::AffineApplyOp>(
       loc, AffineMap::get(operands.size(), 0, address), operands);
 
-  int64_t length = sizes.back();
+  // A scalar is a row of one element, with no index.
+  int64_t length = rank ? sizes.back() : 1;
   Value request = b.create<arith::OrIOp>(
       loc, b.create<arith::ConstantIntOp>(loc, length << 32, 64),
       b.create<arith::IndexCastOp>(loc, b.getI64Type(), addr));
@@ -146,7 +159,8 @@ static void lowerTransfer(OpBuilder &b, Transfer &transfer,
   auto row = b.create<scf::ForOp>(loc, c0, rowLength, c1);
   b.setInsertionPointToStart(row.getBody());
   SmallVector<Value> indices(ivs);
-  indices.push_back(row.getInductionVar());
+  if (rank)
+    indices.push_back(row.getInductionVar());
   Type element = cast<MemRefType>(buffer.getType()).getElementType();
   Type word = b.getI32Type();
   if (transfer.read) {
@@ -206,7 +220,7 @@ struct CopyToDMA : public dataflow::impl::CopyToDMABase<CopyToDMA> {
       transfer.copy.erase();
     }
     for (Transfer &transfer : transfers)
-      if (transfer.tile->use_empty())
+      if (transfer.tile && transfer.tile->use_empty())
         transfer.tile.erase();
 
     regions.resize(top.getNumArguments());

@@ -69,10 +69,34 @@ func.func @top(%A: memref<8x12xf32>, %C: memref<8x16xf32>) {
 
 // -----
 
-// An argument read whole, not through tiles, cannot go through the DMA yet.
+// A copy of a whole argument is a tile of it at 0: the scalar %alpha is one
+// request at word 0 of length 1 (1 << 32), %x one at word 1 of length 4.
+// CHECK-LABEL: func.func @top
+// CHECK-DAG: %[[RALPHA:.*]] = arith.constant 4294967296 : i64
+// CHECK-DAG: %[[RX:.*]] = arith.constant 17179869185 : i64
+// CHECK: scf.for
+// CHECK:   dataflow.stream_write %{{.*}}, %[[RALPHA]]
+// CHECK:   dataflow.stream_read
+// CHECK:   dataflow.stream_write %{{.*}}, %[[RX]]
+func.func @top(%alpha: memref<f32>, %x: memref<4xf32>) {
+  %c0 = arith.constant 0 : index
+  %c4 = arith.constant 4 : index
+  %c8 = arith.constant 8 : index
+  %buf = memref.alloc() : memref<f32>
+  %out = memref.alloc() : memref<4xf32>
+  scf.for %i = %c0 to %c8 step %c4 {
+    memref.copy %alpha, %buf : memref<f32> to memref<f32>
+    memref.copy %out, %x : memref<4xf32> to memref<4xf32>
+  }
+  return
+}
+
+// -----
+
+// An argument used other than by copies or tiles cannot go through the DMA.
 func.func @top(%A: memref<8xf32>, %B: memref<8xf32>) {
   %c0 = arith.constant 0 : index
-  // expected-error @+1 {{argument #0 is used other than by a static tile with unit strides}}
+  // expected-error @+1 {{argument #0 is used other than by a copy or a static tile with unit strides}}
   %v = memref.load %A[%c0] : memref<8xf32>
   memref.store %v, %B[%c0] : memref<8xf32>
   return
