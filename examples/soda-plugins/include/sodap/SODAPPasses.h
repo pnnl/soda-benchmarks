@@ -21,8 +21,11 @@ namespace sodap {
 #define GEN_PASS_DECL
 #include "sodap/SODAPPasses.h.inc"
 
+/// Creates a pass to annotate TOSA operations with performance metrics.
+std::unique_ptr<Pass> createAnnotateTosaOpsPass();
+
 /// Creates a pass to print op graphs.
-std::unique_ptr<Pass> createPrintOpGraphPass(raw_ostream &os = llvm::errs());
+std::unique_ptr<Pass> createPrintOpGraphPass(raw_ostream &os = llvm::outs());
 
 #define GEN_PASS_REGISTRATION
 #include "sodap/SODAPPasses.h.inc"
