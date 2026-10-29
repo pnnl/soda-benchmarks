@@ -119,4 +119,51 @@ def MultiBufferOp : Op<Transform_Dialect, "sodap.multibuffer",
     "$target attr-dict `:` functional-type(operands, results)";
 }
 
+def SplitStagesOp : Op<Transform_Dialect, "sodap.split_stages",
+    [FunctionalStyleTransformOpTrait, MemoryEffectsOpInterface,
+     DeclareOpInterfaceMethods<TransformOpInterface>]> {
+  let summary = "Splits a tile loop nest into load, compute and store tasks";
+  let description = [{
+    Takes loops of nests prepared by `transform.sodap.promote` and
+    `transform.sodap.multibuffer` (any of their loops: each nest is handled
+    once, through its outermost loop) and replaces each nest with a
+    `dataflow.dispatch` holding one `dataflow.task` per stage:
+
+    - load: the `memref.copy`s from a tile of a function argument,
+    - one compute task per group of linalg ops writing the same buffer (a
+      fill lands with the op it initializes),
+    - store: the `memref.copy`s into a tile of a function argument.
+
+    Every task gets a clone of the whole nest without the other stages' ops;
+    loops and index computations it does not need are removed.
+
+    A buffer accessed by more than one stage must be written by exactly one,
+    and be multibuffered: used only through one `memref.subview` whose first
+    offset is the slot. Each consumer of it gets a token, a
+    `!dataflow.stream<i8, 1>`, in the loop body where the slot is computed:
+    the producer writes the slot at the end of the body, the consumer peeks
+    it at the start and reads it at the end, so a slot is refilled only once
+    its previous reader has released it.
+
+    A producer that also reads the buffer, like a matmul accumulating its
+    tile, works on a private buffer instead, copied into the slot
+    (`linalg.copy`) at the end of that loop body, before the token: Bambu
+    requires every stage connected to a ping-pong buffer to be either a
+    writer or a reader of it.
+
+    #### Return modes
+
+    Returns the dispatch ops. Fails silenceably, without changing the IR, if
+    the nest has another kind of side-effecting op, a copy that is not a
+    load or a store, or a shared buffer that breaks the rules above.
+  }];
+
+  let arguments = (ins Transform_ConcreteOpType<"scf.for">:$target);
+
+  let results = (outs TransformHandleTypeInterface:$dispatch);
+
+  let assemblyFormat =
+    "$target attr-dict `:` functional-type(operands, results)";
+}
+
 #endif // SODAP_TRANSFORMS

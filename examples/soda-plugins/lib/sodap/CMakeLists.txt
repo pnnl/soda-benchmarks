@@ -23,6 +23,9 @@ add_mlir_dialect_library(MLIRSODAP
         MLIRLinalgDialect
         MLIRMemRefDialect
         MLIRSCFDialect
+        MLIRArithDialect
+        MLIRTransformUtils
+        MLIRSODAPDataflow
         )
 
 add_subdirectory(Dialect)

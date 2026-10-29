@@ -12,6 +12,7 @@
 
 #include "sodap/SODAPTransforms.h"
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
+#include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/Linalg/IR/Linalg.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
@@ -22,8 +23,12 @@
 #include "mlir/Dialect/Transform/Interfaces/TransformInterfaces.h"
 #include "mlir/IR/DialectRegistry.h"
 #include "mlir/IR/Operation.h"
+#include "mlir/IR/IRMapping.h"
 #include "mlir/Interfaces/SideEffectInterfaces.h"
 #include "mlir/Support/LLVM.h"
+#include "mlir/Transforms/RegionUtils.h"
+#include "sodap/Dialect/Dataflow/Dataflow.h"
+#include "llvm/ADT/EquivalenceClasses.h"
 #include "llvm/ADT/MapVector.h"
 #include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/SmallPtrSet.h"
@@ -41,6 +46,8 @@ public:
 void SODAPTransformsExtension::init() {
   declareGeneratedDialect<::mlir::affine::AffineDialect>();
   declareGeneratedDialect<::mlir::memref::MemRefDialect>();
+  declareGeneratedDialect<::mlir::arith::ArithDialect>();
+  declareGeneratedDialect<::mlir::sodap::dataflow::DataflowDialect>();
   registerTransformOps<
 #define GET_OP_LIST
 #include "sodap/SODAPTransforms.cpp.inc"
@@ -79,10 +86,10 @@ static ::mlir::scf::ForOp outermostLoop(::mlir::Operation *op) {
   return outer;
 }
 
-/// The subview of a function argument that `operand` reads or writes, if any.
-static ::mlir::memref::SubViewOp argumentTile(::mlir::OpOperand &operand) {
+/// The subview of a function argument that `value` is, if any.
+static ::mlir::memref::SubViewOp argumentTile(::mlir::Value value) {
   using namespace ::mlir;
-  auto subview = operand.get().getDefiningOp<memref::SubViewOp>();
+  auto subview = value.getDefiningOp<memref::SubViewOp>();
   if (!subview)
     return {};
   auto arg = dyn_cast<BlockArgument>(subview.getSource());
@@ -128,7 +135,7 @@ static ::mlir::memref::SubViewOp argumentTile(::mlir::OpOperand &operand) {
   for (linalg::LinalgOp linalgOp : ordered) {
     Operation *op = linalgOp;
     for (OpOperand &operand : op->getOpOperands()) {
-      memref::SubViewOp subview = argumentTile(operand);
+      memref::SubViewOp subview = argumentTile(operand.get());
       if (!subview)
         continue;
       if (!subview.getType().hasStaticShape()) {
@@ -271,6 +278,266 @@ multiBufferOverNest(::mlir::RewriterBase &rewriter,
     newAllocs.push_back(*newAlloc);
   }
   results.set(cast<OpResult>(getResult()), newAllocs);
+  return DiagnosedSilenceableFailure::success();
+}
+
+/// The allocation `value` is a view of, if any.
+static ::mlir::memref::AllocOp rootAlloc(::mlir::Value value) {
+  using namespace ::mlir;
+  while (auto view = value.getDefiningOp<ViewLikeOpInterface>())
+    value = view.getViewSource();
+  return value.getDefiningOp<memref::AllocOp>();
+}
+
+namespace {
+/// How a stage accesses a buffer.
+struct Access {
+  bool reads = false;
+  bool writes = false;
+};
+
+/// A stage: its side-effecting ops, and the buffers they access.
+struct Stage {
+  ::mlir::SmallVector<::mlir::Operation *> ops;
+  ::llvm::MapVector<::mlir::memref::AllocOp, Access> buffers;
+};
+
+/// The token of a buffer shared by a producer and a consumer stage.
+struct Token {
+  ::mlir::memref::SubViewOp view;
+  ::mlir::Value slot;
+  unsigned producer;
+  unsigned consumer;
+};
+} // namespace
+
+/// Replaces `nest` with a dispatch of one task per stage (see the op
+/// description). Checks everything before touching the IR; on failure,
+/// `reason` says why.
+static ::mlir::FailureOr<::mlir::sodap::dataflow::DispatchOp>
+splitStages(::mlir::RewriterBase &rewriter, ::mlir::scf::ForOp nest,
+            std::string &reason) {
+  using namespace ::mlir;
+  namespace df = ::mlir::sodap::dataflow;
+
+  // The side-effecting ops of the nest, by kind.
+  SmallVector<Operation *> loads, stores;
+  SmallVector<linalg::LinalgOp> computes;
+  Operation *unsupported = nullptr;
+  nest.walk<WalkOrder::PreOrder>([&](Operation *op) {
+    if (auto linalgOp = dyn_cast<linalg::LinalgOp>(op)) {
+      computes.push_back(linalgOp);
+      return WalkResult::skip();
+    }
+    if (auto copy = dyn_cast<memref::CopyOp>(op)) {
+      if (argumentTile(copy.getSource()))
+        loads.push_back(op);
+      else if (argumentTile(copy.getTarget()))
+        stores.push_back(op);
+      else
+        unsupported = op;
+    } else if (!isa<scf::ForOp, scf::YieldOp>(op) && !isMemoryEffectFree(op)) {
+      unsupported = op;
+    }
+    return unsupported ? WalkResult::interrupt() : WalkResult::advance();
+  });
+  if (unsupported) {
+    reason = "unsupported op in the nest: " +
+             unsupported->getName().getStringRef().str();
+    return failure();
+  }
+
+  // Compute stages: the linalg ops writing the same buffers, in program order.
+  llvm::EquivalenceClasses<Operation *> written;
+  for (linalg::LinalgOp op : computes) {
+    Operation *first = nullptr;
+    for (OpOperand &init : op.getDpsInitsMutable()) {
+      memref::AllocOp alloc = rootAlloc(init.get());
+      if (!alloc) {
+        reason = "a linalg op writes no local buffer";
+        return failure();
+      }
+      written.insert(alloc);
+      if (first)
+        written.unionSets(first, alloc);
+      first = alloc;
+    }
+  }
+  SmallVector<Stage> stages(1);
+  stages[0].ops = loads;
+  DenseMap<Operation *, unsigned> computeStage;
+  for (linalg::LinalgOp op : computes) {
+    Operation *leader = written.getLeaderValue(
+        rootAlloc(op.getDpsInitOperand(0)->get()).getOperation());
+    auto [it, inserted] = computeStage.try_emplace(leader, stages.size());
+    if (inserted)
+      stages.emplace_back();
+    stages[it->second].ops.push_back(op);
+  }
+  stages.emplace_back();
+  stages.back().ops = stores;
+
+  // What each stage reads and writes.
+  for (Stage &stage : stages)
+    for (Operation *op : stage.ops) {
+      auto record = [&](Value value, bool reads, bool writes) {
+        if (memref::AllocOp alloc = rootAlloc(value)) {
+          Access &access = stage.buffers[alloc];
+          access.reads |= reads;
+          access.writes |= writes;
+        }
+      };
+      if (auto copy = dyn_cast<memref::CopyOp>(op)) {
+        record(copy.getSource(), true, false);
+        record(copy.getTarget(), false, true);
+        continue;
+      }
+      auto linalgOp = cast<linalg::LinalgOp>(op);
+      for (OpOperand &operand : op->getOpOperands())
+        record(operand.get(),
+               linalgOp.isDpsInput(&operand) ||
+                   linalgOp.payloadUsesValueFromOperand(&operand),
+               linalgOp.isDpsInit(&operand));
+    }
+
+  // One token per consumer of each buffer shared between stages.
+  llvm::MapVector<memref::AllocOp, SmallVector<unsigned>> users;
+  for (auto [idx, stage] : llvm::enumerate(stages))
+    for (auto &entry : stage.buffers)
+      users[entry.first].push_back(idx);
+  SmallVector<Token> tokens;
+  // The views of the shared buffers their producer also reads.
+  SmallVector<std::pair<unsigned, memref::SubViewOp>> privates;
+  for (auto &[alloc, stageIdxs] : users) {
+    if (stageIdxs.size() < 2)
+      continue;
+    auto writers = llvm::to_vector(llvm::make_filter_range(
+        stageIdxs, [&](unsigned s) { return stages[s].buffers[alloc].writes; }));
+    if (writers.size() != 1) {
+      reason = "a shared buffer must be written by exactly one stage";
+      return failure();
+    }
+    auto view = alloc->hasOneUse()
+                    ? dyn_cast<memref::SubViewOp>(*alloc->user_begin())
+                    : memref::SubViewOp();
+    Value slot = view ? llvm::dyn_cast_if_present<Value>(
+                            view.getMixedOffsets().front())
+                      : Value();
+    if (!slot || !nest->isProperAncestor(view)) {
+      reason = "a shared buffer is not multibuffered in the nest";
+      return failure();
+    }
+    for (unsigned consumer : stageIdxs)
+      if (consumer != writers.front())
+        tokens.push_back({view, slot, writers.front(), consumer});
+    if (stages[writers.front()].buffers[alloc].reads)
+      privates.push_back({writers.front(), view});
+  }
+
+  Location loc = nest.getLoc();
+  Type i8 = rewriter.getI8Type();
+  rewriter.setInsertionPoint(nest);
+  auto dispatch = rewriter.create<df::DispatchOp>(loc, TypeRange{});
+  rewriter.setInsertionPointToStart(&dispatch.getBody().emplaceBlock());
+  SmallVector<Value> streams;
+  for (unsigned i = 0; i < tokens.size(); ++i)
+    streams.push_back(rewriter.create<df::StreamOp>(
+        loc, df::StreamType::get(rewriter.getContext(), i8, 1)));
+  auto dispatchYield = rewriter.create<df::YieldOp>(loc, ValueRange{});
+
+  for (auto [s, stage] : llvm::enumerate(stages)) {
+    if (stage.ops.empty())
+      continue;
+    rewriter.setInsertionPoint(dispatchYield);
+    auto task = rewriter.create<df::TaskOp>(loc, TypeRange{});
+    rewriter.createBlock(&task.getBody());
+    auto taskYield = rewriter.create<df::YieldOp>(loc, ValueRange{});
+    rewriter.setInsertionPoint(taskYield);
+
+    IRMapping map;
+    rewriter.clone(*nest, map);
+    for (auto [other, otherStage] : llvm::enumerate(stages))
+      if (other != s)
+        for (Operation *op : otherStage.ops)
+          rewriter.eraseOp(map.lookup(op));
+
+    // A producer that also reads its shared buffer (an accumulation) works on
+    // a private one, copied into the slot at the end of the slot's loop body,
+    // ahead of the tokens: Bambu wants every stage connected to a ping-pong
+    // buffer to be a writer or a reader, not both.
+    for (auto [producer, view] : privates) {
+      if (producer != s)
+        continue;
+      auto slotView = cast<memref::SubViewOp>(map.lookup(view.getOperation()));
+      MemRefType type = slotView.getType();
+      rewriter.setInsertionPointToStart(&task.getBody().front());
+      Value buffer = rewriter.create<memref::AllocOp>(
+          loc, MemRefType::get(type.getShape(), type.getElementType()));
+      rewriter.replaceAllUsesWith(slotView.getResult(), buffer);
+      rewriter.setInsertionPoint(slotView->getBlock()->getTerminator());
+      rewriter.create<linalg::CopyOp>(loc, buffer, slotView.getResult());
+    }
+
+    // Releases first, then signals, at the end of the slot's loop body.
+    // Peeks go in reverse so that, each one inserted at the start, they end
+    // up in token order.
+    for (auto [token, stream] : llvm::reverse(llvm::zip(tokens, streams))) {
+      if (token.consumer != s)
+        continue;
+      Block *level = map.lookup(token.view.getOperation())->getBlock();
+      rewriter.setInsertionPointToStart(level);
+      rewriter.create<df::StreamPeekOp>(loc, i8, stream);
+    }
+    for (auto [token, stream] : llvm::zip(tokens, streams)) {
+      if (token.consumer != s)
+        continue;
+      Block *level = map.lookup(token.view.getOperation())->getBlock();
+      rewriter.setInsertionPoint(level->getTerminator());
+      rewriter.create<df::StreamReadOp>(loc, i8, stream);
+    }
+    for (auto [token, stream] : llvm::zip(tokens, streams)) {
+      if (token.producer != s)
+        continue;
+      Block *level = map.lookup(token.view.getOperation())->getBlock();
+      rewriter.setInsertionPoint(level->getTerminator());
+      Value slot = rewriter.create<arith::IndexCastOp>(
+          loc, i8, map.lookup(token.slot));
+      rewriter.create<df::StreamWriteOp>(loc, stream, slot);
+    }
+
+    // What the stage does not use: other stages' views, loops left empty.
+    (void)runRegionDCE(rewriter, task->getRegions());
+  }
+
+  rewriter.eraseOp(nest);
+  return dispatch;
+}
+
+::mlir::DiagnosedSilenceableFailure mlir::transform::SplitStagesOp::apply(
+    ::mlir::transform::TransformRewriter &rewriter,
+    ::mlir::transform::TransformResults &results,
+    ::mlir::transform::TransformState &state) {
+  // Each nest once, through its outermost loop, whichever loops the handle has.
+  llvm::SetVector<scf::ForOp> nests;
+  for (Operation *op : state.getPayloadOps(getTarget())) {
+    scf::ForOp outer = outermostLoop(op);
+    nests.insert(outer ? outer : cast<scf::ForOp>(op));
+  }
+  SmallVector<Operation *> dispatches;
+  for (scf::ForOp nest : nests) {
+    Operation *op = nest;
+    std::string reason;
+    FailureOr<sodap::dataflow::DispatchOp> dispatch =
+        splitStages(rewriter, nest, reason);
+    if (failed(dispatch)) {
+      DiagnosedSilenceableFailure diag =
+          emitSilenceableError() << "op failed to split into stages: " << reason;
+      diag.attachNote(op->getLoc()) << "nest";
+      return diag;
+    }
+    dispatches.push_back(*dispatch);
+  }
+  results.set(cast<OpResult>(getDispatch()), dispatches);
   return DiagnosedSilenceableFailure::success();
 }
 
