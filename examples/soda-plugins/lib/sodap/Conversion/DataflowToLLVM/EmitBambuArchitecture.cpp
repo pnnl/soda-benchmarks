@@ -241,7 +241,10 @@ std::string EmitBambuArchitecture::getArrayDims(BlockArgument arg) {
     return "";
   }
 
-  // One extent per dimension, "2,16" for a memref<2x16xi32>.
+  // One extent per dimension, "2,16" for a memref<2x16xi32>. A scalar,
+  // memref<f32>, is an array of one: Bambu needs the dims of every array.
+  if (memrefTy.getRank() == 0)
+    return "1";
   std::string dims;
   llvm::raw_string_ostream os(dims);
   llvm::interleave(memrefTy.getShape(), os, ",");

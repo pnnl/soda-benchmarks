@@ -15,7 +15,8 @@ func.func @node0(%arg0: memref<2x3x4xf32>, %arg1: !dataflow.stream<f32, 8>) {
 }
 
 func.func @forward(%arg0: memref<16xf32>, %arg1: memref<8x6xf32>,
-                   %arg2: memref<2x3x4xf32>, %arg3: memref<2x2x2x2xi8>) {
+                   %arg2: memref<2x3x4xf32>, %arg3: memref<2x2x2x2xi8>,
+                   %arg4: memref<f32>) {
     %0 = dataflow.stream {depth = 8 : i32} : <f32, 8>
     call @node0(%arg2, %0) : (memref<2x3x4xf32>, !dataflow.stream<f32, 8>) -> ()
     return
@@ -36,4 +37,7 @@ func.func @forward(%arg0: memref<16xf32>, %arg1: memref<8x6xf32>,
 // CHECK:      <parameter array_dims="8,6" bundle="P1" elem_count="48" {{.*}}original_typename="float (*)[6]" {{.*}}size_in_bytes="192" typename="float*"
 // CHECK:      <parameter array_dims="2,3,4" bundle="P2" elem_count="24" {{.*}}original_typename="float (*)[3][4]" {{.*}}size_in_bytes="96" typename="float*"
 // CHECK:      <parameter array_dims="2,2,2,2" bundle="P3" elem_count="16" {{.*}}original_typename="int8_t (*)[2][2][2]" {{.*}}size_in_bytes="16" typename="int8_t*"
+
+// A scalar, rank 0, is an array of one.
+// CHECK:      <parameter array_dims="1" bundle="P4" elem_count="1" {{.*}}original_typename="float*" {{.*}}size_in_bytes="4" typename="float*"
 
