@@ -72,13 +72,15 @@ func.func @scalar_livein_becomes_param(%out: memref<8xf32>, %s: f32) {
 // -----
 
 // A constant used inside the task is hoisted to the function entry by the
-// greedy driver, and then -- because a node is IsolatedFromAbove -- must reach
-// the body as a parameter rather than as a free reference.
-// CHECK-LABEL: func.func @constant_becomes_param
-func.func @constant_becomes_param(%out: memref<8xf32>) {
+// greedy driver. A node is IsolatedFromAbove, so it is cloned back into the
+// body: a constant is no port, and does not become a parameter.
+// CHECK-LABEL: func.func @constant_is_cloned
+func.func @constant_is_cloned(%out: memref<8xf32>) {
   dataflow.dispatch {
-    // CHECK: dataflow.node() -> (%{{.*}}) [%{{.*}}] {{.*}} : () -> memref<8xf32>[f32]
-    // CHECK-NEXT: ^bb0(%{{.*}}: memref<8xf32>, %[[P:.*]]: f32):
+    // CHECK: dataflow.node() -> (%{{.*}}) {{.*}} : () -> memref<8xf32> {
+    // CHECK-NEXT: ^bb0(%[[OUT:.*]]: memref<8xf32>):
+    // CHECK-NEXT: %[[CST:.*]] = arith.constant 0.000000e+00 : f32
+    // CHECK: affine.store %[[CST]], %[[OUT]]
     dataflow.task {
       %cst = arith.constant 0.000000e+00 : f32
       affine.for %i = 0 to 8 {

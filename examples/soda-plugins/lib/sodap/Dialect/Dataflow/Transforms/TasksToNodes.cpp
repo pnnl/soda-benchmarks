@@ -19,6 +19,7 @@
 #include "mlir/Analysis/Liveness.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/IR/Builders.h"
+#include "mlir/IR/Matchers.h"
 #include "mlir/Interfaces/SideEffectInterfaces.h"
 #include "mlir/Interfaces/ViewLikeInterface.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
@@ -72,7 +73,7 @@ struct TaskToNode : public OpRewritePattern<TaskOp> {
       return task->isAncestor(use.getOwner());
     };
 
-    SmallVector<Value, 8> inputs, outputs, params;
+    SmallVector<Value, 8> inputs, outputs, params, constants;
     SmallVector<Location, 8> inputLocs, outputLocs, paramLocs;
 
     // Classify each livein of the task body into a port.
@@ -91,6 +92,9 @@ struct TaskToNode : public OpRewritePattern<TaskOp> {
           inputs.push_back(livein);
           inputLocs.push_back(livein.getLoc());
         }
+      } else if (matchPattern(livein, m_Constant())) {
+        // Cloned into the node below: a constant is no port.
+        constants.push_back(livein);
       } else {
         params.push_back(livein);
         paramLocs.push_back(livein.getLoc());
@@ -115,10 +119,16 @@ struct TaskToNode : public OpRewritePattern<TaskOp> {
     for (auto t : llvm::zip(params, paramArgs))
       std::get<0>(t).replaceUsesWithIf(std::get<1>(t), isInTask);
 
-    // Move the task body across, dropping its terminator: a node has none.
+    rewriter.setInsertionPointToStart(nodeBlock);
+    for (Value constant : constants)
+      constant.replaceUsesWithIf(
+          rewriter.clone(*constant.getDefiningOp())->getResult(0), isInTask);
+
+    // Move the task body across, after the constants, dropping its
+    // terminator: a node has none.
     auto &nodeOps = nodeBlock->getOperations();
     auto &taskOps = task.getBody().front().getOperations();
-    nodeOps.splice(nodeOps.begin(), taskOps, taskOps.begin(),
+    nodeOps.splice(nodeOps.end(), taskOps, taskOps.begin(),
                    std::prev(taskOps.end()));
 
     rewriter.eraseOp(task);
