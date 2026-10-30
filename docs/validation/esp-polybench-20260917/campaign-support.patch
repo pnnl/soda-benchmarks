@@ -1,0 +1,129 @@
+--- a/sb_cli/templates/torchscript_bench.py.tmpl
++++ b/sb_cli/templates/torchscript_bench.py.tmpl
+@@ -75,23 +75,21 @@
+     with torch.no_grad():
+         golden = model(*inputs)
+ 
+-    if isinstance(golden, tuple):
+-        raise SystemExit(
+-            "--emit-testdata supports single-output kernels only; "
+-            f"{'$kernel_name'} returns {len(golden)} tensors"
+-        )
++    outputs = list(golden) if isinstance(golden, (tuple, list)) else [golden]
++    if not outputs or not all(isinstance(t, torch.Tensor) for t in outputs):
++        raise SystemExit("--emit-testdata requires tensor outputs")
++    if not all(t.dtype == dtype for t in outputs):
++        raise SystemExit("--emit-testdata requires outputs of the selected dtype")
+ 
+     ctype = _C_TYPES[dtype_name]
+-    out_n = golden.numel()
+-
+-    # @forward takes the inputs first and the destination buffer last, which is
+-    # what bufferization leaves behind, so index len(inputs) is the output.
++    # Bufferization appends one destination argument per returned tensor.
+     n_in = len(inputs)
++    n_args = n_in + len(outputs)
+     if arg_order is None:
+-        arg_order = list(range(n_in + 1))
+-    if sorted(arg_order) != list(range(n_in + 1)):
++        arg_order = list(range(n_args))
++    if sorted(arg_order) != list(range(n_args)):
+         raise SystemExit(
+-            f"--arg-order must be a permutation of 0..{n_in}, got {arg_order}"
++            f"--arg-order must be a permutation of 0..{n_args - 1}, got {arg_order}"
+         )
+ 
+     def shape(tensor):
+@@ -126,21 +124,33 @@
+         parts.append("};")
+         parts.append("")
+ 
++    for i, tensor in enumerate(outputs):
++        names.append(f"td_out{i}")
++        parts += [
++            f"/* result {i}: shape {shape(tensor)} */",
++            f"static td_elem_t td_out{i}[{tensor.numel()}];",
++            f"static const td_elem_t td_golden{i}[{tensor.numel()}] = {{",
++            _c_array(tensor.reshape(-1).tolist()),
++            "};",
++            "",
++        ]
++
+     parts += [
+-        f"/* result: shape {shape(golden)} */",
+-        f"static td_elem_t td_out[{out_n}];",
+-        "",
+-        f"static const td_elem_t td_golden[{out_n}] = {{",
+-        _c_array(golden.reshape(-1).tolist()),
+-        "};",
+-        "",
+-        "#define TD_OUT     td_out",
+-        f"#define TD_OUT_N   {out_n}",
++        f"#define TD_NOUTPUTS {len(outputs)}",
++        "static td_elem_t *const td_outputs[] = {"
++        + ", ".join(f"td_out{i}" for i in range(len(outputs))) + "};",
++        "static const td_elem_t *const td_goldens[] = {"
++        + ", ".join(f"td_golden{i}" for i in range(len(outputs))) + "};",
++        "static const unsigned td_sizes[] = {"
++        + ", ".join(str(t.numel()) for t in outputs) + "};",
++        "#define TD_OUT td_out0",
++        f"#define TD_OUT_N {outputs[0].numel()}",
++        "#define td_golden td_golden0",
+         "",
+         "/* forward_kernel's parameter order, which -soda-outline-bambu-code",
+         f" * derived by first use: {arg_order} into @forward's signature. */",
+         "#define TD_CALL(F) F("
+-        + ", ".join(names[i] if i < n_in else "td_out" for i in arg_order)
++        + ", ".join(names[i] for i in arg_order)
+         + ")",
+         # A real prototype rather than an empty parameter list: C2x removed those,
+         # and the arity is only known here.
+--- a/scripts/ll_to_riscv.sh
++++ b/scripts/ll_to_riscv.sh
+@@ -41,6 +41,8 @@
+ RISCV_TARGET="${RISCV_TARGET:-riscv64-unknown-elf}"
+ RISCV_MARCH="${RISCV_MARCH:-rv64imafdc}"
+ RISCV_MABI="${RISCV_MABI:-lp64d}"
++# Match ESP's baremetal compilation: globals may lie at/above 0x80000000.
++RISCV_CMODEL="${RISCV_CMODEL:-medany}"
+ 
+ SODAP_DIR="${SODAP_DIR:-/workspaces/soda/soda-benchmarks/examples/soda-plugins}"
+ TESTDATA_DIR="${TESTDATA_DIR:-$(cd "$(dirname "$INPUT_LL")" && pwd)}"
+@@ -52,7 +54,7 @@
+ 
+ echo "[ll_to_riscv] target : $RISCV_TARGET -march=$RISCV_MARCH -mabi=$RISCV_MABI"
+ $DOCKER_RUN $CC --target=$RISCV_TARGET -march=$RISCV_MARCH -mabi=$RISCV_MABI \
+-  -O2 -c "$INPUT_LL" -o "$OUTPUT_OBJ"
++  -mcmodel="$RISCV_CMODEL" -O2 -c "$INPUT_LL" -o "$OUTPUT_OBJ"
+ echo "[ll_to_riscv] wrote  : $OUTPUT_OBJ"
+ 
+ # ---------------------------------------------------------------------------
+@@ -62,7 +64,7 @@
+ cp "$OUTPUT_OBJ" "$APP_DIR/kernel.o"
+ # ESP's baremetal examples pair `APPNAME := mm` with `mm.c`, so name the driver
+ # after the application and let common_bare.mk's own rule pick it up.
+-cp "$SCRIPT_DIR/lib/soda_testbench_main.c" "$APP_DIR/$APP_NAME.c"
++cp "${CPU_MAIN:-$SCRIPT_DIR/lib/soda_testbench_main.c}" "$APP_DIR/$APP_NAME.c"
+ 
+ if [ -f "$TESTDATA_DIR/testdata.h" ]; then
+   cp "$TESTDATA_DIR/testdata.h" "$APP_DIR/testdata.h"
+@@ -127,7 +129,7 @@
+ 
+ OBJS += \$(BUILD_PATH)/EspRuntime.o
+ OBJS += \$(CURDIR)/kernel.o
+-\$(EXE): \$(BUILD_PATH)/EspRuntime.o
++\$(EXE): \$(BUILD_PATH)/EspRuntime.o \$(CURDIR)/kernel.o
+ MAKEFILE
+ 
+ cat > "$APP_DIR/README.md" <<README
+--- a/scripts/mkinc/ll_to_riscv.mk
++++ b/scripts/mkinc/ll_to_riscv.mk
+@@ -8,7 +8,7 @@
+ # experiment directory so two experiments do not collide inside an ESP tree.
+ ESP_APP_NAME ?= $(notdir $(patsubst %/,%,$(CURDIR)))
+ 
+-$(ODIR)/esp/%/06_kernel_riscv.o: $(ODIR)/05_llvm_%.ll $(ODIR)/testdata.h
++$(ODIR)/esp/%/06_kernel_riscv.o: $(ODIR)/05_llvm_%.ll $(ODIR)/testdata.h $(SCRIPTS_DIR)/ll_to_riscv.sh $(CPU_MAIN)
+ 	ESP_APP_NAME=$(ESP_APP_NAME) $(SCRIPTS_DIR)/ll_to_riscv.sh $< $@
+ 
+ # Keep the object (and its staged esp-app/) when the binary stage chains onto it.

@@ -1,0 +1,603 @@
+ÿÿESP-Ariane boot loader
+
+kernel=syrk mode=ir dataset=MINI dtype=float32 outputs=1 elements=900
+[probe] sld,ffn_sysc_catapult.0 registered
+		Address   : 0x60010000
+		Interrupt : 6
+---------------------------------
+TEST PASSED (errors=0/900, nonfinite=0)
+max error = 367165 e-9, tolerance = 1000000 e-9
+---------------------------------
+region        cycles       calls        mean     share
+------------------------------------------------------
+total            1847439       1     1847439     100%
+pack               43561       1       43561       2%
+accel              74800       1       74800       4%
+unpack                34       1          34       0%
+epilogue          106851       1      106851       5%
+------------------------------------------------------
+ESP-Ariane boot loader
+
+kernel=gemm mode=cpu dataset=MINI dtype=float32 outputs=1 elements=500
+---------------------------------
+TEST PASSED (errors=0/500, nonfinite=0)
+max error = 1907 e-9, tolerance = 1000000 e-9
+---------------------------------
+region        cycles       calls        mean     share
+------------------------------------------------------
+total             581242       1      581242     100%
+------------------------------------------------------
+ESP-Ariane boot loader
+
+kernel=gemm mode=runtime dataset=MINI dtype=float32 outputs=1 elements=500
+[probe] sld,ffn_sysc_catapult.0 registered
+		Address   : 0x60010000
+		Interrupt : 6
+---------------------------------
+TEST PASSED (errors=0/500, nonfinite=0)
+max error = 412941 e-9, tolerance = 1000000 e-9
+---------------------------------
+region        cycles       calls        mean     share
+------------------------------------------------------
+total            1879249       1     1879249     100%
+pack               60461       1       60461       3%
+accel              76324       1       76324       4%
+unpack             39709       1       39709       2%
+epilogue           79790       1       79790       4%
+------------------------------------------------------
+ESP-Ariane boot loader
+
+kernel=gemm mode=runtime dataset=MINI dtype=float32 outputs=1 elements=500
+[probe] sld,ffn_sysc_catapult.0 registered
+		Address   : 0x60010000
+		Interrupt : 6
+---------------------------------
+TEST PASSED (errors=0/500, nonfinite=0)
+max error = 412941 e-9, tolerance = 1000000 e-9
+---------------------------------
+region        cycles       calls        mean     share
+------------------------------------------------------
+total            1879198       1     1879198     100%
+pack               60411       1       60411       3%
+accel              76377       1       76377       4%
+unpack             39699       1       39699       2%
+epilogue           79772       1       79772       4%
+------------------------------------------------------
+ESP-Ariane boot loader
+
+kernel=gemm mode=cpu dataset=MINI dtype=float32 outputs=1 elements=500
+---------------------------------
+TEST PASSED (errors=0/500, nonfinite=0)
+max error = 1907 e-9, tolerance = 1000000 e-9
+---------------------------------
+region        cycles       calls        mean     share
+------------------------------------------------------
+total             581216       1      581216     100%
+------------------------------------------------------
+ESP-Ariane boot loader
+
+kernel=gemm mode=cpu dataset=MINI dtype=float32 outputs=1 elements=500
+---------------------------------
+TEST PASSED (errors=0/500, nonfinite=0)
+max error = 1907 e-9, tolerance = 1000000 e-9
+---------------------------------
+region        cycles       calls        mean     share
+------------------------------------------------------
+total             581255       1      581255     100%
+------------------------------------------------------
+ESP-Ariane boot loader
+
+kernel=gemm mode=cpu dataset=MINI dtype=float32 outputs=1 elements=500
+---------------------------------
+TEST PASSED (errors=0/500, nonfinite=0)
+max error = 1907 e-9, tolerance = 1000000 e-9
+---------------------------------
+region        cycles       calls        mean     share
+------------------------------------------------------
+total             581246       1      581246     100%
+------------------------------------------------------
+ESP-Ariane boot loader
+
+kernel=gemm mode=cpu dataset=MINI dtype=float32 outputs=1 elements=500
+---------------------------------
+TEST PASSED (errors=0/500, nonfinite=0)
+max error = 1907 e-9, tolerance = 1000000 e-9
+---------------------------------
+region        cycles       calls        mean     share
+------------------------------------------------------
+total             581223       1      581223     100%
+------------------------------------------------------
+ESP-Ariane boot loader
+
+kernel=gemm mode=cpu dataset=MINI dtype=float32 outputs=1 elements=500
+---------------------------------
+TEST PASSED (errors=0/500, nonfinite=0)
+max error = 1907 e-9, tolerance = 1000000 e-9
+---------------------------------
+region        cycles       calls        mean     share
+------------------------------------------------------
+total             581231       1      581231     100%
+------------------------------------------------------
+ESP-Ariane boot loader
+
+kernel=gemm mode=runtime dataset=MINI dtype=float32 outputs=1 elements=500
+[probe] sld,ffn_sysc_catapult.0 registered
+		Address   : 0x60010000
+		Interrupt : 6
+---------------------------------
+TEST PASSED (errors=0/500, nonfinite=0)
+max error = 412941 e-9, tolerance = 1000000 e-9
+---------------------------------
+region        cycles       calls        mean     share
+------------------------------------------------------
+total            1879222       1     1879222     100%
+pack               60405       1       60405       3%
+accel              76394       1       76394       4%
+unpack             39696       1       39696       2%
+epilogue           79772       1       79772       4%
+------------------------------------------------------
+ESP-Ariane boot loader
+
+kernel=gemm mode=ir dataset=MINI dtype=float32 outputs=1 elements=500
+[probe] sld,ffn_sysc_catapult.0 registered
+		Address   : 0x60010000
+		Interrupt : 6
+---------------------------------
+TEST PASSED (errors=0/500, nonfinite=0)
+max error = 412941 e-9, tolerance = 1000000 e-9
+---------------------------------
+region        cycles       calls        mean     share
+------------------------------------------------------
+total            1813850       1     1813850     100%
+pack               57204       1       57204       3%
+accel              76393       1       76393       4%
+unpack                34       1          34       0%
+epilogue           61494       1       61494       3%
+------------------------------------------------------
+ESP-Ariane boot loader
+
+kernel=gemm mode=cpu dataset=MINI dtype=float32 outputs=1 elements=500
+---------------------------------
+TEST PASSED (errors=0/500, nonfinite=0)
+max error = 1907 e-9, tolerance = 1000000 e-9
+---------------------------------
+region        cycles       calls        mean     share
+------------------------------------------------------
+total             581228       1      581228     100%
+------------------------------------------------------
+ESP-Ariane boot loader
+
+kernel=gemm mode=runtime dataset=MINI dtype=float32 outputs=1 elements=500
+[probe] sld,ffn_sysc_catapult.0 registered
+		Address   : 0x60010000
+		Interrupt : 6
+---------------------------------
+TEST PASSED (errors=0/500, nonfinite=0)
+max error = 412941 e-9, tolerance = 1000000 e-9
+---------------------------------
+region        cycles       calls        mean     share
+------------------------------------------------------
+total            1879284       1     1879284     100%
+pack               60461       1       60461       3%
+accel              76369       1       76369       4%
+unpack             39708       1       39708       2%
+epilogue           79777       1       79777       4%
+------------------------------------------------------
+ESP-Ariane boot loader
+
+kernel=gemm mode=ir dataset=MINI dtype=float32 outputs=1 elements=500
+[probe] sld,ffn_sysc_catapult.0 registered
+		Address   : 0x60010000
+		Interrupt : 6
+---------------------------------
+TEST PASSED (errors=0/500, nonfinite=0)
+max error = 412941 e-9, tolerance = 1000000 e-9
+---------------------------------
+region        cycles       calls        mean     share
+------------------------------------------------------
+total            1813716       1     1813716     100%
+pack               57222       1       57222       3%
+accel              76339       1       76339       4%
+unpack                34       1          34       0%
+epilogue           61469       1       61469       3%
+------------------------------------------------------
+ESP-Ariane boot loader
+
+kernel=doitgen mode=cpu dataset=MINI dtype=float32 outputs=1 elements=960
+---------------------------------
+TEST PASSED (errors=0/960, nonfinite=0)
+max error = 238 e-9, tolerance = 1000000 e-9
+---------------------------------
+region        cycles       calls        mean     share
+------------------------------------------------------
+total             312959       1      312959     100%
+------------------------------------------------------
+ESP-Ariane boot loader
+
+kernel=doitgen mode=runtime dataset=MINI dtype=float32 outputs=1 elements=960
+[probe] sld,ffn_sysc_catapult.0 registered
+		Address   : 0x60010000
+		Interrupt : 6
+---------------------------------
+TEST PASSED (errors=0/960, nonfinite=0)
+max error = 79632 e-9, tolerance = 1000000 e-9
+---------------------------------
+region        cycles       calls        mean     share
+------------------------------------------------------
+total            1837159       1     1837159     100%
+pack               49754       1       49754       2%
+accel              59126       1       59126       3%
+unpack             75155       1       75155       4%
+epilogue           23263       1       23263       1%
+------------------------------------------------------
+ESP-Ariane boot loader
+
+kernel=doitgen mode=ir dataset=MINI dtype=float32 outputs=1 elements=960
+[probe] sld,ffn_sysc_catapult.0 registered
+		Address   : 0x60010000
+		Interrupt : 6
+---------------------------------
+TEST PASSED (errors=0/960, nonfinite=0)
+max error = 79632 e-9, tolerance = 1000000 e-9
+---------------------------------
+region        cycles       calls        mean     share
+------------------------------------------------------
+total            1793923       1     1793923     100%
+pack               28142       1       28142       1%
+accel              59132       1       59132       3%
+unpack             55804       1       55804       3%
+epilogue           23244       1       23244       1%
+------------------------------------------------------
+ESP-Ariane boot loader
+
+kernel=syrk mode=cpu dataset=MINI dtype=float32 outputs=1 elements=900
+---------------------------------
+TEST PASSED (errors=0/900, nonfinite=0)
+max error = 1907 e-9, tolerance = 1000000 e-9
+---------------------------------
+region        cycles       calls        mean     share
+------------------------------------------------------
+total             757213       1      757213     100%
+------------------------------------------------------
+ESP-Ariane boot loader
+
+kernel=syrk mode=runtime dataset=MINI dtype=float32 outputs=1 elements=900
+[probe] sld,ffn_sysc_catapult.0 registered
+		Address   : 0x60010000
+		Interrupt : 6
+---------------------------------
+TEST PASSED (errors=0/900, nonfinite=0)
+max error = 367165 e-9, tolerance = 1000000 e-9
+---------------------------------
+region        cycles       calls        mean     share
+------------------------------------------------------
+total            1980920       1     1980920     100%
+pack               47137       1       47137       2%
+accel              74830       1       74830       3%
+unpack             70548       1       70548       3%
+epilogue          142922       1      142922       7%
+------------------------------------------------------
+ESP-Ariane boot loader
+
+kernel=syrk mode=ir dataset=MINI dtype=float32 outputs=1 elements=900
+[probe] sld,ffn_sysc_catapult.0 registered
+		Address   : 0x60010000
+		Interrupt : 6
+---------------------------------
+TEST PASSED (errors=0/900, nonfinite=0)
+max error = 367165 e-9, tolerance = 1000000 e-9
+---------------------------------
+region        cycles       calls        mean     share
+------------------------------------------------------
+total            1847450       1     1847450     100%
+pack               43565       1       43565       2%
+accel              74845       1       74845       4%
+unpack                34       1          34       0%
+epilogue          106842       1      106842       5%
+------------------------------------------------------
+ESP-Ariane boot loader
+
+kernel=symm mode=cpu dataset=MINI dtype=float32 outputs=1 elements=600
+---------------------------------
+TEST PASSED (errors=0/600, nonfinite=0)
+max error = 15259 e-9, tolerance = 1000000 e-9
+---------------------------------
+region        cycles       calls        mean     share
+------------------------------------------------------
+total             576437       1      576437     100%
+------------------------------------------------------
+ESP-Ariane boot loader
+
+kernel=symm mode=runtime dataset=MINI dtype=float32 outputs=1 elements=600
+[probe] sld,ffn_sysc_catapult.0 registered
+		Address   : 0x60010000
+		Interrupt : 6
+---------------------------------
+TEST PASSED (errors=0/600, nonfinite=0)
+max error = 656128 e-9, tolerance = 1000000 e-9
+---------------------------------
+region        cycles       calls        mean     share
+------------------------------------------------------
+total            1931091       1     1931091     100%
+pack               45200       1       45200       2%
+accel              51639       1       51639       2%
+unpack             47326       1       47326       2%
+epilogue           95717       1       95717       4%
+------------------------------------------------------
+ESP-Ariane boot loader
+
+kernel=symm mode=ir dataset=MINI dtype=float32 outputs=1 elements=600
+[probe] sld,ffn_sysc_catapult.0 registered
+		Address   : 0x60010000
+		Interrupt : 6
+---------------------------------
+TEST PASSED (errors=0/600, nonfinite=0)
+max error = 656128 e-9, tolerance = 1000000 e-9
+---------------------------------
+region        cycles       calls        mean     share
+------------------------------------------------------
+total            1790180       1     1790180     100%
+pack               54079       1       54079       3%
+accel              51644       1       51644       2%
+unpack                66       1          66       0%
+epilogue           73611       1       73611       4%
+------------------------------------------------------
+ESP-Ariane boot loader
+
+kernel=trmm mode=cpu dataset=MINI dtype=float32 outputs=1 elements=600
+---------------------------------
+TEST PASSED (errors=0/600, nonfinite=0)
+max error = 1907 e-9, tolerance = 1000000 e-9
+---------------------------------
+region        cycles       calls        mean     share
+------------------------------------------------------
+total             498731       1      498731     100%
+------------------------------------------------------
+ESP-Ariane boot loader
+
+kernel=trmm mode=runtime dataset=MINI dtype=float32 outputs=1 elements=600
+[probe] sld,ffn_sysc_catapult.0 registered
+		Address   : 0x60010000
+		Interrupt : 6
+---------------------------------
+TEST PASSED (errors=0/600, nonfinite=0)
+max error = 287056 e-9, tolerance = 1000000 e-9
+---------------------------------
+region        cycles       calls        mean     share
+------------------------------------------------------
+total            1856180       1     1856180     100%
+pack               45141       1       45141       2%
+accel              51708       1       51708       2%
+unpack             47288       1       47288       2%
+epilogue           39249       1       39249       2%
+------------------------------------------------------
+ESP-Ariane boot loader
+
+kernel=trmm mode=ir dataset=MINI dtype=float32 outputs=1 elements=600
+[probe] sld,ffn_sysc_catapult.0 registered
+		Address   : 0x60010000
+		Interrupt : 6
+---------------------------------
+TEST PASSED (errors=0/600, nonfinite=0)
+max error = 287056 e-9, tolerance = 1000000 e-9
+---------------------------------
+region        cycles       calls        mean     share
+------------------------------------------------------
+total            1782957       1     1782957     100%
+pack               57581       1       57581       3%
+accel              51704       1       51704       2%
+unpack                66       1          66       0%
+epilogue           63755       1       63755       3%
+------------------------------------------------------
+ESP-Ariane boot loader
+
+kernel=mvt mode=cpu dataset=MINI dtype=float32 outputs=2 elements=80
+---------------------------------
+TEST PASSED (errors=0/80, nonfinite=0)
+max error = 1907 e-9, tolerance = 1000000 e-9
+---------------------------------
+region        cycles       calls        mean     share
+------------------------------------------------------
+total             189880       1      189880     100%
+------------------------------------------------------
+ESP-Ariane boot loader
+
+kernel=mvt mode=runtime dataset=MINI dtype=float32 outputs=2 elements=80
+[probe] sld,ffn_sysc_catapult.0 registered
+		Address   : 0x60010000
+		Interrupt : 6
+[probe] sld,ffn_sysc_catapult.0 registered
+		Address   : 0x60010000
+		Interrupt : 6
+---------------------------------
+TEST PASSED (errors=0/80, nonfinite=0)
+max error = 341415 e-9, tolerance = 1000000 e-9
+---------------------------------
+region        cycles       calls        mean     share
+------------------------------------------------------
+total            3527753       1     3527753     100%
+pack              145050       2       72525       4%
+accel              98223       2       49111       2%
+unpack              7800       2        3900       0%
+------------------------------------------------------
+ESP-Ariane boot loader
+
+kernel=syr2k mode=cpu dataset=MINI dtype=float32 outputs=1 elements=900
+---------------------------------
+TEST PASSED (errors=0/900, nonfinite=0)
+max error = 2861 e-9, tolerance = 1000000 e-9
+---------------------------------
+region        cycles       calls        mean     share
+------------------------------------------------------
+total            1418546       1     1418546     100%
+------------------------------------------------------
+ESP-Ariane boot loader
+
+kernel=syr2k mode=runtime dataset=MINI dtype=float32 outputs=1 elements=900
+[probe] sld,ffn_sysc_catapult.0 registered
+		Address   : 0x60010000
+		Interrupt : 6
+[probe] sld,ffn_sysc_catapult.0 registered
+		Address   : 0x60010000
+		Interrupt : 6
+---------------------------------
+TEST PASSED (errors=0/900, nonfinite=0)
+max error = 549316 e-9, tolerance = 1000000 e-9
+---------------------------------
+region        cycles       calls        mean     share
+------------------------------------------------------
+total            3852836       1     3852836     100%
+pack              100098       2       50049       2%
+accel             149414       2       74707       3%
+unpack            140240       2       70120       3%
+------------------------------------------------------
+ESP-Ariane boot loader
+
+kernel=twomm mode=cpu dataset=MINI dtype=float32 outputs=1 elements=384
+---------------------------------
+TEST PASSED (errors=0/384, nonfinite=0)
+max error = 7629 e-9, tolerance = 1000000 e-9
+---------------------------------
+region        cycles       calls        mean     share
+------------------------------------------------------
+total             504627       1      504627     100%
+------------------------------------------------------
+ESP-Ariane boot loader
+
+kernel=twomm mode=runtime dataset=MINI dtype=float32 outputs=1 elements=384
+[probe] sld,ffn_sysc_catapult.0 registered
+		Address   : 0x60010000
+		Interrupt : 6
+[probe] sld,ffn_sysc_catapult.0 registered
+		Address   : 0x60010000
+		Interrupt : 6
+  MISMATCH output=0 index=24 error=1403809 e-9
+  MISMATCH output=0 index=27 error=1319885 e-9
+  MISMATCH output=0 index=28 error=1045227 e-9
+  MISMATCH output=0 index=30 error=1468658 e-9
+  MISMATCH output=0 index=33 error=1268387 e-9
+  MISMATCH output=0 index=36 error=1441956 e-9
+  MISMATCH output=0 index=39 error=1388550 e-9
+  MISMATCH output=0 index=42 error=1483917 e-9
+  MISMATCH output=0 index=43 error=1064301 e-9
+  MISMATCH output=0 index=44 error=1018524 e-9
+---------------------------------
+TEST FAILED (errors=274/384, nonfinite=0)
+max error = 1991272 e-9, tolerance = 1000000 e-9
+---------------------------------
+region        cycles       calls        mean     share
+------------------------------------------------------
+total            3439507       1     3439507     100%
+pack               66329       2       33164       1%
+accel              63871       2       31935       1%
+unpack             53123       2       26561       1%
+------------------------------------------------------
+ESP-Ariane boot loader
+
+kernel=threemm mode=cpu dataset=MINI dtype=float32 outputs=1 elements=352
+---------------------------------
+TEST PASSED (errors=0/352, nonfinite=0)
+max error = 119 e-9, tolerance = 1000000 e-9
+---------------------------------
+region        cycles       calls        mean     share
+------------------------------------------------------
+total             738414       1      738414     100%
+------------------------------------------------------
+ESP-Ariane boot loader
+
+kernel=threemm mode=runtime dataset=MINI dtype=float32 outputs=1 elements=352
+[probe] sld,ffn_sysc_catapult.0 registered
+		Address   : 0x60010000
+		Interrupt : 6
+[probe] sld,ffn_sysc_catapult.0 registered
+		Address   : 0x60010000
+		Interrupt : 6
+[probe] sld,ffn_sysc_catapult.0 registered
+		Address   : 0x60010000
+		Interrupt : 6
+---------------------------------
+TEST PASSED (errors=0/352, nonfinite=0)
+max error = 290930 e-9, tolerance = 1000000 e-9
+---------------------------------
+region        cycles       calls        mean     share
+------------------------------------------------------
+total            5093658       1     5093658     100%
+pack              104216       3       34738       2%
+accel             102896       3       34298       2%
+unpack             82067       3       27355       1%
+------------------------------------------------------
+ESP-Ariane boot loader
+
+kernel=gemver mode=cpu dataset=MINI dtype=float32 outputs=1 elements=40
+  MISMATCH output=0 index=32 error=1220703 e-9
+---------------------------------
+TEST FAILED (errors=1/40, nonfinite=0)
+max error = 1220703 e-9, tolerance = 1000000 e-9
+---------------------------------
+region        cycles       calls        mean     share
+------------------------------------------------------
+total             462870       1      462870     100%
+------------------------------------------------------
+ESP-Ariane boot loader
+
+kernel=gemver mode=runtime dataset=MINI dtype=float32 outputs=1 elements=40
+[probe] sld,ffn_sysc_catapult.0 registered
+		Address   : 0x60010000
+		Interrupt : 6
+[probe] sld,ffn_sysc_catapult.0 registered
+		Address   : 0x60010000
+		Interrupt : 6
+  MISMATCH output=0 index=0 error=5404294 e-9
+  MISMATCH output=0 index=1 error=45959473 e-9
+  MISMATCH output=0 index=2 error=50476074 e-9
+  MISMATCH output=0 index=3 error=58166504 e-9
+  MISMATCH output=0 index=4 error=64270020 e-9
+  MISMATCH output=0 index=5 error=71960449 e-9
+  MISMATCH output=0 index=6 error=82153320 e-9
+  MISMATCH output=0 index=7 error=90820313 e-9
+  MISMATCH output=0 index=8 error=94604492 e-9
+  MISMATCH output=0 index=9 error=107666016 e-9
+---------------------------------
+TEST FAILED (errors=40/40, nonfinite=0)
+max error = 354003906 e-9, tolerance = 1000000 e-9
+---------------------------------
+region        cycles       calls        mean     share
+------------------------------------------------------
+total            3805711       1     3805711     100%
+pack              130858       2       65429       3%
+accel              98317       2       49158       2%
+unpack              7714       2        3857       0%
+------------------------------------------------------
+ESP-Ariane boot loader
+
+kernel=atax mode=cpu dataset=MINI dtype=float32 outputs=1 elements=42
+---------------------------------
+TEST PASSED (errors=0/42, nonfinite=0)
+max error = 3815 e-9, tolerance = 1000000 e-9
+---------------------------------
+region        cycles       calls        mean     share
+------------------------------------------------------
+total             184033       1      184033     100%
+------------------------------------------------------
+ESP-Ariane boot loader
+
+kernel=bicg mode=cpu dataset=MINI dtype=float32 outputs=2 elements=80
+---------------------------------
+TEST PASSED (errors=0/80, nonfinite=0)
+max error = 1907 e-9, tolerance = 1000000 e-9
+---------------------------------
+region        cycles       calls        mean     share
+------------------------------------------------------
+total             184694       1      184694     100%
+------------------------------------------------------
+ESP-Ariane boot loader
+
+kernel=gesummv mode=cpu dataset=MINI dtype=float32 outputs=1 elements=30
+---------------------------------
+TEST PASSED (errors=0/30, nonfinite=0)
+max error = 3815 e-9, tolerance = 1000000 e-9
+---------------------------------
+region        cycles       calls        mean     share
+------------------------------------------------------
+total              86498       1       86498     100%
+------------------------------------------------------

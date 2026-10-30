@@ -1,0 +1,31 @@
+From 19377c05acd191f3ae4a639e3f827d3a0e533e00 Mon Sep 17 00:00:00 2001
+From: William Baisi <wb2426@columbia.edu>
+Date: Thu, 10 Sep 2026 13:01:03 -0400
+Subject: [PATCH] Register MLIR passes used by the ESP IR marshalling recipe
+
+---
+ tools/soda-opt/soda-opt.cpp | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/tools/soda-opt/soda-opt.cpp b/tools/soda-opt/soda-opt.cpp
+index a330e6a..1fd48fd 100644
+--- a/tools/soda-opt/soda-opt.cpp
++++ b/tools/soda-opt/soda-opt.cpp
+@@ -68,6 +68,7 @@ inline void registerAffinePassesForSoda() {
+   mlir::affine::registerAffineLoopInvariantCodeMotionPass();
+   mlir::affine::registerAffineLoopTilingPass();
+   mlir::affine::registerAffineLoopFusionPass();
++  mlir::affine::registerAffineLoopNormalizePass();
+   mlir::affine::registerAffineLoopUnrollPass();
+   mlir::affine::registerAffineScalarReplacementPass();
+
+@@ -99,6 +100,9 @@ int main(int argc, char **argv) {
+   mlir::registerConvertLinalgToAffineLoopsPass();
+   mlir::registerConvertFuncToLLVMPass();
+   mlir::registerFinalizeMemRefToLLVMConversionPass();
++  // Folds memref.expand_shape/collapse_shape/subview into the loads and stores
++  // that go through them, so loop fusion sees one memref on both sides.
++  mlir::memref::registerFoldMemRefAliasOps();
+   mlir::registerSCFToControlFlowPass();
+   mlir::registerConvertAffineToStandardPass();
+   mlir::registerConvertMathToLLVMPass();
