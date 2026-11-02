@@ -16,5 +16,6 @@ add_mlir_dialect_library(MLIRSODAPDataflow
         MLIRMemRefDialect
         MLIRSideEffectInterfaces
         MLIRAnalysis
+        MLIRTransformUtils
         )
 add_subdirectory(Transforms)

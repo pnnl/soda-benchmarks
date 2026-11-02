@@ -16,7 +16,6 @@
 
 #include "sodap/Dialect/Dataflow/Transforms/Passes.h"
 
-#include "mlir/Analysis/Liveness.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/Matchers.h"
@@ -77,11 +76,7 @@ struct TaskToNode : public OpRewritePattern<TaskOp> {
     SmallVector<Location, 8> inputLocs, outputLocs, paramLocs;
 
     // Classify each livein of the task body into a port.
-    auto liveins = Liveness(task).getLiveIn(&task.getBody().front());
-    for (auto livein : liveins) {
-      if (task.getBody().isAncestor(livein.getParentRegion()))
-        continue;
-
+    for (Value livein : task.getLiveins()) {
       if (isa<MemRefType, StreamType, RankedTensorType>(livein.getType())) {
         LLVM_DEBUG(llvm::dbgs() << "livein: " << livein << "\n");
         auto uses = llvm::make_filter_range(livein.getUses(), isInTask);

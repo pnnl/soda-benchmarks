@@ -20,6 +20,8 @@
 #include "mlir/Analysis/Liveness.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/DialectImplementation.h"
+#include "mlir/Transforms/RegionUtils.h"
+#include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/TypeSwitch.h"
 
 using namespace mlir;
@@ -219,8 +221,11 @@ bool TaskOp::isLivein(Value value) {
 }
 
 SmallVector<Value> TaskOp::getLiveins() {
-  auto liveins = Liveness(*this).getLiveIn(&(*this).getBody().front());
-  return {liveins.begin(), liveins.end()};
+  // In first-use order. Liveness keeps a pointer set, whose order would change
+  // from run to run with the addresses.
+  SetVector<Value> liveins;
+  getUsedValuesDefinedAbove(getBody(), liveins);
+  return liveins.takeVector();
 }
 
 SmallVector<Operation *> TaskOp::getLiveinUsers(Value livein) {
