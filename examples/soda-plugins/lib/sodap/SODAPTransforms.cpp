@@ -220,8 +220,20 @@ static ::mlir::memref::SubViewOp argumentTile(::mlir::Value value) {
   return DiagnosedSilenceableFailure::success();
 }
 
-/// Multibuffers `alloc` with the slot linearized over the loop nest around its
-/// users (see the op description). Checks everything before touching the IR.
+/// Stores in `var` the slot after `slot`: var = (slot + 1) % factor.
+static void toggleSlot(::mlir::RewriterBase &rewriter, ::mlir::Location loc,
+                       ::mlir::Value var, ::mlir::Value slot, int64_t factor) {
+  using namespace ::mlir;
+  Value one = rewriter.create<arith::ConstantIntOp>(loc, 1, 8);
+  Value inc = rewriter.create<arith::AddIOp>(loc, slot, one);
+  Value size = rewriter.create<arith::ConstantIntOp>(loc, factor, 8);
+  Value next = rewriter.create<arith::RemUIOp>(loc, inc, size);
+  rewriter.create<memref::StoreOp>(loc, next, var);
+}
+
+/// Multibuffers `alloc` with the slot in a variable switched once per iteration
+/// of the loop around its users (see the op description). Checks everything
+/// before touching the IR.
 static ::mlir::FailureOr<::mlir::memref::AllocOp>
 multiBufferOverNest(::mlir::RewriterBase &rewriter,
                     ::mlir::memref::AllocOp alloc, int64_t factor) {
@@ -245,26 +257,7 @@ multiBufferOverNest(::mlir::RewriterBase &rewriter,
   if (!level || level->isAncestor(alloc))
     return failure();
 
-  // The loops the slot counts, outermost first.
-  SmallVector<scf::ForOp> loops;
-  for (scf::ForOp loop = level; loop && !loop->isAncestor(alloc);
-       loop = loop->getParentOfType<scf::ForOp>())
-    loops.insert(loops.begin(), loop);
-
-  // index = sum_d ((iv_d - lb_d) floordiv step_d) * (trip counts inside d)
   MLIRContext *ctx = rewriter.getContext();
-  AffineExpr index = getAffineConstantExpr(0, ctx);
-  int64_t stride = 1;
-  for (int d = loops.size() - 1; d >= 0; --d) {
-    std::optional<int64_t> lb = getConstantIntValue(loops[d].getLowerBound());
-    std::optional<int64_t> ub = getConstantIntValue(loops[d].getUpperBound());
-    std::optional<int64_t> step = getConstantIntValue(loops[d].getStep());
-    if (!lb || !ub || !step)
-      return failure();
-    index = index + (getAffineDimExpr(d, ctx) - *lb).floorDiv(*step) * stride;
-    stride *= llvm::divideCeil(*ub - *lb, *step);
-  }
-
   Location loc = alloc.getLoc();
   SmallVector<int64_t> shape{factor};
   llvm::append_range(shape, type.getShape());
@@ -274,14 +267,18 @@ multiBufferOverNest(::mlir::RewriterBase &rewriter,
       MemRefType::get(shape, type.getElementType(), MemRefLayoutAttrInterface{},
                       type.getMemorySpace()),
       alloc.getAlignmentAttr());
+  Value var = rewriter.create<memref::AllocaOp>(
+      loc, MemRefType::get(ArrayRef<int64_t>{}, rewriter.getI8Type()));
+  rewriter.create<memref::StoreOp>(
+      loc, rewriter.create<arith::ConstantIntOp>(loc, 0, 8), var);
 
   rewriter.setInsertionPointToStart(level.getBody());
-  SmallVector<Value> ivs = llvm::map_to_vector(
-      loops, [](scf::ForOp loop) { return loop.getInductionVar(); });
-  Value slot = rewriter.create<affine::AffineApplyOp>(
-      loc, AffineMap::get(loops.size(), 0, index % factor), ivs);
+  Value slot = rewriter.create<memref::LoadOp>(loc, var);
   SmallVector<OpFoldResult> offsets(shape.size(), rewriter.getIndexAttr(0));
-  offsets[0] = slot;
+  offsets[0] = rewriter
+                   .create<arith::IndexCastOp>(loc, rewriter.getIndexType(),
+                                               slot)
+                   .getResult();
   SmallVector<OpFoldResult> sizes = getAsIndexOpFoldResult(ctx, shape);
   sizes[0] = rewriter.getIndexAttr(1);
   SmallVector<OpFoldResult> strides(shape.size(), rewriter.getIndexAttr(1));
@@ -289,6 +286,9 @@ multiBufferOverNest(::mlir::RewriterBase &rewriter,
       type.getShape(), newAlloc.getType(), offsets, sizes, strides));
   Value view = rewriter.create<memref::SubViewOp>(loc, viewType, newAlloc,
                                                   offsets, sizes, strides);
+
+  rewriter.setInsertionPoint(level.getBody()->getTerminator());
+  toggleSlot(rewriter, loc, var, slot, factor);
 
   rewriter.replaceAllUsesWith(alloc, view);
   rewriter.eraseOp(alloc);
@@ -299,6 +299,9 @@ multiBufferOverNest(::mlir::RewriterBase &rewriter,
     ::mlir::transform::TransformRewriter &rewriter,
     ::mlir::transform::TransformResults &results,
     ::mlir::transform::TransformState &state) {
+  if (getFactor() != 2)
+    return emitSilenceableError() << "only factor 2 is supported";
+
   SmallVector<Operation *> newAllocs;
   for (Operation *op : state.getPayloadOps(getTarget())) {
     // Filled once before the nest: nothing to alternate.
@@ -351,6 +354,16 @@ struct Stage {
   ::llvm::MapVector<::mlir::memref::AllocOp, Access> buffers;
 };
 
+/// The slot variable of a multibuffered buffer, as `sodap.multibuffer` makes it.
+struct Slot {
+  ::mlir::memref::AllocOp alloc;
+  ::mlir::memref::SubViewOp view;
+  ::mlir::Value var;
+  ::mlir::Value value;
+  ::mlir::memref::StoreOp init;
+  ::mlir::memref::StoreOp toggle;
+};
+
 /// The token of a buffer shared by a producer and a consumer stage. A buffer
 /// loaded once before the nest has no view nor slot: its token is for the
 /// whole task, and carries 0.
@@ -358,10 +371,38 @@ struct Token {
   ::mlir::memref::AllocOp alloc;
   ::mlir::memref::SubViewOp view;
   ::mlir::Value slot;
+  ::mlir::memref::StoreOp toggle;
   unsigned producer;
   unsigned consumer;
 };
 } // namespace
+
+/// The slot variable of `alloc`, if it is multibuffered in `nest`.
+static std::optional<Slot> findSlot(::mlir::memref::AllocOp alloc,
+                                    ::mlir::scf::ForOp nest) {
+  using namespace ::mlir;
+  auto view = alloc->hasOneUse()
+                  ? dyn_cast<memref::SubViewOp>(*alloc->user_begin())
+                  : memref::SubViewOp();
+  if (!view || !nest->isProperAncestor(view))
+    return std::nullopt;
+  Value offset =
+      llvm::dyn_cast_if_present<Value>(view.getMixedOffsets().front());
+  auto index = offset ? offset.getDefiningOp<arith::IndexCastOp>()
+                      : arith::IndexCastOp();
+  auto load = index ? index.getIn().getDefiningOp<memref::LoadOp>()
+                    : memref::LoadOp();
+  if (!load)
+    return std::nullopt;
+
+  Slot slot{alloc, view, load.getMemRef(), load.getResult(), {}, {}};
+  for (Operation *user : slot.var.getUsers())
+    if (auto store = dyn_cast<memref::StoreOp>(user))
+      (nest->isAncestor(store) ? slot.toggle : slot.init) = store;
+  if (!slot.init || !slot.toggle)
+    return std::nullopt;
+  return slot;
+}
 
 /// Replaces `nest` with a dispatch of one task per stage (see the op
 /// description). Checks everything before touching the IR; on failure,
@@ -390,7 +431,9 @@ splitStages(::mlir::RewriterBase &rewriter, ::mlir::scf::ForOp nest,
         stores.push_back(op);
       else
         unsupported = op;
-    } else if (!isa<scf::ForOp, scf::YieldOp>(op) && !isMemoryEffectFree(op)) {
+    } else if (!isa<scf::ForOp, scf::YieldOp, memref::LoadOp, memref::StoreOp>(
+                   op) &&
+               !isMemoryEffectFree(op)) {
       unsupported = op;
     }
     return unsupported ? WalkResult::interrupt() : WalkResult::advance();
@@ -474,9 +517,13 @@ splitStages(::mlir::RewriterBase &rewriter, ::mlir::scf::ForOp nest,
     for (auto &entry : stage.buffers)
       users[entry.first].push_back(idx);
   SmallVector<Token> tokens;
+  SmallVector<Slot> slots;
   // The views of the shared buffers their producer also reads.
   SmallVector<std::pair<unsigned, memref::SubViewOp>> privates;
   for (auto &[alloc, stageIdxs] : users) {
+    std::optional<Slot> slot = findSlot(alloc, nest);
+    if (slot)
+      slots.push_back(*slot);
     if (stageIdxs.size() < 2)
       continue;
     auto writers = llvm::to_vector(llvm::make_filter_range(
@@ -491,24 +538,24 @@ splitStages(::mlir::RewriterBase &rewriter, ::mlir::scf::ForOp nest,
         })) {
       for (unsigned consumer : stageIdxs)
         if (consumer != writers.front())
-          tokens.push_back({alloc, {}, {}, writers.front(), consumer});
+          tokens.push_back({alloc, {}, {}, {}, writers.front(), consumer});
       continue;
     }
-    auto view = alloc->hasOneUse()
-                    ? dyn_cast<memref::SubViewOp>(*alloc->user_begin())
-                    : memref::SubViewOp();
-    Value slot = view ? llvm::dyn_cast_if_present<Value>(
-                            view.getMixedOffsets().front())
-                      : Value();
-    if (!slot || !nest->isProperAncestor(view)) {
+    if (!slot) {
       reason = "a shared buffer is not multibuffered in the nest";
+      return failure();
+    }
+    // The producer switches the slot after writing the token, so there is one.
+    if (stageIdxs.size() != 2) {
+      reason = "a multibuffered buffer must have exactly one consumer";
       return failure();
     }
     for (unsigned consumer : stageIdxs)
       if (consumer != writers.front())
-        tokens.push_back({alloc, view, slot, writers.front(), consumer});
+        tokens.push_back({alloc, slot->view, slot->value, slot->toggle,
+                          writers.front(), consumer});
     if (stages[writers.front()].buffers[alloc].reads)
-      privates.push_back({writers.front(), view});
+      privates.push_back({writers.front(), slot->view});
   }
 
   Location loc = nest.getLoc();
@@ -535,12 +582,29 @@ splitStages(::mlir::RewriterBase &rewriter, ::mlir::scf::ForOp nest,
     if (s == 0)
       for (Operation *op : prologue)
         rewriter.clone(*op, map);
+    // The stage writing a buffer owns its slot variable: the others have no
+    // switch, and a consumer gets the slot from the token.
+    auto ownsSlot = [&buffers = stage.buffers](Slot &slot) {
+      return buffers.lookup(slot.alloc).writes;
+    };
+    for (Slot &slot : slots) {
+      if (!ownsSlot(slot))
+        continue;
+      Value var = rewriter.create<memref::AllocaOp>(
+          loc, cast<MemRefType>(slot.var.getType()));
+      rewriter.create<memref::StoreOp>(
+          loc, rewriter.create<arith::ConstantIntOp>(loc, 0, 8), var);
+      map.map(slot.var, var);
+    }
     rewriter.clone(*nest, map);
     for (auto [other, otherStage] : llvm::enumerate(stages))
       if (other != s)
         for (Operation *op : otherStage.ops)
           if (Operation *clone = map.lookupOrNull(op))
             rewriter.eraseOp(clone);
+    for (Slot &slot : slots)
+      if (!ownsSlot(slot))
+        rewriter.eraseOp(map.lookup(slot.toggle.getOperation()));
 
     // Where a token lives: the loop body of its slot, or the whole task.
     auto levelOf = [&](Token token) {
@@ -572,7 +636,9 @@ splitStages(::mlir::RewriterBase &rewriter, ::mlir::scf::ForOp nest,
         continue;
       Block *level = levelOf(token);
       rewriter.setInsertionPointToStart(level);
-      rewriter.create<df::StreamPeekOp>(loc, i8, stream);
+      Value peek = rewriter.create<df::StreamPeekOp>(loc, i8, stream);
+      if (token.slot)
+        rewriter.replaceAllUsesWith(map.lookup(token.slot), peek);
     }
     for (auto [token, stream] : llvm::zip(tokens, streams)) {
       if (token.consumer != s)
@@ -611,11 +677,15 @@ splitStages(::mlir::RewriterBase &rewriter, ::mlir::scf::ForOp nest,
       }
       Value slot =
           token.slot
-              ? rewriter.create<arith::IndexCastOp>(loc, i8,
-                                                    map.lookup(token.slot))
-                    .getResult()
+              ? map.lookup(token.slot)
               : rewriter.create<arith::ConstantIntOp>(loc, 0, 8).getResult();
       rewriter.create<df::StreamWriteOp>(loc, stream, slot);
+      if (token.toggle) {
+        Operation *toggle = map.lookup(token.toggle.getOperation());
+        Value var = cast<memref::StoreOp>(toggle).getMemRef();
+        rewriter.eraseOp(toggle);
+        toggleSlot(rewriter, loc, var, slot, token.alloc.getType().getDimSize(0));
+      }
     }
 
     // What the stage does not use: other stages' views, loops left empty.
@@ -625,6 +695,10 @@ splitStages(::mlir::RewriterBase &rewriter, ::mlir::scf::ForOp nest,
   for (Operation *op : prologue)
     rewriter.eraseOp(op);
   rewriter.eraseOp(nest);
+  for (Slot &slot : slots) {
+    rewriter.eraseOp(slot.init);
+    rewriter.eraseOp(slot.var.getDefiningOp());
+  }
   return dispatch;
 }
 

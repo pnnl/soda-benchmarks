@@ -94,13 +94,14 @@ def MultiBufferOp : Op<Transform_Dialect, "sodap.multibuffer",
 
     The difference is the slot index. Upstream uses the iteration of the
     innermost loop alone, which restarts every time that loop does. Here the
-    slot is the position of the iteration in the whole nest, counting all the
-    `scf.for`s around the users that do not contain the allocation:
+    slot is an `i8` variable, a `memref<i8>` next to the allocation, loaded at
+    the start of the innermost loop holding every user and switched at the end
+    of its body:
 
-        for i, for j, for k: slot = (i' * Tj * Tk + j' * Tk + k') mod factor
+        var = (var + 1) % factor
 
-    with `x' = (x - lb) / step` and `T` the trip counts, so consecutive tiles
-    of the nest always use different slots. This needs static loop bounds.
+    so consecutive tiles of the nest always use different slots. Only a
+    `factor` of 2 is supported for now.
 
     There is no analysis: nothing may be carried in the buffer from one
     iteration to the next.
@@ -111,9 +112,9 @@ def MultiBufferOp : Op<Transform_Dialect, "sodap.multibuffer",
 
     #### Return modes
 
-    Returns the new allocations. Fails silenceably if an allocation has a
-    dynamic shape, a user of another kind or outside a loop, or a loop with
-    dynamic bounds.
+    Returns the new allocations. Fails silenceably if `factor` is not 2, or if
+    an allocation has a dynamic shape or a user of another kind or outside a
+    loop.
   }];
 
   let arguments =
@@ -147,18 +148,19 @@ def SplitStagesOp : Op<Transform_Dialect, "sodap.split_stages",
     loops and index computations it does not need are removed.
 
     A buffer accessed by more than one stage must be written by exactly one,
-    and be multibuffered: used only through one `memref.subview` whose first
-    offset is the slot. Each consumer of it gets a token, a
-    `!dataflow.stream<i8, 1>`, in the loop body where the slot is computed:
-    the producer writes the slot before the first loop after its last write
-    of the buffer in that body, or at the end of the body if there is none
-    (not always at the end: a load at an outer level would wait for the inner
-    loops after it, which wait for the consumer), the consumer peeks it at the
-    start and reads it at the end, so a slot is refilled only once its
-    previous reader has released it.
+    have one consumer, and be multibuffered: used only through one
+    `memref.subview` whose first offset is the slot variable. Its consumer
+    gets a token, a `!dataflow.stream<i8, 1>`, in the loop body where the slot
+    is loaded: the producer, which owns the variable, writes the slot before
+    the first loop after its last write of the buffer in that body, or at the
+    end of the body if there is none (not always at the end: a load at an outer
+    level would wait for the inner loops after it, which wait for the
+    consumer), and switches the variable right after. The consumer peeks the
+    token at the start, indexes the buffer with it and reads it at the end, so
+    a slot is refilled only once its previous reader has released it.
 
     A buffer loaded before the nest is not multibuffered: it has one token
-    for the whole task, which carries 0. Load writes it after the copies,
+    per consumer for the whole task, which carries 0. Load writes it after the copies,
     before the nest; a consumer peeks it before its loops and reads it after
     them.
 
