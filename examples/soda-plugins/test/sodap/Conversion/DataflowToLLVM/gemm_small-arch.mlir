@@ -15,24 +15,25 @@
 // RUN:     -o /dev/null | FileCheck %s
 
 // Functions come out in module order, the nodes as dataflow_module. Bundles
-// are positional (P<index>): streams are fifo, memrefs array, scalars default.
+// are positional, P<index> on the top and <function>_B<index> on a node:
+// streams are fifo, memrefs array, scalars default.
 // CHECK:      <function dataflow_module="1" inline="off" name="node0" symbol="node0">
-// CHECK:        <bundle depth="32" mode="fifo" name="P0">
-// CHECK-NEXT:   <bundle mode="array" name="P1">
+// CHECK:        <bundle depth="32" mode="fifo" name="node0_B0">
+// CHECK-NEXT:   <bundle mode="array" name="node0_B1">
 
 // CHECK:      <function dataflow_module="1" inline="off" name="node1" symbol="node1">
-// CHECK:        <bundle depth="32" mode="fifo" name="P0">
-// CHECK-NEXT:   <bundle mode="array" name="P1">
-// CHECK-NEXT:   <bundle depth="32" mode="fifo" name="P2">
-// CHECK-NEXT:   <bundle mode="default" name="P3">
-// CHECK-NEXT:   <bundle mode="default" name="P4">
+// CHECK:        <bundle depth="32" mode="fifo" name="node1_B0">
+// CHECK-NEXT:   <bundle mode="array" name="node1_B1">
+// CHECK-NEXT:   <bundle depth="32" mode="fifo" name="node1_B2">
+// CHECK-NEXT:   <bundle mode="default" name="node1_B3">
+// CHECK-NEXT:   <bundle mode="default" name="node1_B4">
 
 // CHECK:      <function dataflow_module="1" inline="off" name="node2" symbol="node2">
-// CHECK:        <bundle mode="array" name="P0">
-// CHECK-NEXT:   <bundle mode="array" name="P1">
-// CHECK-NEXT:   <bundle depth="32" mode="fifo" name="P2">
-// CHECK-NEXT:   <bundle mode="default" name="P3">
-// CHECK:        <parameter bundle="P2" includes="{{.*}}ac_channel.h" index="2" {{.*}}port="P2"
+// CHECK:        <bundle mode="array" name="node2_B0">
+// CHECK-NEXT:   <bundle mode="array" name="node2_B1">
+// CHECK-NEXT:   <bundle depth="32" mode="fifo" name="node2_B2">
+// CHECK-NEXT:   <bundle mode="default" name="node2_B3">
+// CHECK:        <parameter bundle="node2_B2" includes="{{.*}}ac_channel.h" index="2" {{.*}}port="P2"
 
 // The top sees only the four memrefs of @forward: the channels are internal.
 // CHECK:      <function dataflow_top="1" inline="off" name="forward" symbol="forward">

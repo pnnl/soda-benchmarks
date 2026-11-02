@@ -117,7 +117,9 @@ struct ParamInfo {
   /// ports of the top after `port` but names the testbench interface modules
   /// after `bundle`, so on the top the two have to be the same string or the
   /// two sides fail to connect with "Port <bundle>_TDATA not found in DUT".
-  /// Nothing forces them apart on a module, so they are kept equal there too.
+  /// A module uses <function>_B<index> instead: a bundle forwarded from the top
+  /// takes the top's name, which must not hit a P<index> of the module that
+  /// means another parameter ("Duplicate interface bundle name").
   std::string bundle;
   /// "axis" for an axis stream of the top, "fifo" for any other stream,
   /// "array" for a memref, "default" for a scalar.
@@ -285,10 +287,13 @@ EmitBambuArchitecture::describeParams(func::FuncOp func) {
     // Bambu recovers source-level parameter names through its AST plugin,
     // which does not run on LLVM IR input: what it sees here are the
     // positional names, and the XML has to agree. Port and bundle are the
-    // same string because the top would not connect to its testbench
-    // otherwise, and nothing asks them to differ on a module.
+    // same string on the top, which would not connect to its testbench
+    // otherwise; see ParamInfo::bundle for the name a module uses.
     info.index = index;
-    info.bundle = info.port = ("P" + Twine(index)).str();
+    info.port = ("P" + Twine(index)).str();
+    info.bundle = func.getName() == topFunc
+                      ? info.port
+                      : (func.getName() + "_B" + Twine(index)).str();
     info.bundleMode = getBundleMode(arg);
     info.depth = getDepth(arg);
     info.typeName = getTypeName(arg);

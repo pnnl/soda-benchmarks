@@ -27,20 +27,20 @@
 // The ports reach load (P0, P1) and store (P2, P3) as ordinary FIFOs, depth
 // and all; the bank-index channels are FIFOs throughout.
 // CHECK:      <function dataflow_module="1" inline="off" name="top_node0" symbol="top_node0">
-// CHECK:        <bundle depth="8" mode="fifo" name="P0">
-// CHECK-NEXT:   <bundle depth="16" mode="fifo" name="P1">
-// CHECK-NEXT:   <bundle mode="array" name="P2">
-// CHECK-NEXT:   <bundle depth="2" mode="fifo" name="P3">
+// CHECK:        <bundle depth="8" mode="fifo" name="top_node0_B0">
+// CHECK-NEXT:   <bundle depth="16" mode="fifo" name="top_node0_B1">
+// CHECK-NEXT:   <bundle mode="array" name="top_node0_B2">
+// CHECK-NEXT:   <bundle depth="2" mode="fifo" name="top_node0_B3">
 
 // CHECK:      <function dataflow_module="1" inline="off" name="top_node1" symbol="top_node1">
-// CHECK:        <bundle depth="2" mode="fifo" name="P0">
-// CHECK-NEXT:   <bundle depth="2" mode="fifo" name="P1">
+// CHECK:        <bundle depth="2" mode="fifo" name="top_node1_B0">
+// CHECK-NEXT:   <bundle depth="2" mode="fifo" name="top_node1_B1">
 
 // CHECK:      <function dataflow_module="1" inline="off" name="top_node2" symbol="top_node2">
-// CHECK:        <bundle depth="2" mode="fifo" name="P0">
-// CHECK-NEXT:   <bundle mode="array" name="P1">
-// CHECK-NEXT:   <bundle depth="8" mode="fifo" name="P2">
-// CHECK-NEXT:   <bundle depth="16" mode="fifo" name="P3">
+// CHECK:        <bundle depth="2" mode="fifo" name="top_node2_B0">
+// CHECK-NEXT:   <bundle mode="array" name="top_node2_B1">
+// CHECK-NEXT:   <bundle depth="8" mode="fifo" name="top_node2_B2">
+// CHECK-NEXT:   <bundle depth="16" mode="fifo" name="top_node2_B3">
 
 // On the top they are axis bundles, with no depth: the FIFO is on the far
 // side of the port. The parameters still carry the ac_channel typename.
