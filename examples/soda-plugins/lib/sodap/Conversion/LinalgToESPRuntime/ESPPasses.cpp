@@ -20,6 +20,8 @@ static constexpr const char *kEspAllocShared = "esp_alloc_shared";
 static constexpr const char *kEspFreeShared = "esp_free_shared";
 static constexpr const char *kEspFloat2FixedF32 = "esp_float2fixed_f32";
 static constexpr const char *kEspFixed2FloatF32 = "esp_fixed2float_f32";
+static constexpr const char *kEspCopyToSharedF32 = "esp_copy_to_shared_f32";
+static constexpr const char *kEspCopyFromSharedF32 = "esp_copy_from_shared_f32";
 static constexpr const char *kEspAccelWriteReg = "esp_accel_write_reg";
 static constexpr const char *kEspAccelStart = "esp_accel_start";
 static constexpr const char *kEspAccelWait = "esp_accel_wait";
@@ -51,6 +53,7 @@ static constexpr uint32_t kProfEpilogue = 4;
 using namespace mlir;
 
 namespace mlir::sodap {
+#define GEN_PASS_DEF_KERNELTOESPACCELERATOR
 #define GEN_PASS_DEF_LINALGBATCHMATMULTOESP
 #include "sodap/SODAPPasses.h.inc"
 
@@ -437,6 +440,119 @@ static LogicalResult replaceBatchMatmul(linalg::BatchMatmulOp op,
   op.erase();
   return success();
 }
+
+/// Does anything in the function write through `value` or a view of it?
+static bool isWritten(Value value) {
+  for (OpOperand &use : value.getUses()) {
+    Operation *user = use.getOwner();
+    if (auto view = dyn_cast<ViewLikeOpInterface>(user)) {
+      if (isWritten(view->getResult(0)))
+        return true;
+      continue;
+    }
+    // An op that does not say what it does might write.
+    auto effects = dyn_cast<MemoryEffectOpInterface>(user);
+    if (!effects || effects.getEffectOnValue<MemoryEffects::Write>(value))
+      return true;
+  }
+  return false;
+}
+
+class KernelToESPAccelerator
+    : public impl::KernelToESPAcceleratorBase<KernelToESPAccelerator> {
+public:
+  using impl::KernelToESPAcceleratorBase<
+      KernelToESPAccelerator>::KernelToESPAcceleratorBase;
+
+  void runOnOperation() final {
+    ModuleOp module = getOperation();
+    auto function = module.lookupSymbol<func::FuncOp>(kernel);
+    if (!function || function.isExternal()) {
+      module.emitError("no function with a body named '") << kernel << "'";
+      return signalPassFailure();
+    }
+    if (function.getNumResults() != 0) {
+      function.emitError("expected results as arguments; run "
+                         "buffer-results-to-out-params first");
+      return signalPassFailure();
+    }
+
+    struct Argument {
+      Value value;
+      int64_t offset;
+      bool written;
+    };
+    SmallVector<Argument> arguments;
+    int64_t words = 0;
+    for (BlockArgument arg : function.getArguments()) {
+      auto type = dyn_cast<MemRefType>(arg.getType());
+      if (!type || !type.getElementType().isF32() || !type.hasStaticShape() ||
+          !type.getLayout().isIdentity()) {
+        function.emitError("expected f32 memref arguments with static shapes "
+                           "and the identity layout, got ")
+            << arg.getType();
+        return signalPassFailure();
+      }
+      arguments.push_back({arg, words, isWritten(arg)});
+      words += type.getNumElements();
+    }
+
+    MLIRContext *ctx = module.getContext();
+    Location loc = function.getLoc();
+    OpBuilder builder(ctx);
+    Type i64Ty = builder.getI64Type();
+    Type urMemRefF32 = UnrankedMemRefType::get(builder.getF32Type(), 0);
+    getOrInsertFunc(module, builder, kEspAllocShared, {i64Ty}, {i64Ty});
+    getOrInsertFunc(module, builder, kEspFreeShared, {}, {i64Ty});
+    getOrInsertFunc(module, builder, kEspCopyToSharedF32, {},
+                    {urMemRefF32, i64Ty, i64Ty});
+    getOrInsertFunc(module, builder, kEspCopyFromSharedF32, {},
+                    {i64Ty, i64Ty, urMemRefF32});
+    getOrInsertFunc(module, builder, kEspAccelStart, {}, {});
+    getOrInsertFunc(module, builder, kEspAccelWait, {}, {});
+
+    // The old body goes, and the entry block keeps its arguments. soda-opt's
+    // outliner leaves a branch to a second block.
+    Region &body = function.getBody();
+    Block &entry = body.front();
+    body.dropAllReferences();
+    while (&body.back() != &entry)
+      body.back().erase();
+    while (!entry.empty())
+      entry.back().erase();
+    builder.setInsertionPointToEnd(&entry);
+
+    auto constant = [&](int64_t value) -> Value {
+      return builder.create<arith::ConstantOp>(loc, i64Ty,
+                                               builder.getI64IntegerAttr(value));
+    };
+    Value handle = builder
+                       .create<func::CallOp>(loc, kEspAllocShared, TypeRange{i64Ty},
+                                             ValueRange{constant(words * 4)})
+                       .getResult(0);
+    for (const Argument &arg : arguments) {
+      if (arg.written)
+        continue;
+      Value cast = builder.create<memref::CastOp>(loc, urMemRefF32, arg.value);
+      builder.create<func::CallOp>(
+          loc, kEspCopyToSharedF32, TypeRange{},
+          ValueRange{cast, handle, constant(arg.offset)});
+    }
+    builder.create<func::CallOp>(loc, kEspAccelStart, TypeRange{}, ValueRange{});
+    builder.create<func::CallOp>(loc, kEspAccelWait, TypeRange{}, ValueRange{});
+    for (const Argument &arg : arguments) {
+      if (!arg.written)
+        continue;
+      Value cast = builder.create<memref::CastOp>(loc, urMemRefF32, arg.value);
+      builder.create<func::CallOp>(
+          loc, kEspCopyFromSharedF32, TypeRange{},
+          ValueRange{handle, constant(arg.offset), cast});
+    }
+    builder.create<func::CallOp>(loc, kEspFreeShared, TypeRange{},
+                                 ValueRange{handle});
+    builder.create<func::ReturnOp>(loc);
+  }
+};
 
 class SODAPLinalgBatchMatmulToESP
     : public impl::LinalgBatchMatmulToESPBase<SODAPLinalgBatchMatmulToESP> {

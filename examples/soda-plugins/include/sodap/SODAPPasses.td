@@ -201,6 +201,36 @@ def SwapOpToHW : Pass<"sodap-swap-op-to-hw", "::mlir::ModuleOp"> {
   }];
 }
 
+def KernelToESPAccelerator : Pass<"sodap-kernel-to-esp-accelerator", "::mlir::ModuleOp"> {
+  let summary = "Replace a kernel's body with one run of its ESP accelerator";
+  let description = [{
+    For the CPU side of a kernel whose whole body is the accelerator, as Bambu
+    builds it from the same function. The body becomes:
+
+    1. `esp_alloc_shared` -- allocate the shared buffer
+    2. `esp_copy_to_shared_f32` -- once per argument the body does not write
+    3. `esp_accel_start`, `esp_accel_wait`
+    4. `esp_copy_from_shared_f32` -- once per argument the body writes
+    5. `esp_free_shared`
+
+    The arguments lie one after the other in argument order, in words, which is
+    the layout `sodap-dataflow-copy-to-dma` compiles into the accelerator. Run
+    both on the same function, so the argument order is the same. The data is
+    copied as its bits: the accelerator reads `f32` from the DMA channel as is.
+
+    Arguments must be f32 memrefs with static shapes and the identity layout.
+  }];
+  let options = [
+    Option<"kernel", "kernel", "std::string", /*default=*/"\"forward_kernel\"",
+           "Function to replace">
+  ];
+  let dependentDialects = [
+    "::mlir::arith::ArithDialect",
+    "::mlir::func::FuncDialect",
+    "::mlir::memref::MemRefDialect"
+  ];
+}
+
 def LinalgBatchMatmulToESP : Pass<"sodap-linalg-batch-matmul-to-esp", "::mlir::ModuleOp"> {
   let summary = "Replace linalg.batch_matmul with ESP accelerator runtime calls";
   let description = [{
