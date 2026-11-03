@@ -2,7 +2,8 @@
 
 The regression tests live in `examples/soda-plugins/test/sodap/ESP/` and run
 through lit, including the `mlir-cpu-runner` ABI test and native profiler test.
-This example does not maintain a second set of test commands or access hardware.
+The convenience entry point does not maintain a second set of test commands or
+access hardware.
 
 After configuring and building the plugin:
 
@@ -16,3 +17,7 @@ The full repository test target remains `check-sodap`; CI need not use this help
 
 See [ESPValidation.md](../../docs/ESPValidation.md) for prerequisites and the
 distinction between compiler/mock checks and board numerical validation.
+
+The separate [generated floating-point GEMM example](generated-gemm/README.md)
+contains the ESP adapter, application and replay scripts used to validate
+supplied host LLVM IR and Bambu RTL, including the raw-f32 runtime API.

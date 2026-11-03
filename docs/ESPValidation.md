@@ -1,8 +1,9 @@
 # Reproducing the ESP runtime and profiling checks
 
-This is a prototype validated against the existing Q16.16 FFN accelerator on
-VC707, not validation of newly generated Bambu/dataflow hardware. It began with
-GEMM; broader PolyBench coverage and known failures are recorded below.
+The original prototype was validated against the existing Q16.16 FFN accelerator
+on VC707. It began with GEMM; broader PolyBench coverage and known failures are
+recorded below. A separate [generated f32 GEMM example](../examples/esp-validation/generated-gemm/README.md)
+documents the integration of supplied host LLVM IR and Bambu RTL with ESP.
 The hardware-free checks below are runnable tests, not a newly installed CI job.
 The mock checks the host/runtime interface; it does not compute GEMM.
 
@@ -12,7 +13,53 @@ generation recipe, 31 linked artifacts and 28 completed board cases (25 accuracy
 passes). It includes the UART log, numerical/timing tables, campaign support
 prerequisites and explicit exclusions.
 
-## Compiler and plugin setup
+**Upstream refresh (3 November 2026):** the PR branch now includes upstream main
+at `c533c3b`. On `agostini01/soda-trixie:v19.03`, the plugin built successfully,
+all 42 plugin lit tests passed, and 139 CLI tests passed (one SiliconCompiler execution test deselected).
+The image's `soda-opt` loads the plugin and registers both `fold-memref-alias-ops`
+and `affine-loop-normalize` without the source/linker workaround below. The older
+instructions are retained for reproducing the September board campaign; they
+are not prerequisites for the new image. These are local checks, not a claim
+that remote CI or the entire board campaign was rerun.
+The same `gemm --dataset MINI --instrumentation esp-ir --backend esp --stage object`
+CLI flow also produced a fresh ELF64 RISC-V object with the double-float ABI;
+its undefined symbols were the expected `esp_*`, `malloc` and `memcpy` calls.
+
+## Compiler and plugin setup on v19.03
+
+Inside `agostini01/soda-trixie:v19.03`, use the compiler binaries already in the
+image. Install the CLI package as described in the repository README and ensure
+`lit` is available (the November local validation used lit 18.1.8). From the
+repository root:
+
+```sh
+repo="$PWD"
+source /opt/panda/settings.sh
+export PATH="$repo/scripts:/opt/soda-opt/bin:/opt/llvm-project/bin:/opt/tensorflow/bin:/opt/torch-mlir/bin:/opt/openroad/OpenROAD/bin:/opt/openroad/yosys/bin:$PATH"
+export PYTHONPATH="/opt/llvm-project/python_packages/mlir_core:/opt/torch-mlir/python_packages/torch_mlir:/opt/soda-opt/python_packages/soda:$repo${PYTHONPATH:+:$PYTHONPATH}"
+export SODAP_DIR="$repo/examples/soda-plugins"
+export MLIR_PLUGIN_PATH="$SODAP_DIR/build/lib/SODAPlugin.so"
+export ESP_RUNTIME_LIB="$SODAP_DIR/build/lib/libmlir_mockesp_runner_utils.so"
+export LLVM_TOOLS_DIR=/opt/llvm-project/bin LLVM_LIB_DIR=/opt/llvm-project/lib
+cmake -S "$SODAP_DIR" -B "$SODAP_DIR/build" -G Ninja \
+  -DMLIR_DIR=/opt/llvm-project/lib/cmake/mlir \
+  -DLLVM_DIR=/opt/llvm-project/lib/cmake/llvm \
+  -DLLVM_EXTERNAL_LIT="$(command -v lit)" -DSODAP_BAMBU_ROOT=/opt/panda \
+  -DCMAKE_C_COMPILER=clang-19 -DCMAKE_CXX_COMPILER=clang++-19 \
+  -DCMAKE_BUILD_TYPE=Release
+cmake --build "$SODAP_DIR/build" --target SODAPlugin \
+  mlir_mockesp_runner_utils mlir_sodap_instr_runner_utils -j 4
+lit -v "$SODAP_DIR/build/test"
+soda-opt --load-pass-plugin="$MLIR_PLUGIN_PATH" \
+  --load-dialect-plugin="$MLIR_PLUGIN_PATH" --help > /dev/null
+```
+
+The TensorFlow, Torch-MLIR, Bambu and OpenROAD/Yosys paths satisfy the CLI's
+existing environment check; GEMM host-object generation does not run HLS or
+physical design. Continue with the fresh GEMM commands below; skip the legacy
+compiler rebuild section when using this image.
+
+## Legacy compiler setup for the September board campaign
 
 Run from the `soda-benchmarks` repository root inside `agostini01/soda`, with a
 sibling `soda-opt` source checkout mounted into the container. LLVM and MLIR are
@@ -68,8 +115,8 @@ allowed `SODAPlugin.so` to load. This does not establish the minimal export set.
 Retest plugin loading on the updated base image without this override first;
 keep it only if the same failure is reproduced. It is separate from the source
 patch tracked in [pnnl/soda-opt#14](https://github.com/pnnl/soda-opt/issues/14),
-which is now closed upstream. The campaign used the pinned local toolchain;
-an updated official image has not yet been validated here.
+which is now closed upstream. The September campaign used the pinned local
+toolchain; the November compiler checks above use the updated official image.
 The two pass registrations are needed by the fused `esp-ir` recipe, not by
 basic runtime/profiling support or conversion-IR emission alone. Updated Bambu
 support is a separate prerequisite for newly generated hardware, not for the
