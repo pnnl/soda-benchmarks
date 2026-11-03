@@ -82,9 +82,11 @@ _TARGET_TEMPLATES: dict[tuple[str, str], str] = {
     ("cpu", "llvm"): "$(ODIR)/05_llvm_{flow}.ll",
     ("cpu", "binary"): "$(ODIR)/cpu/{flow}/06_kernel",
     ("cpu", "simulation"): "$(ODIR)/cpu/{flow}/07_results.txt",
-    # esp: cross-compile for the SoC's RISC-V core. "object" is as far as this
+    # esp: "llvm" is the kernel as a load/compute/store accelerator for Bambu and
+    # the host code that drives it, from tosa_to_lcs.sh. The other stages
+    # cross-compile for the SoC's RISC-V core. "object" is as far as this
     # container can go -- the final link needs an ESP checkout, see ll_to_riscv.sh.
-    ("esp", "llvm"): "$(ODIR)/05_llvm_{flow}.ll",
+    ("esp", "llvm"): "$(ODIR)/lcs/accelerator.ll $(ODIR)/lcs/host.ll",
     ("esp", "object"): "$(ODIR)/esp/{flow}/06_kernel_riscv.o",
     ("esp", "binary"): "$(ODIR)/esp/{flow}/07_kernel.riscv",
 }

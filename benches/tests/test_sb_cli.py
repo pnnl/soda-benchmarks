@@ -190,7 +190,7 @@ class TestCpuAndEspBackends:
             ("cpu", "llvm", "$(ODIR)/05_llvm_{flow}.ll"),
             ("cpu", "binary", "$(ODIR)/cpu/{flow}/06_kernel"),
             ("cpu", "simulation", "$(ODIR)/cpu/{flow}/07_results.txt"),
-            ("esp", "llvm", "$(ODIR)/05_llvm_{flow}.ll"),
+            ("esp", "llvm", "$(ODIR)/lcs/accelerator.ll $(ODIR)/lcs/host.ll"),
             ("esp", "object", "$(ODIR)/esp/{flow}/06_kernel_riscv.o"),
             ("esp", "binary", "$(ODIR)/esp/{flow}/07_kernel.riscv"),
         ],
