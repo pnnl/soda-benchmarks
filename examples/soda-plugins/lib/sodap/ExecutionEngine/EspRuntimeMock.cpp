@@ -6,9 +6,9 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// Mock implementation of the ESP accelerator runtime. All functions print
-// their invocation to stdout and return safe defaults. This allows testing
-// the MLIR-to-runtime lowering without actual ESP hardware.
+// Mock implementation of the ESP accelerator runtime. Functions log their
+// invocation; allocations and raw-f32 copies use real memory. Accelerator
+// execution and fixed-point conversion remain logging-only stubs.
 //
 //===----------------------------------------------------------------------===//
 
@@ -16,8 +16,20 @@
 
 #include <cstdlib>
 #include <iostream>
+#include <unordered_map>
 
 namespace {
+std::unordered_map<int64_t, int64_t> allocations;
+
+void copySharedF32(int64_t rank, void *ptr, int64_t handle, int64_t offset,
+                   bool toShared) {
+  auto found = allocations.find(handle);
+  if (found == allocations.end() ||
+      !sodap::copyMemRefF32(rank, ptr, reinterpret_cast<void *>(handle),
+                           found->second / sizeof(float), offset, toShared))
+    std::cout << "esp: invalid f32 shared-memory copy" << std::endl;
+}
+
 /// Print `rank` and the shape of an unranked memref argument.
 ///
 /// The mock ignored the descriptor for a long time, which meant nothing had
@@ -39,12 +51,28 @@ extern "C" int64_t esp_alloc_shared(int64_t total_bytes) {
   std::cout << "Called: " << __func__ << std::endl;
   std::cout << "\t"
             << "total_bytes=" << total_bytes << std::endl;
-  return reinterpret_cast<int64_t>(std::calloc(total_bytes, 1));
+  auto handle = reinterpret_cast<int64_t>(std::calloc(total_bytes, 1));
+  if (handle)
+    allocations[handle] = total_bytes;
+  return handle;
 }
 
 extern "C" void esp_free_shared(int64_t mem_handle) {
   std::cout << "Called: " << __func__ << std::endl;
+  allocations.erase(mem_handle);
   std::free(reinterpret_cast<void *>(mem_handle));
+}
+
+extern "C" void esp_copy_to_shared_f32(int64_t rank, void *ptr,
+                                       int64_t handle, int64_t offset) {
+  std::cout << "Called: " << __func__ << std::endl;
+  copySharedF32(rank, ptr, handle, offset, true);
+}
+
+extern "C" void esp_copy_from_shared_f32(int64_t handle, int64_t offset,
+                                         int64_t rank, void *ptr) {
+  std::cout << "Called: " << __func__ << std::endl;
+  copySharedF32(rank, ptr, handle, offset, false);
 }
 
 extern "C" void esp_float2fixed_f32(int64_t rank, void *ptr, int64_t mem_handle,

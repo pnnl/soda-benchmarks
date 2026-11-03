@@ -46,8 +46,17 @@ namespace {
 // --- Accelerator identity ---------------------------------------------------
 // The one thing the runtime has to know: which device to probe for. Everything
 // else about the accelerator arrives through esp_accel_write_reg.
-constexpr unsigned kDevId = 0x074;
-constexpr const char *kDevName = "sld,ffn_sysc_catapult";
+// Override at build time when linking a host for a different generated IP.
+// The defaults preserve the existing FFN examples; this is not runtime discovery
+// of an arbitrary accelerator or an accelerator metadata format.
+#ifndef SODAP_ESP_DEVICE_ID
+#define SODAP_ESP_DEVICE_ID 0x074
+#endif
+#ifndef SODAP_ESP_DEVICE_NAME
+#define SODAP_ESP_DEVICE_NAME "sld,ffn_sysc_catapult"
+#endif
+constexpr unsigned kDevId = SODAP_ESP_DEVICE_ID;
+constexpr const char *kDevName = SODAP_ESP_DEVICE_NAME;
 
 // --- Fixed point ------------------------------------------------------------
 // Q16.16, matching the accelerator's datapath.
@@ -77,6 +86,12 @@ struct EspState {
 };
 
 EspState g_state;
+
+void dmaFence() {
+#ifdef __riscv
+  __asm__ volatile("fence iorw, iorw" ::: "memory");
+#endif
+}
 
 /// Does this SoC have caches worth flushing?
 ///
@@ -236,6 +251,26 @@ extern "C" void esp_free_shared(int64_t mem_handle) {
   g_state = EspState();
 }
 
+namespace {
+void copySharedF32(int64_t rank, void *ptr, int64_t handle, int64_t offset,
+                   bool toShared) {
+  if (!g_state.buf || handle != reinterpret_cast<intptr_t>(g_state.buf) ||
+      !sodap::copyMemRefF32(rank, ptr, g_state.buf,
+                           g_state.memSize / sizeof(float), offset, toShared))
+    std::printf("esp: invalid f32 shared-memory copy\n");
+}
+} // namespace
+
+extern "C" void esp_copy_to_shared_f32(int64_t rank, void *ptr,
+                                       int64_t handle, int64_t offset) {
+  copySharedF32(rank, ptr, handle, offset, true);
+}
+
+extern "C" void esp_copy_from_shared_f32(int64_t handle, int64_t offset,
+                                         int64_t rank, void *ptr) {
+  copySharedF32(rank, ptr, handle, offset, false);
+}
+
 extern "C" void esp_float2fixed_f32(int64_t rank, void *ptr, int64_t mem_handle,
                                     int64_t offset, int64_t ld) {
   if (!g_state.buf)
@@ -277,6 +312,7 @@ extern "C" void esp_accel_start() {
     return;
   if (g_state.needFlush)
     esp_flush(g_state.coherence);
+  dmaFence();
   iowrite32(g_state.dev, CMD_REG, CMD_MASK_START);
 }
 
@@ -289,4 +325,5 @@ extern "C" void esp_accel_wait() {
     done &= STATUS_MASK_DONE;
   }
   iowrite32(g_state.dev, CMD_REG, 0x0);
+  dmaFence();
 }

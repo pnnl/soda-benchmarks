@@ -33,6 +33,7 @@
 #endif
 
 #include <cstdint>
+#include <cstring>
 
 namespace sodap {
 
@@ -83,6 +84,60 @@ inline MemRefViewF32 decodeMemRefF32(int64_t rank, void *descriptor) {
   return view;
 }
 
+/// Copy f32 object representations between a strided memref and a dense shared
+/// region. Offsets and capacity are in 32-bit elements. Rank zero is one scalar;
+/// a zero extent copies nothing. The caller owns descriptor/storage validity.
+/// Unlike float/fixed conversion, this preserves NaNs, infinities and -0 bits.
+inline bool copyMemRefF32(int64_t rank, void *descriptor, void *shared,
+                         int64_t capacity, int64_t offset, bool toShared) {
+  if (rank < 0 || !descriptor || !shared || offset < 0 || offset > capacity)
+    return false;
+  auto *head = static_cast<MemRefDescriptorHeadF32 *>(descriptor);
+  auto *sizes = reinterpret_cast<int64_t *>(static_cast<char *>(descriptor) +
+                                          sizeof(MemRefDescriptorHeadF32));
+  const int64_t *strides = sizes + rank;
+  int64_t count = 1;
+  bool empty = false;
+  for (int64_t d = 0; d < rank; ++d) {
+    if (sizes[d] < 0)
+      return false;
+    empty |= sizes[d] == 0;
+  }
+  if (empty)
+    return true;
+  for (int64_t d = 0; d < rank; ++d) {
+    if (count > (capacity - offset) / sizes[d])
+      return false;
+    count *= sizes[d];
+  }
+  if (count > capacity - offset || !head->aligned)
+    return false;
+
+  // Check the descriptor's full index range before modifying either buffer.
+  int64_t low = head->offset, high = head->offset;
+  for (int64_t d = 0; d < rank; ++d) {
+    int64_t span;
+    if (__builtin_mul_overflow(sizes[d] - 1, strides[d], &span) ||
+        (span < 0 ? __builtin_add_overflow(low, span, &low)
+                  : __builtin_add_overflow(high, span, &high)))
+      return false;
+  }
+  auto *bytes = static_cast<unsigned char *>(shared);
+  for (int64_t linear = 0; linear < count; ++linear) {
+    int64_t index = head->offset, remainder = linear;
+    for (int64_t d = rank; d-- > 0;) {
+      index += (remainder % sizes[d]) * strides[d];
+      remainder /= sizes[d];
+    }
+    void *slot = bytes + (offset + linear) * sizeof(float);
+    if (toShared)
+      std::memcpy(slot, head->aligned + index, sizeof(float));
+    else
+      std::memcpy(head->aligned + index, slot, sizeof(float));
+  }
+  return true;
+}
+
 } // namespace sodap
 
 /// Allocate a contiguous shared memory buffer accessible by both the
@@ -96,6 +151,16 @@ esp_alloc_shared(int64_t total_bytes);
 /// Free a shared memory buffer previously allocated by esp_alloc_shared.
 /// \param mem_handle  Opaque handle returned by esp_alloc_shared.
 extern "C" MLIR_ESPRUNNERUTILS_EXPORT void esp_free_shared(int64_t mem_handle);
+
+/// Copy raw f32 values, with no numeric conversion, to/from dense shared memory.
+/// The memref uses the unranked ABI above; its offset and strides are respected.
+/// Shared offsets are in f32 elements, not bytes. Rank-zero scalars are supported.
+/// The caller must wait for DMA completion before reading or releasing a buffer.
+extern "C" MLIR_ESPRUNNERUTILS_EXPORT void
+esp_copy_to_shared_f32(int64_t rank, void *ptr, int64_t mem_handle, int64_t offset);
+extern "C" MLIR_ESPRUNNERUTILS_EXPORT void
+esp_copy_from_shared_f32(int64_t mem_handle, int64_t offset, int64_t rank,
+                        void *ptr);
 
 /// Convert float data from a memref to fixed-point and copy it into the
 /// shared memory buffer at the given element offset, one row at a time.
