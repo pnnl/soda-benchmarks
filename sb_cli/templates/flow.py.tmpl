@@ -15,6 +15,7 @@ Config:
     stage          : $stage
     target         : $target_name -> $target_path
     instrumentation: $instrumentation
+    default_ts     : $default_ts
 
 Usage:
     python flow.py
@@ -40,6 +41,7 @@ class Flow:
     memory_policy: str = "$memory_policy"
     target: str = "$target_path"
     instrumentation: str = "$instrumentation"
+    default_ts: str = "$default_ts"
 
     def run(self) -> None:
         """Set hardware env vars and invoke make targeting self.target."""

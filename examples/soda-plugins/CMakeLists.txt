@@ -44,6 +44,26 @@ include_directories(${SODAPLUGINS_BINARY_DIR}/include)
 link_directories(${LLVM_BUILD_LIBRARY_DIR})
 add_definitions(${LLVM_DEFINITIONS})
 
+# Where Bambu/PandA is installed -- the directory holding settings.sh.
+# Only the Bambu backend passes need it, and only at run time, so the plugin
+# still builds without it; the tests that need it are then UNSUPPORTED.
+set(SODAP_BAMBU_ROOT "" CACHE PATH "Bambu/PandA install root")
+if(NOT SODAP_BAMBU_ROOT)
+  message(WARNING
+    "SODAP_BAMBU_ROOT is not set: the Bambu backend passes will have no usable "
+    "defaults. Configure with -DSODAP_BAMBU_ROOT=/opt/panda")
+else()
+  message(STATUS "Using Bambu install in: ${SODAP_BAMBU_ROOT}")
+  # Those two paths become the defaults of the bambu backend pass options
+  set(SODAP_BAMBU_INCLUDE "${SODAP_BAMBU_ROOT}/include/panda")
+  set(SODAP_BAMBU_CLANGXX "${SODAP_BAMBU_ROOT}/compilers/clang-19/bin/clang++-19")
+endif()
+  
+configure_file(
+  ${SODAPLUGINS_SOURCE_DIR}/include/sodap/Config/Config.h.in
+  ${SODAPLUGINS_BINARY_DIR}/include/sodap/Config.h
+  @ONLY)
+
 add_subdirectory(include)
 add_subdirectory(lib)
 

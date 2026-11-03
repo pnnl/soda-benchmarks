@@ -10,9 +10,40 @@ Examples included:
 
 - assert
 - change-location
+- change-location-exposed-ports
 - hw-counters
 - vector-dot
 
+`change-location-exposed-ports` is a derived version of `change-location` that
+exposes the selected location and its counter value on the top-level interface
+(via `is_global`/`is_extern` ports), so the counts can be read back without a
+memory-bus interface. See its README for details.
+
+
+### Recipes and transform schedules
+
+A recipe serves two roles, and `sb-cli init --default_ts` decides which schedule
+is used with it:
+
+* `--default_ts simple` (the default) copies the recipe's own `transform.mlir`.
+* `--default_ts <library>` copies a schedule from `sb_cli/schedules/` that
+  already has this recipe's pass merged in.
+
+The `IPs/` are wired into Bambu either way, because both schedules call the same
+instrumentation pass. The pass each recipe applies:
+
+| Recipe | Pass |
+|---|---|
+| `assert` | `soda-instr-scf-for-assert-bounds` |
+| `change-location` | `soda-instr-change-location` |
+| `change-location-exposed-ports` | `soda-instr-change-location` |
+| `hw-counters` | `soda-instr-hw-counters-at-loop-bounds` |
+| `esp` | `sodap-linalg-batch-matmul-to-esp` |
+| `vector-dot` | `sodap-swap-op-to-hw` |
+
+`esp` and `vector-dot` rewrite `builtin.module` rather than annotating loops, so
+they have no merged schedule variants. See
+[`../schedules/README.md`](../schedules/README.md).
 
 ### How to extend?
 

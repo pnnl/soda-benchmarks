@@ -20,7 +20,7 @@ TRANSFORM_SCHED=$(pwd)/$(dirname $3)/$(basename $3)
 # set -x
 
 # If a plugin is available, append the needed arguments to load it
-MLIR_PLUGIN_PATH="${MLIR_PLUGIN_PATH:-/workspaces/soda/soda-benchmarks/examples/soda-plugins/build/lib/SODAPlugin.so}"
+MLIR_PLUGIN_PATH="${MLIR_PLUGIN_PATH:-/workspaces/soda-benchmarks/examples/soda-plugins/build/lib/SODAPlugin.so}"
 MLIR_PLUGIN_ARGS=""
 if [ -f "$MLIR_PLUGIN_PATH" ]; then
   MLIR_PLUGIN_ARGS="--load-pass-plugin=$MLIR_PLUGIN_PATH --load-dialect-plugin=$MLIR_PLUGIN_PATH"

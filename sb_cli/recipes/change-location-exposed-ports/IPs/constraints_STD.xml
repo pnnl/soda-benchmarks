@@ -1,0 +1,9 @@
+<?xml version="1.0"?>
+<constraints>
+   <HLS_constraints>
+      <!-- Change Location requires to be a single instance to aggregate the counter values in multiple locations.
+           For this recipe the constraint is also load-bearing for correctness: `final_result` is an
+           is_global port, so every instance would drive the same top-level net. Do not raise n. -->
+      <tech_constraints fu_name="sodaInstrChangeLocation" fu_library="work" n="1"/>
+   </HLS_constraints>
+</constraints>

@@ -88,6 +88,19 @@ _HW_COUNTER_RE = re.compile(
 #   [SW] HW counter STOPED at loc: 4
 _SW_COUNTER_RE = re.compile(r"\[SW\] HW counter (STARTED|STOPED) at loc: (\d+)")
 
+# Matches the change-location IP's end-of-run report, e.g.:
+#   [HW] sodaInstrChangeLocation: FINAL location 0 count     174239
+_CHANGE_LOCATION_FINAL_RE = re.compile(
+    r"\[HW\] sodaInstrChangeLocation: FINAL location (\d+) count\s+(\d+)"
+)
+
+# Matches the exposed-port read-back emitted by the
+# change-location-exposed-ports recipe, e.g.:
+#   [HW] sodaInstrChangeLocation: SELECTED location 1 final_result         20
+_CHANGE_LOCATION_SELECTED_RE = re.compile(
+    r"\[HW\] sodaInstrChangeLocation: SELECTED location (\d+) final_result\s+(\d+)"
+)
+
 # Matches assertion checker prints, e.g.:
 #   sodaInstrAssertLessThen: 0000000000000003 < 000000000000000a ? true
 _ASSERT_RE = re.compile(
@@ -168,6 +181,10 @@ def _parse_instrumentation_events(path: Path) -> dict[str, Any]:
     - SW C-stub markers: ``[SW] HW counter STARTED/STOPED at loc: <n>``.
     - Assertion checker: ``sodaInstrAssertLessThen: <hex> < <hex> ?
       true/false``.
+    - Change-location counters: ``[HW] sodaInstrChangeLocation: FINAL
+      location <n> count <n>``, plus the ``SELECTED location <n>
+      final_result <n>`` read-back that the exposed-ports variant emits
+      from its top-level ports.
 
     Returns:
         A dict with per-location final counter values, SW start/stop event
@@ -191,11 +208,24 @@ def _parse_instrumentation_events(path: Path) -> dict[str, Any]:
     for outcome in _ASSERT_RE.findall(text):
         assertion_results[outcome] += 1
 
+    change_location_final_count_by_location: dict[str, int] = {}
+    for location, count in _CHANGE_LOCATION_FINAL_RE.findall(text):
+        change_location_final_count_by_location[location] = int(count)
+
+    # Only the exposed-ports recipe emits this; empty for the plain one.
+    change_location_selected: dict[str, int] = {}
+    for location, value in _CHANGE_LOCATION_SELECTED_RE.findall(text):
+        change_location_selected[location] = int(value)
+
     return {
         "hw_counter_final_count_by_location": hw_counter_final_count_by_location,
         "sw_counter_event_counts": sw_counter_event_counts,
         "assertion_results": assertion_results,
         "assertion_total": sum(assertion_results.values()),
+        "change_location_final_count_by_location": (
+            change_location_final_count_by_location
+        ),
+        "change_location_selected": change_location_selected,
     }
 
 

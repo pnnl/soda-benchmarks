@@ -19,11 +19,26 @@ To build the plugins, run the following commands:
 ```sh
 mkdir build && cd build
 
-cmake -G Ninja .. \
+pixi run cmake -G Ninja .. \
   -DMLIR_DIR=/opt/llvm-project/lib/cmake/mlir \
-  -DLLVM_EXTERNAL_LIT=/workspaces/soda/builds/llvm-project/build/bin/llvm-lit
+  -DLLVM_EXTERNAL_LIT=$(pixi run which lit) \
+  -DSODAP_BAMBU_ROOT=/opt/panda
 
 cmake --build . --target SODAPlugin
+```
+
+`lit` comes from the pixi environment (see `pixi.toml`). Configure through
+`pixi run` so CMake picks the pixi Python, the one that can import `lit`.
+
+`SODAP_BAMBU_ROOT` enables the Bambu specific passes. It is the directory
+holding `settings.sh` (`/opt/panda` in the devcontainer).
+Without it the plugin still builds, with a warning, and the Bambu tests are
+reported as unsupported.
+
+To compile a single target, e.g. the passes library:
+
+```sh
+cmake --build . --target MLIRSODAP
 ```
 
 
@@ -59,5 +74,18 @@ mlir-opt \
   --load-pass-plugin=/workspaces/soda-benchmarks/examples/soda-plugins/build/lib/SODAPlugin.so \
   --load-dialect-plugin=/workspaces/soda-benchmarks/examples/soda-plugins/build/lib/SODAPlugin.so \
   --transform-interpreter \
-  /workspaces/soda-benchmarks/examples/soda-plugins/test/sodap/my-extension.mlir 
+  /workspaces/soda-benchmarks/examples/soda-plugins/test/sodap/my-extension.mlir
+```
+
+Passes that write report files take `write-to-terminal=true` to print to
+stdout instead, which is what the tests use. For example, the Bambu
+`--architecture-xml` description:
+
+```bash
+mlir-opt \
+  --load-pass-plugin=/workspaces/soda-benchmarks/examples/soda-plugins/build/lib/SODAPlugin.so \
+  --load-dialect-plugin=/workspaces/soda-benchmarks/examples/soda-plugins/build/lib/SODAPlugin.so \
+  --pass-pipeline="builtin.module(sodap-emit-bambu-architecture{top-func=forward write-to-terminal=true})" \
+  -o /dev/null \
+  /workspaces/soda-benchmarks/examples/soda-plugins/test/sodap/Conversion/DataflowToLLVM/Inputs/gemm_small.mlir
 ```
