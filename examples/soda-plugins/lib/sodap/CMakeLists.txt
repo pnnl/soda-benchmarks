@@ -23,6 +23,9 @@ add_mlir_dialect_library(MLIRSODAP
         MLIRLinalgDialect
         MLIRMemRefDialect
         MLIRSCFDialect
+        MLIRSCFTransforms
+        MLIRTensorDialect
+        MLIRTilingInterface
         MLIRArithDialect
         MLIRTransformUtils
         MLIRSODAPDataflow

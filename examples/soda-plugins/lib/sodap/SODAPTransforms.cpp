@@ -17,6 +17,8 @@
 #include "mlir/Dialect/Linalg/IR/Linalg.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
+#include "mlir/Dialect/SCF/Transforms/TileUsingInterface.h"
+#include "mlir/Dialect/Tensor/IR/Tensor.h"
 #include "mlir/Dialect/Utils/StaticValueUtils.h"
 #include "mlir/Dialect/Transform/IR/TransformDialect.h"
 #include "mlir/Dialect/Transform/IR/TransformTypes.h"
@@ -25,6 +27,7 @@
 #include "mlir/IR/Operation.h"
 #include "mlir/IR/IRMapping.h"
 #include "mlir/Interfaces/SideEffectInterfaces.h"
+#include "mlir/Interfaces/TilingInterface.h"
 #include "mlir/Support/LLVM.h"
 #include "mlir/Transforms/RegionUtils.h"
 #include "sodap/Dialect/Dataflow/Dataflow.h"
@@ -33,6 +36,7 @@
 #include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/SmallPtrSet.h"
 
+#include <numeric>
 #include <string>
 
 class SODAPTransformsExtension
@@ -47,6 +51,8 @@ void SODAPTransformsExtension::init() {
   declareGeneratedDialect<::mlir::affine::AffineDialect>();
   declareGeneratedDialect<::mlir::memref::MemRefDialect>();
   declareGeneratedDialect<::mlir::arith::ArithDialect>();
+  declareGeneratedDialect<::mlir::scf::SCFDialect>();
+  declareGeneratedDialect<::mlir::tensor::TensorDialect>();
   declareGeneratedDialect<::mlir::sodap::dataflow::DataflowDialect>();
   registerTransformOps<
 #define GET_OP_LIST
@@ -72,6 +78,119 @@ mlir::transform::TagOpsOp::apply(::mlir::transform::TransformRewriter &rewriter,
 }
 
 void mlir::transform::TagOpsOp::getEffects(
+    ::llvm::SmallVectorImpl<::mlir::MemoryEffects::EffectInstance> &effects) {
+  onlyReadsHandle(getTargetMutable(), effects);
+  modifiesPayload(effects);
+}
+
+/// Tile sizes of `op`: `size` for its parallel dims (or for the others, if
+/// `parallel` is false), 0 for the rest.
+static ::mlir::SmallVector<::mlir::OpFoldResult>
+tileSizes(::mlir::OpBuilder &builder, ::mlir::linalg::LinalgOp op, int64_t size,
+          bool parallel) {
+  using namespace ::mlir;
+  SmallVector<OpFoldResult> sizes;
+  for (utils::IteratorType iterator : op.getIteratorTypesArray())
+    sizes.push_back(builder.getIndexAttr(
+        (iterator == utils::IteratorType::parallel) == parallel ? size : 0));
+  return sizes;
+}
+
+::mlir::DiagnosedSilenceableFailure mlir::transform::TileAndFuseOp::apply(
+    ::mlir::transform::TransformRewriter &rewriter,
+    ::mlir::transform::TransformResults &results,
+    ::mlir::transform::TransformState &state) {
+  // The op producing each result, before anything changes, with the tile of
+  // its function.
+  llvm::MapVector<Operation *, int64_t> lasts;
+  for (Operation *target : state.getPayloadOps(getTarget())) {
+    auto func = dyn_cast<func::FuncOp>(target);
+    if (!func)
+      return emitSilenceableError() << "expected func.func";
+
+    // The GCD of every loop range, so every loop tiles evenly.
+    int64_t gcd = 0;
+    Operation *dynamic = nullptr;
+    func.walk([&](linalg::LinalgOp op) {
+      for (int64_t range : op.getStaticLoopRanges()) {
+        if (ShapedType::isDynamic(range))
+          dynamic = op;
+        else
+          gcd = std::gcd(gcd, range);
+      }
+    });
+    if (dynamic) {
+      DiagnosedSilenceableFailure diag = emitSilenceableError()
+                                         << "expected static loop ranges";
+      diag.attachNote(dynamic->getLoc()) << "op";
+      return diag;
+    }
+    int64_t size = std::min<int64_t>(getMaxTileSize(), std::max<int64_t>(gcd, 1));
+    while (gcd % size != 0)
+      --size;
+
+    Value invalid;
+    func.walk([&](func::ReturnOp ret) {
+      for (Value result : ret.getOperands()) {
+        auto last = result.getDefiningOp<linalg::LinalgOp>();
+        if (!last || last.getNumParallelLoops() == 0)
+          invalid = result;
+        else
+          lasts.insert({last, size});
+      }
+    });
+    if (invalid) {
+      DiagnosedSilenceableFailure diag =
+          emitSilenceableError()
+          << "expected a result produced by a linalg op with a parallel dim";
+      diag.attachNote(invalid.getLoc()) << "result";
+      return diag;
+    }
+  }
+
+  for (auto [last, size] : lasts) {
+    scf::SCFTilingOptions parallelTiling;
+    parallelTiling.setTileSizes(
+        tileSizes(rewriter, cast<linalg::LinalgOp>(last), size, true));
+    scf::SCFTileAndFuseOptions options;
+    options.setTilingOptions(parallelTiling);
+    rewriter.setInsertionPoint(last);
+    FailureOr<scf::SCFTileAndFuseResult> nest =
+        scf::tileConsumerAndFuseProducersUsingSCF(
+            rewriter, cast<TilingInterface>(last), options);
+    if (failed(nest))
+      return emitDefiniteFailure() << "failed to tile and fuse";
+
+    SmallVector<Operation *> replaced{last};
+    llvm::append_range(replaced, nest->fusedProducers);
+    for (Operation *op : replaced) {
+      for (OpResult result : op->getResults())
+        if (Value replacement = nest->replacements.lookup(result))
+          rewriter.replaceAllUsesWith(result, replacement);
+      if (op->use_empty())
+        rewriter.eraseOp(op);
+    }
+
+    SmallVector<linalg::LinalgOp> reductions;
+    nest->loops.front().getOperation()->walk([&](linalg::LinalgOp op) {
+      if (op.getNumReductionLoops() > 0)
+        reductions.push_back(op);
+    });
+    for (linalg::LinalgOp op : reductions) {
+      scf::SCFTilingOptions reductionTiling;
+      reductionTiling.setTileSizes(tileSizes(rewriter, op, size, false));
+      rewriter.setInsertionPoint(op);
+      FailureOr<scf::SCFTilingResult> tiled = scf::tileUsingSCF(
+          rewriter, cast<TilingInterface>(op.getOperation()), reductionTiling);
+      if (failed(tiled))
+        return emitDefiniteFailure() << "failed to tile a reduction";
+      rewriter.replaceOp(op, tiled->replacements);
+    }
+  }
+  return DiagnosedSilenceableFailure::success();
+}
+
+void mlir::transform::TileAndFuseOp::getEffects(
     ::llvm::SmallVectorImpl<::mlir::MemoryEffects::EffectInstance> &effects) {
   onlyReadsHandle(getTargetMutable(), effects);
   modifiesPayload(effects);

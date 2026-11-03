@@ -43,6 +43,46 @@ def TagOpsOp : Op<Transform_Dialect, "sodap.tag_ops",
   let assemblyFormat = "$target `,` $prefix attr-dict `:` type($target)";
 }
 
+def TileAndFuseOp : Op<Transform_Dialect, "sodap.tile_and_fuse",
+    [DeclareOpInterfaceMethods<TransformOpInterface>,
+     DeclareOpInterfaceMethods<MemoryEffectsOpInterface>]> {
+  let summary = "Tiles the nest of each result of a function, by iterator type";
+  let description = [{
+    Takes functions on tensors. For each linalg op producing a returned value:
+
+    - tiles its parallel dims by the tile and fuses its producers, as
+      `transform.structured.fuse` does, so a fill lands in the parallel loops;
+    - then, in that nest, tiles the reduction dims of every linalg op having
+      some by the tile, as `transform.structured.tile_using_for` does, so
+      the accumulator stays across the reduction loop.
+
+    The tile is the largest divisor of the GCD of the loop ranges of every
+    linalg op in the function that is at most `max_tile_size`: every loop
+    tiles evenly, so every tile is static. Loop ranges 60, 70, 80 and
+    `max_tile_size = 10` give 10; 8, 12, 16 give 4.
+
+    The tile sizes come from the iterator types of each op, so one script fits
+    every shape: `[4, 0]` then `[0, 4]` for parallel-reduction, `[4, 4, 0]` then
+    `[0, 0, 4]` for parallel-parallel-reduction, `[4, 4]` alone for
+    parallel-parallel.
+
+    #### Return modes
+
+    Returns nothing, and only reads the handle. Fails silenceably, without
+    changing the IR, if a target is not a `func.func`, a returned value is
+    not produced by a linalg op with a parallel dim, or a loop range is
+    dynamic. Fails definitely if tiling fails.
+  }];
+
+  let arguments = (ins
+    TransformHandleTypeInterface:$target,
+    ConfinedAttr<I64Attr, [IntPositive]>:$max_tile_size);
+
+  let results = (outs);
+
+  let assemblyFormat = "$target attr-dict `:` type($target)";
+}
+
 // Not PromoteOp: that class is transform.structured.promote, and a second one
 // would share its TypeID and never get registered.
 def PromoteTilesOp : Op<Transform_Dialect, "sodap.promote",
