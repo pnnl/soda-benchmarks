@@ -3,8 +3,10 @@
 This local experiment starts from PR #17 at
 `e5d2515f876a76c8e27a88886019017417caacd0`. Its scope is a fixed-shape,
 float32 PolyBench MINI kernel with its own generated accelerator and matching
-host application. Runtime-configurable accelerators and FPGA deployment are
-not covered by these results.
+host application. Runtime-configurable accelerators are outside this scope.
+The subsequent seven-kernel full-system simulation and VC707 image campaign
+is documented in [ESPVC707Campaign.md](ESPVC707Campaign.md). The initial
+GEMM measurements below are retained as historical evidence.
 
 ## Changes under test
 
@@ -65,13 +67,15 @@ The baseline is the CPU implementation of the same tiled/fused outlined
 kernel, not a tuned matrix library. Native timings use nanoseconds and cannot
 establish an ESP accelerator speedup.
 
-## Full-system GEMM comparison
+## Initial full-system GEMM comparison
 
 GEMM also passed full-system RTL simulation in both modes: the generated host
 and accelerator, and the generated CPU baseline. These runs include the RISC-V
 processor, ESP socket, NoC and memory tile. L2/LLC were disabled; the DMA port
-was 64 bits. No generated RTL or host object was hand-edited. The six other
-successful HLS kernels have only been tested at the adapter boundary so far.
+was 64 bits. No generated RTL or host object was hand-edited. This was the
+first full-system run, before expanding to the other six successful HLS kernels
+and adding write buffering to the adapter. Use the subsequent campaign report
+for the current implementation and measurements.
 
 Both applications reported `max error = 1907 e-9`, below the unchanged
 `1000000 e-9` threshold, and one call in the kernel profiling region.
@@ -114,8 +118,11 @@ Please report bugs to <panda-info@polimi.it>
 Both fail in dense and padded layouts. Exception traces for both localize
 the failing map lookup to Bambu's `BuildVirtualPhi::InternalExec()`, reached
 through `FunctionFrontendFlowStep::Exec()`. This is a frontend failure, before
-RTL generation. Its root cause is not yet established. Their LLVM/XML and Bambu
-logs should be used to reduce the failure before changing the channel lowering.
+RTL generation. Subsequent debugging found that the analysis follows a
+DMA-interface dependency into a different generated process, then looks up
+that process's basic block in the current function. The evidence, candidate
+correction and reproducible inputs are described in
+[ESPBambuMultiProcessFailure.md](ESPBambuMultiProcessFailure.md).
 Successful LLVM/object generation is not successful HLS.
 
 The original review also found MINI THREEMM, GEMVER, ATAX and TWOMM failing
