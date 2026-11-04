@@ -1,7 +1,7 @@
 // RUN: mlir-opt %s --load-pass-plugin=%sodap_libs/SODAPlugin%shlibext --pass-pipeline="builtin.module(sodap-kernel-to-esp-accelerator)" -split-input-file -verify-diagnostics | FileCheck %s
 
 // Offsets follow the argument order: %alpha 0, %out 1, %a 7. %out is written through
-// a subview, so it is the one copied back, and it is not copied in.
+// a subview, so it must be copied in as well: the second row is unchanged.
 
 // CHECK-LABEL: func.func @forward_kernel
 // CHECK-SAME:    (%[[ALPHA:.*]]: memref<f32>, %[[OUT:.*]]: memref<2x3xf32>, %[[A:.*]]: memref<2x3xf32>) {
@@ -11,6 +11,9 @@
 // CHECK:         %[[UA:.*]] = memref.cast %[[ALPHA]] : memref<f32> to memref<*xf32>
 // CHECK:         %[[ZERO:.*]] = arith.constant 0 : i64
 // CHECK:         call @esp_copy_to_shared_f32(%[[UA]], %[[H]], %[[ZERO]])
+// CHECK:         %[[UOI:.*]] = memref.cast %[[OUT]] : memref<2x3xf32> to memref<*xf32>
+// CHECK:         %[[ONEIN:.*]] = arith.constant 1 : i64
+// CHECK:         call @esp_copy_to_shared_f32(%[[UOI]], %[[H]], %[[ONEIN]])
 // CHECK:         %[[UB:.*]] = memref.cast %[[A]] : memref<2x3xf32> to memref<*xf32>
 // CHECK:         %[[SEVEN:.*]] = arith.constant 7 : i64
 // CHECK:         call @esp_copy_to_shared_f32(%[[UB]], %[[H]], %[[SEVEN]])

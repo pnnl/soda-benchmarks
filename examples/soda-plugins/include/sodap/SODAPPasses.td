@@ -201,6 +201,20 @@ def SwapOpToHW : Pass<"sodap-swap-op-to-hw", "::mlir::ModuleOp"> {
   }];
 }
 
+def ProfileKernel : Pass<"sodap-profile-kernel", "::mlir::ModuleOp"> {
+  let summary = "Measure a complete kernel call with the ESP region profiler";
+  let description = [{
+    Bracket the named function with region 7 (ESP_PROF_KERNEL). This measures
+    the CPU kernel or the complete offload including allocation and transfers.
+    Region 0 remains available to the application's outer timer.
+  }];
+  let options = [
+    Option<"kernel", "kernel", "std::string", /*default=*/"\"forward_kernel\"",
+           "Function to instrument">
+  ];
+  let dependentDialects = ["::mlir::arith::ArithDialect", "::mlir::func::FuncDialect"];
+}
+
 def KernelToESPAccelerator : Pass<"sodap-kernel-to-esp-accelerator", "::mlir::ModuleOp"> {
   let summary = "Replace a kernel's body with one run of its ESP accelerator";
   let description = [{
@@ -208,7 +222,7 @@ def KernelToESPAccelerator : Pass<"sodap-kernel-to-esp-accelerator", "::mlir::Mo
     builds it from the same function. The body becomes:
 
     1. `esp_alloc_shared` -- allocate the shared buffer
-    2. `esp_copy_to_shared_f32` -- once per argument the body does not write
+    2. `esp_copy_to_shared_f32` -- preserve every argument's initial contents
     3. `esp_accel_start`, `esp_accel_wait`
     4. `esp_copy_from_shared_f32` -- once per argument the body writes
     5. `esp_free_shared`
@@ -219,10 +233,17 @@ def KernelToESPAccelerator : Pass<"sodap-kernel-to-esp-accelerator", "::mlir::Mo
     copied as its bits: the accelerator reads `f32` from the DMA channel as is.
 
     Arguments must be f32 memrefs with static shapes and the identity layout.
+    Copy-in is conservative: a written argument may be read before writing or
+    only partially overwritten. Removing these copies requires a full-overwrite
+    proof. With profile=true, measure allocation, packing, execution and unpacking.
   }];
   let options = [
     Option<"kernel", "kernel", "std::string", /*default=*/"\"forward_kernel\"",
-           "Function to replace">
+           "Function to replace">,
+    Option<"profile", "profile", "bool", /*default=*/"false",
+           "Measure allocation, packing, execution and unpacking">,
+    Option<"dmaWordStride", "dma-word-stride", "unsigned", /*default=*/"1",
+           "32-bit words per shared-memory element (1 dense, 2 padded for DMA64)">
   ];
   let dependentDialects = [
     "::mlir::arith::ArithDialect",

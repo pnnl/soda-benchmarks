@@ -81,6 +81,19 @@ int main() {
       {source, source, 1}, {2}, {std::numeric_limits<int64_t>::max()}};
   assert(!sodap::copyMemRefF32(1, &overflow, shared, words, 0, true));
   assert(std::memcmp(before, shared, sizeof(before)) == 0);
+  // Padded shared layout, strided host view, and untouched padding guards.
+  for (unsigned i = 0; i < words; ++i) shared[i] = guard;
+  esp_copy_to_shared_f32_strided(2, &src, handle, 2, 2);
+  esp_copy_from_shared_f32_strided(handle, 2, 2, &dst, 2);
+  for (unsigned i = 0; i < 6; ++i) {
+    assert(shared[2 + 2 * i] == bits(source[2 + i / 3 + 4 * (i % 3)]));
+    assert(shared[3 + 2 * i] == guard);
+    assert(bits(output[1 + 8 * (i / 3) + 2 * (i % 3)]) == shared[2 + 2 * i]);
+  }
+  std::memcpy(before, shared, sizeof(before));
+  esp_copy_to_shared_f32_strided(2, &src, handle, 14, 2); // Last slot out of bounds.
+  esp_copy_to_shared_f32_strided(2, &src, handle, 0, 0);
+  assert(std::memcmp(before, shared, sizeof(before)) == 0);
   esp_free_shared(handle);
 
   // Sequential calls use the same ABI; this mock actually reclaims storage.

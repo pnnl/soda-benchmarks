@@ -54,7 +54,7 @@ static struct esp_prof_region g_r[ESP_PROF_MAX_ID];
 static unsigned long          g_magic;
 
 static const char *const g_named[] = {"total",    "pack",  "accel", "unpack",
-                                      "epilogue", "alloc", "flush", "-"};
+                                      "epilogue", "alloc", "flush", "kernel"};
 
 static void esp_prof_init_once(void)
 {
@@ -124,7 +124,11 @@ void esp_prof_report(void)
     esp_prof_init_once();
     denom = g_r[ESP_PROF_TOTAL].total;
 
+#ifdef __riscv
     printf("region        cycles       calls        mean     share\n");
+#else
+    printf("region            ns       calls        mean     share\n");
+#endif
     printf("------------------------------------------------------\n");
     for (i = 0; i < ESP_PROF_MAX_ID; i++) {
         if (g_r[i].count == 0) continue;

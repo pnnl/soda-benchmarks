@@ -37,11 +37,12 @@
 /* <<-- named regions -->> */
 #define ESP_PROF_TOTAL    0 /* whole offloaded call                        */
 #define ESP_PROF_PACK     1 /* host layout -> accelerator layout           */
-#define ESP_PROF_ACCEL    2 /* CMD_START -> STATUS_DONE                    */
+#define ESP_PROF_ACCEL    2 /* runtime start/wait, including launch work   */
 #define ESP_PROF_UNPACK   3 /* accelerator layout -> host layout           */
 #define ESP_PROF_EPILOGUE 4 /* work the pass left on the CPU (alpha/beta)  */
 #define ESP_PROF_ALLOC    5 /* shared buffer + page table                  */
 #define ESP_PROF_FLUSH    6 /* cache flush before launch                   */
+#define ESP_PROF_KERNEL   7 /* CPU kernel or complete ESP offload          */
 #define ESP_PROF_USER     8 /* first id a pass may assign freely           */
 
 #define ESP_PROF_MAX_ID 16
@@ -58,11 +59,13 @@ void esp_prof_end(uint32_t id);
 /* Discard everything measured so far. */
 void esp_prof_reset(void);
 
-/* One line per region that was entered at least once: cycles, invocations,
- * mean, and share of ESP_PROF_TOTAL if that region was used. */
+/* One line per region that was entered at least once: cycles (RISC-V) or
+ * nanoseconds (native), invocations, mean, and share of ESP_PROF_TOTAL. */
 void esp_prof_report(void);
 
-/* For a caller that wants the numbers rather than the printout. */
+/* For a caller that wants the numbers rather than the printout.
+ * Despite the historical name, esp_prof_cycles returns nanoseconds on native
+ * builds; only RISC-V uses the cycle counter. */
 uint64_t esp_prof_cycles(uint32_t id);
 uint32_t esp_prof_count(uint32_t id);
 

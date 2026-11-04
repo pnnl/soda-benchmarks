@@ -253,10 +253,11 @@ extern "C" void esp_free_shared(int64_t mem_handle) {
 
 namespace {
 void copySharedF32(int64_t rank, void *ptr, int64_t handle, int64_t offset,
-                   bool toShared) {
+                   bool toShared, int64_t sharedStride = 1) {
   if (!g_state.buf || handle != reinterpret_cast<intptr_t>(g_state.buf) ||
       !sodap::copyMemRefF32(rank, ptr, g_state.buf,
-                           g_state.memSize / sizeof(float), offset, toShared))
+                            g_state.memSize / sizeof(float), offset, toShared,
+                            sharedStride))
     std::printf("esp: invalid f32 shared-memory copy\n");
 }
 } // namespace
@@ -269,6 +270,18 @@ extern "C" void esp_copy_to_shared_f32(int64_t rank, void *ptr,
 extern "C" void esp_copy_from_shared_f32(int64_t handle, int64_t offset,
                                          int64_t rank, void *ptr) {
   copySharedF32(rank, ptr, handle, offset, false);
+}
+
+extern "C" void esp_copy_to_shared_f32_strided(int64_t rank, void *ptr,
+                                               int64_t handle, int64_t offset,
+                                               int64_t sharedStride) {
+  copySharedF32(rank, ptr, handle, offset, true, sharedStride);
+}
+
+extern "C" void esp_copy_from_shared_f32_strided(int64_t handle, int64_t offset,
+                                                 int64_t rank, void *ptr,
+                                                 int64_t sharedStride) {
+  copySharedF32(rank, ptr, handle, offset, false, sharedStride);
 }
 
 extern "C" void esp_float2fixed_f32(int64_t rank, void *ptr, int64_t mem_handle,

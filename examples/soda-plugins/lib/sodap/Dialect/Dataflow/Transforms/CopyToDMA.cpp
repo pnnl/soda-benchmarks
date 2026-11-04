@@ -29,6 +29,8 @@
 #include "mlir/Dialect/Utils/StaticValueUtils.h"
 #include "mlir/IR/Builders.h"
 #include "llvm/ADT/BitVector.h"
+#include "llvm/ADT/SetVector.h"
+#include "llvm/ADT/SmallPtrSet.h"
 
 namespace mlir {
 namespace sodap {
@@ -105,7 +107,7 @@ static LogicalResult collectTransfers(BlockArgument arg, int64_t base,
 /// Emits `transfer` in place of its copy: for each row of the tile along the
 /// innermost dimension, the request, then the row's elements.
 static void lowerTransfer(OpBuilder &b, Transfer &transfer,
-                          const DMAStreams &dma) {
+                          const DMAStreams &dma, unsigned wordStride) {
   memref::SubViewOp tile = transfer.tile;
   Location loc = transfer.copy.getLoc();
   Value buffer = transfer.read ? transfer.copy.getTarget()
@@ -142,16 +144,17 @@ static void lowerTransfer(OpBuilder &b, Transfer &transfer,
   llvm::append_range(operands, ivs);
   AffineExpr address = b.getAffineConstantExpr(transfer.base);
   for (unsigned d = 0; d < rank; ++d)
-    address = address + b.getAffineDimExpr(d) * strides[d];
+    address = address + b.getAffineDimExpr(d) * (strides[d] * wordStride);
   for (unsigned d = 0; d + 1 < rank; ++d)
-    address = address + b.getAffineDimExpr(rank + d) * strides[d];
+    address =
+        address + b.getAffineDimExpr(rank + d) * (strides[d] * wordStride);
   Value addr = b.create<affine::AffineApplyOp>(
       loc, AffineMap::get(operands.size(), 0, address), operands);
 
   // A scalar is a row of one element, with no index.
   int64_t length = rank ? sizes.back() : 1;
   Value request = b.create<arith::OrIOp>(
-      loc, b.create<arith::ConstantIntOp>(loc, length << 32, 64),
+      loc, b.create<arith::ConstantIntOp>(loc, (length * wordStride) << 32, 64),
       b.create<arith::IndexCastOp>(loc, b.getI64Type(), addr));
   b.create<StreamWriteOp>(loc, ctrl, request);
 
@@ -165,6 +168,8 @@ static void lowerTransfer(OpBuilder &b, Transfer &transfer,
   Type word = b.getI32Type();
   if (transfer.read) {
     Value value = b.create<StreamReadOp>(loc, word, data).getResult();
+    if (wordStride == 2)
+      b.create<StreamReadOp>(loc, word, data); // Discard the padding lane.
     if (element != word)
       value = b.create<arith::BitcastOp>(loc, element, value);
     b.create<memref::StoreOp>(loc, value, buffer, indices);
@@ -173,6 +178,9 @@ static void lowerTransfer(OpBuilder &b, Transfer &transfer,
     if (element != word)
       value = b.create<arith::BitcastOp>(loc, word, value);
     b.create<StreamWriteOp>(loc, data, value);
+    if (wordStride == 2)
+      b.create<StreamWriteOp>(loc, data,
+                              b.create<arith::ConstantIntOp>(loc, 0, 32));
   }
 }
 
@@ -183,6 +191,10 @@ struct CopyToDMA : public dataflow::impl::CopyToDMABase<CopyToDMA> {
 
   void runOnOperation() override {
     ModuleOp module = getOperation();
+    if (wordStride != 1 && wordStride != 2) {
+      module.emitError("dma-word-stride must be 1 or 2");
+      return signalPassFailure();
+    }
     auto top = module.lookupSymbol<func::FuncOp>(topFunc);
     if (!top || top.isExternal()) {
       module.emitError() << "top function '" << topFunc << "' not found";
@@ -200,7 +212,22 @@ struct CopyToDMA : public dataflow::impl::CopyToDMABase<CopyToDMA> {
       if (failed(collectTransfers(arg, base, transfers)))
         return signalPassFailure();
       regions.set(arg.getArgNumber());
-      base += type.getNumElements();
+      base += type.getNumElements() * wordStride;
+    }
+
+    // A copy between two DMA regions needs local staging. Reject it before
+    // mutating anything, rather than lowering/erasing the same copy twice.
+    llvm::SmallPtrSet<Operation *, 16> copies;
+    llvm::SetVector<Operation *> tiles;
+    for (Transfer &transfer : transfers) {
+      if (!copies.insert(transfer.copy.getOperation()).second) {
+        transfer.copy.emitError("a DMA copy must have exactly one top-level "
+                                "memory operand; stage argument-to-argument "
+                                "copies through a local buffer");
+        return signalPassFailure();
+      }
+      if (transfer.tile)
+        tiles.insert(transfer.tile.getOperation());
     }
 
     MLIRContext *ctx = &getContext();
@@ -216,12 +243,12 @@ struct CopyToDMA : public dataflow::impl::CopyToDMABase<CopyToDMA> {
 
     OpBuilder b(ctx);
     for (Transfer &transfer : transfers) {
-      lowerTransfer(b, transfer, dma);
+      lowerTransfer(b, transfer, dma, wordStride);
       transfer.copy.erase();
     }
-    for (Transfer &transfer : transfers)
-      if (transfer.tile && transfer.tile->use_empty())
-        transfer.tile.erase();
+    for (Operation *tile : tiles)
+      if (tile->use_empty())
+        tile->erase();
 
     regions.resize(top.getNumArguments());
     top.eraseArguments(regions);

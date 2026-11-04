@@ -89,8 +89,10 @@ inline MemRefViewF32 decodeMemRefF32(int64_t rank, void *descriptor) {
 /// a zero extent copies nothing. The caller owns descriptor/storage validity.
 /// Unlike float/fixed conversion, this preserves NaNs, infinities and -0 bits.
 inline bool copyMemRefF32(int64_t rank, void *descriptor, void *shared,
-                         int64_t capacity, int64_t offset, bool toShared) {
-  if (rank < 0 || !descriptor || !shared || offset < 0 || offset > capacity)
+                          int64_t capacity, int64_t offset, bool toShared,
+                          int64_t sharedStride = 1) {
+  if (rank < 0 || !descriptor || !shared || offset < 0 || offset > capacity ||
+      sharedStride < 1)
     return false;
   auto *head = static_cast<MemRefDescriptorHeadF32 *>(descriptor);
   auto *sizes = reinterpret_cast<int64_t *>(static_cast<char *>(descriptor) +
@@ -105,12 +107,14 @@ inline bool copyMemRefF32(int64_t rank, void *descriptor, void *shared,
   }
   if (empty)
     return true;
+  int64_t available =
+      capacity == offset ? 0 : 1 + (capacity - offset - 1) / sharedStride;
   for (int64_t d = 0; d < rank; ++d) {
-    if (count > (capacity - offset) / sizes[d])
+    if (count > available / sizes[d])
       return false;
     count *= sizes[d];
   }
-  if (count > capacity - offset || !head->aligned)
+  if (count > available || !head->aligned)
     return false;
 
   // Check the descriptor's full index range before modifying either buffer.
@@ -129,7 +133,7 @@ inline bool copyMemRefF32(int64_t rank, void *descriptor, void *shared,
       index += (remainder % sizes[d]) * strides[d];
       remainder /= sizes[d];
     }
-    void *slot = bytes + (offset + linear) * sizeof(float);
+    void *slot = bytes + (offset + linear * sharedStride) * sizeof(float);
     if (toShared)
       std::memcpy(slot, head->aligned + index, sizeof(float));
     else
@@ -161,6 +165,17 @@ esp_copy_to_shared_f32(int64_t rank, void *ptr, int64_t mem_handle, int64_t offs
 extern "C" MLIR_ESPRUNNERUTILS_EXPORT void
 esp_copy_from_shared_f32(int64_t mem_handle, int64_t offset, int64_t rank,
                         void *ptr);
+
+/// The same bit-preserving copies with a positive shared-memory element stride.
+/// Stride 2 puts each f32 in the low word of a 64-bit slot. Padding is
+/// untouched.
+extern "C" MLIR_ESPRUNNERUTILS_EXPORT void
+esp_copy_to_shared_f32_strided(int64_t rank, void *ptr, int64_t mem_handle,
+                               int64_t offset, int64_t shared_stride);
+extern "C" MLIR_ESPRUNNERUTILS_EXPORT void
+esp_copy_from_shared_f32_strided(int64_t mem_handle, int64_t offset,
+                                 int64_t rank, void *ptr,
+                                 int64_t shared_stride);
 
 /// Convert float data from a memref to fixed-point and copy it into the
 /// shared memory buffer at the given element offset, one row at a time.

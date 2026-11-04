@@ -101,3 +101,27 @@ func.func @top(%A: memref<8xf32>, %B: memref<8xf32>) {
   memref.store %v, %B[%c0] : memref<8xf32>
   return
 }
+
+// -----
+
+func.func @top(%a: memref<4xf32>, %b: memref<4xf32>) {
+  // expected-error@+1 {{a DMA copy must have exactly one top-level memory operand}}
+  memref.copy %a, %b : memref<4xf32> to memref<4xf32>
+  return
+}
+
+// -----
+
+// Two copies may share one subview; erase that view only once.
+// CHECK-LABEL: func.func @top
+// CHECK-COUNT-2: dataflow.stream_write
+// CHECK-NOT: memref.copy
+// CHECK: return
+func.func @top(%a: memref<8xf32>) {
+  %x = memref.alloc() : memref<4xf32>
+  %y = memref.alloc() : memref<4xf32>
+  %s = memref.subview %a[0] [4] [1] : memref<8xf32> to memref<4xf32, strided<[1]>>
+  memref.copy %s, %x : memref<4xf32, strided<[1]>> to memref<4xf32>
+  memref.copy %s, %y : memref<4xf32, strided<[1]>> to memref<4xf32>
+  return
+}

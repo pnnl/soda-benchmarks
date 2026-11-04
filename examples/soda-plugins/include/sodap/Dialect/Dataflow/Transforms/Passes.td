@@ -110,10 +110,14 @@ def CopyToDMA :
     Run it before `sodap-dataflow-tasks-to-nodes`, which then makes the
     streams ports of the load and store nodes, and let
     `sodap-dataflow-infer-top-interface` turn them into axis ports.
+    dma-word-stride=2 stores each value in the low word of a 64-bit slot:
+    read padding is discarded and write padding is zero. Host layout must match.
   }];
   let options = [
     Option<"topFunc", "top-func", "std::string", /*default=*/"",
-           "Top function of the design (required)">
+           "Top function of the design (required)">,
+    Option<"wordStride", "dma-word-stride", "unsigned", /*default=*/"1",
+           "32-bit words per shared-memory element; must match host lowering">
   ];
   let dependentDialects = [
     "::mlir::sodap::dataflow::DataflowDialect",

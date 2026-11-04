@@ -49,11 +49,14 @@ static constexpr uint32_t kProfPack = 1;
 static constexpr uint32_t kProfAccel = 2;
 static constexpr uint32_t kProfUnpack = 3;
 static constexpr uint32_t kProfEpilogue = 4;
+static constexpr uint32_t kProfAlloc = 5;
+static constexpr uint32_t kProfKernel = 7;
 
 using namespace mlir;
 
 namespace mlir::sodap {
 #define GEN_PASS_DEF_KERNELTOESPACCELERATOR
+#define GEN_PASS_DEF_PROFILEKERNEL
 #define GEN_PASS_DEF_LINALGBATCHMATMULTOESP
 #include "sodap/SODAPPasses.h.inc"
 
@@ -458,6 +461,37 @@ static bool isWritten(Value value) {
   return false;
 }
 
+class ProfileKernel : public impl::ProfileKernelBase<ProfileKernel> {
+public:
+  using impl::ProfileKernelBase<ProfileKernel>::ProfileKernelBase;
+  void runOnOperation() final {
+    ModuleOp module = getOperation();
+    auto function = module.lookupSymbol<func::FuncOp>(kernel);
+    if (!function || function.isExternal()) {
+      module.emitError("no function with a body named '") << kernel << "'";
+      return signalPassFailure();
+    }
+    // Reapplying a pipeline must not nest the same profiler region.
+    if (function->hasAttr("sodap.kernel_profiled"))
+      return;
+    OpBuilder builder(module.getContext());
+    Type i32 = builder.getI32Type();
+    getOrInsertFunc(module, builder, kEspProfBegin, {}, {i32});
+    getOrInsertFunc(module, builder, kEspProfEnd, {}, {i32});
+    builder.setInsertionPointToStart(&function.getBody().front());
+    Value id = builder.create<arith::ConstantIntOp>(function.getLoc(),
+                                                    kProfKernel, 32);
+    builder.create<func::CallOp>(function.getLoc(), kEspProfBegin, TypeRange{},
+                                 ValueRange{id});
+    function.walk([&](func::ReturnOp ret) {
+      builder.setInsertionPoint(ret);
+      builder.create<func::CallOp>(ret.getLoc(), kEspProfEnd, TypeRange{},
+                                   ValueRange{id});
+    });
+    function->setAttr("sodap.kernel_profiled", builder.getUnitAttr());
+  }
+};
+
 class KernelToESPAccelerator
     : public impl::KernelToESPAcceleratorBase<KernelToESPAccelerator> {
 public:
@@ -466,6 +500,15 @@ public:
 
   void runOnOperation() final {
     ModuleOp module = getOperation();
+    if (dmaWordStride != 1 && dmaWordStride != 2) {
+      module.emitError("dma-word-stride must be 1 or 2");
+      return signalPassFailure();
+    }
+    const char *copyIn = dmaWordStride == 1 ? kEspCopyToSharedF32
+                                            : "esp_copy_to_shared_f32_strided";
+    const char *copyOut = dmaWordStride == 1
+                              ? kEspCopyFromSharedF32
+                              : "esp_copy_from_shared_f32_strided";
     auto function = module.lookupSymbol<func::FuncOp>(kernel);
     if (!function || function.isExternal()) {
       module.emitError("no function with a body named '") << kernel << "'";
@@ -494,7 +537,7 @@ public:
         return signalPassFailure();
       }
       arguments.push_back({arg, words, isWritten(arg)});
-      words += type.getNumElements();
+      words += type.getNumElements() * dmaWordStride;
     }
 
     MLIRContext *ctx = module.getContext();
@@ -504,12 +547,21 @@ public:
     Type urMemRefF32 = UnrankedMemRefType::get(builder.getF32Type(), 0);
     getOrInsertFunc(module, builder, kEspAllocShared, {i64Ty}, {i64Ty});
     getOrInsertFunc(module, builder, kEspFreeShared, {}, {i64Ty});
-    getOrInsertFunc(module, builder, kEspCopyToSharedF32, {},
-                    {urMemRefF32, i64Ty, i64Ty});
-    getOrInsertFunc(module, builder, kEspCopyFromSharedF32, {},
-                    {i64Ty, i64Ty, urMemRefF32});
+    SmallVector<Type> inTypes{urMemRefF32, i64Ty, i64Ty};
+    SmallVector<Type> outTypes{i64Ty, i64Ty, urMemRefF32};
+    if (dmaWordStride != 1) {
+      inTypes.push_back(i64Ty);
+      outTypes.push_back(i64Ty);
+    }
+    getOrInsertFunc(module, builder, copyIn, {}, inTypes);
+    getOrInsertFunc(module, builder, copyOut, {}, outTypes);
     getOrInsertFunc(module, builder, kEspAccelStart, {}, {});
     getOrInsertFunc(module, builder, kEspAccelWait, {}, {});
+    if (profile) {
+      getOrInsertFunc(module, builder, kEspProfBegin, {},
+                      {builder.getI32Type()});
+      getOrInsertFunc(module, builder, kEspProfEnd, {}, {builder.getI32Type()});
+    }
 
     // The old body goes, and the entry block keeps its arguments. soda-opt's
     // outliner leaves a branch to a second block.
@@ -526,28 +578,42 @@ public:
       return builder.create<arith::ConstantOp>(loc, i64Ty,
                                                builder.getI64IntegerAttr(value));
     };
+    auto mark = [&](const char *callee, uint32_t region) {
+      if (!profile)
+        return;
+      Value id = builder.create<arith::ConstantIntOp>(loc, region, 32);
+      builder.create<func::CallOp>(loc, callee, TypeRange{}, ValueRange{id});
+    };
+    mark(kEspProfBegin, kProfAlloc);
     Value handle = builder
                        .create<func::CallOp>(loc, kEspAllocShared, TypeRange{i64Ty},
                                              ValueRange{constant(words * 4)})
                        .getResult(0);
+    mark(kEspProfEnd, kProfAlloc);
+    mark(kEspProfBegin, kProfPack);
     for (const Argument &arg : arguments) {
-      if (arg.written)
-        continue;
       Value cast = builder.create<memref::CastOp>(loc, urMemRefF32, arg.value);
-      builder.create<func::CallOp>(
-          loc, kEspCopyToSharedF32, TypeRange{},
-          ValueRange{cast, handle, constant(arg.offset)});
+      SmallVector<Value> args{cast, handle, constant(arg.offset)};
+      if (dmaWordStride != 1)
+        args.push_back(constant(dmaWordStride));
+      builder.create<func::CallOp>(loc, copyIn, TypeRange{}, args);
     }
+    mark(kEspProfEnd, kProfPack);
+    mark(kEspProfBegin, kProfAccel);
     builder.create<func::CallOp>(loc, kEspAccelStart, TypeRange{}, ValueRange{});
     builder.create<func::CallOp>(loc, kEspAccelWait, TypeRange{}, ValueRange{});
+    mark(kEspProfEnd, kProfAccel);
+    mark(kEspProfBegin, kProfUnpack);
     for (const Argument &arg : arguments) {
       if (!arg.written)
         continue;
       Value cast = builder.create<memref::CastOp>(loc, urMemRefF32, arg.value);
-      builder.create<func::CallOp>(
-          loc, kEspCopyFromSharedF32, TypeRange{},
-          ValueRange{handle, constant(arg.offset), cast});
+      SmallVector<Value> args{handle, constant(arg.offset), cast};
+      if (dmaWordStride != 1)
+        args.push_back(constant(dmaWordStride));
+      builder.create<func::CallOp>(loc, copyOut, TypeRange{}, args);
     }
+    mark(kEspProfEnd, kProfUnpack);
     builder.create<func::CallOp>(loc, kEspFreeShared, TypeRange{},
                                  ValueRange{handle});
     builder.create<func::ReturnOp>(loc);

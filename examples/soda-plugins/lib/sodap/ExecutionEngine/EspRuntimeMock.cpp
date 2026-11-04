@@ -22,11 +22,12 @@ namespace {
 std::unordered_map<int64_t, int64_t> allocations;
 
 void copySharedF32(int64_t rank, void *ptr, int64_t handle, int64_t offset,
-                   bool toShared) {
+                   bool toShared, int64_t sharedStride = 1) {
   auto found = allocations.find(handle);
   if (found == allocations.end() ||
       !sodap::copyMemRefF32(rank, ptr, reinterpret_cast<void *>(handle),
-                           found->second / sizeof(float), offset, toShared))
+                            found->second / sizeof(float), offset, toShared,
+                            sharedStride))
     std::cout << "esp: invalid f32 shared-memory copy" << std::endl;
 }
 
@@ -73,6 +74,18 @@ extern "C" void esp_copy_from_shared_f32(int64_t handle, int64_t offset,
                                          int64_t rank, void *ptr) {
   std::cout << "Called: " << __func__ << std::endl;
   copySharedF32(rank, ptr, handle, offset, false);
+}
+
+extern "C" void esp_copy_to_shared_f32_strided(int64_t rank, void *ptr,
+                                               int64_t handle, int64_t offset,
+                                               int64_t sharedStride) {
+  copySharedF32(rank, ptr, handle, offset, true, sharedStride);
+}
+
+extern "C" void esp_copy_from_shared_f32_strided(int64_t handle, int64_t offset,
+                                                 int64_t rank, void *ptr,
+                                                 int64_t sharedStride) {
+  copySharedF32(rank, ptr, handle, offset, false, sharedStride);
 }
 
 extern "C" void esp_float2fixed_f32(int64_t rank, void *ptr, int64_t mem_handle,
