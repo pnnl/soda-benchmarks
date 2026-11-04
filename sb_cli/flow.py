@@ -86,8 +86,8 @@ _TARGET_TEMPLATES: dict[tuple[str, str], str] = {
     # the host code that drives it, from tosa_to_lcs.sh. The other stages
     # cross-compile for the SoC's RISC-V core. "object" is as far as this
     # container can go -- the final link needs an ESP checkout, see ll_to_riscv.sh.
-    ("esp", "llvm"): "$(ODIR)/lcs/accelerator.ll $(ODIR)/lcs/host.ll",
-    ("esp", "object"): "$(ODIR)/esp/{flow}/06_kernel_riscv.o",
+    ("esp", "llvm"): "$(ODIR)/esp/{flow}/05_kernel_riscv.ll $(ODIR)/esp/{flow}/05_hw_acc.ll",
+    ("esp", "object"): "$(ODIR)/esp/{flow}/06_kernel_riscv.o $(ODIR)/esp/{flow}/06_verilog.v",
     ("esp", "binary"): "$(ODIR)/esp/{flow}/07_kernel.riscv",
 }
 

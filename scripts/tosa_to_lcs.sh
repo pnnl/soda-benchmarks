@@ -3,27 +3,28 @@
 # RISC-V program that drives it. The IR after each pass, whole modules, all goes to
 # one file: <outdir>/ir_after_each_pass.mlir. Run it with pixi, in the devcontainer.
 #
-# Usage: pixi run ./scripts/tosa_to_lcs.sh <input_tosa.mlir> <outdir>
+# Usage: pixi run ./scripts/tosa_to_lcs.sh <input_tosa.mlir> [<outdir>]
 #
 # Writes in <outdir>:
 #   ir_after_each_pass.mlir         the IR after each pass
-#   accelerator.ll                  for Bambu, with architecture.xml
+#   05_hw_acc.ll                    for Bambu, with architecture.xml
 #   architecture.xml
-#   host.ll                         for the RISC-V core
+#   05_kernel_riscv.ll              for the RISC-V core
 #   ac_channel_specializations.ll   needed to build accelerator.ll
 #   forward_kernel_testbench.c      written by soda-opt, not used here
 
 set -eou pipefail
 
-if [ "$#" -ne 1 ]; then
-  echo "Usage: $0 <input_tosa.mlir> <outdir>" >&2
+if [ "$#" -lt 1 ] || [ "$#" -gt 2 ]; then
+  echo "Usage: $0 <input_tosa.mlir> [<outdir>]" >&2
   exit 1
 fi
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "$REPO_DIR/scripts/check_docker.sh"
 INPUT=$(realpath "$1")
-OUT_DIR=$(dirname "$1")
+# Defaults to the input's directory.
+OUT_DIR="${2:-$(dirname "$1")}"
 mkdir -p "$OUT_DIR"
 cd "$OUT_DIR"
 
@@ -127,7 +128,7 @@ IR=$(step "$ACC_DUMP" mlir-opt $PLUGIN --pass-pipeline="builtin.module(
 
 $DOCKER_RUN mlir-translate --mlir-to-llvmir <<< "$IR" \
   | $DOCKER_RUN llvm-link -S - ac_channel_specializations.ll \
-  | $DOCKER_RUN opt -passes=always-inline -S -o accelerator.ll
+  | $DOCKER_RUN opt -passes=always-inline -S -o 05_hw_acc.ll
 
 section "$HOST_DUMP" "Host: the ESP calls, soda-opt"
 IR=$(step "$HOST_DUMP" soda-opt $PLUGIN \
@@ -139,6 +140,6 @@ IR=$(step "$HOST_DUMP" soda-opt \
   --convert-func-to-llvm \
   --reconcile-unrealized-casts <<< "$IR")
 
-$DOCKER_RUN mlir-translate --mlir-to-llvmir -o host.ll <<< "$IR"
+$DOCKER_RUN mlir-translate --mlir-to-llvmir -o 05_kernel_riscv.ll <<< "$IR"
 
 echo "IR after each pass: $(pwd)/$DUMP"
