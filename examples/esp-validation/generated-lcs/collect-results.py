@@ -97,7 +97,7 @@ for name, state in states.items():
             assert digest(folder / "esp" / rel) == expected, f"Modified integration input: {name}/{rel}"
             leaf = Path(rel).name
             if leaf in ("forward_kernel.v", "panda_libtech.v") or leaf.endswith(".mem"):
-                assert digest(Path(manifest["generated"]) / "bambu" / leaf) == expected
+                assert digest(Path(manifest["generated"]) / "bambu_syn" / leaf) == expected
         item["rtl_unchanged"] = True
         template = Path(manifest["simulation_soc_template"])
         soc = Path(manifest["soc"])

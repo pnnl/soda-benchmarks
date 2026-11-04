@@ -17,6 +17,7 @@ p.add_argument("campaign", type=Path)
 p.add_argument("esp_source", type=Path)
 p.add_argument("compiled_soc", type=Path)
 p.add_argument("--kernels", nargs="+", default=["gemm", "syr2k", "trmm", "symm", "syrk", "gesummv", "doitgen"])
+p.add_argument("--flow", choices=("baseline", "optimized", "transformed"), default="transformed")
 p.add_argument("--sim-jobs", type=int, default=2)
 p.add_argument("--fpga-jobs", type=int, default=2)
 p.add_argument("--cpu-results", type=Path,
@@ -67,7 +68,7 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=a.fpga_jobs) as synthesis
     def kernel(name):
         folder = root / name
         folder.mkdir(exist_ok=True)
-        generated = (root / "generated/experiments" / name / "output/lcs").resolve()
+        generated = (root / "generated/experiments" / name / "output/esp" / a.flow).resolve()
         soc = folder / "esp/socs/vc707"
         update(name, stage="adapter", generated=str(generated), fpga="WAITING")
         try:
@@ -93,7 +94,7 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=a.fpga_jobs) as synthesis
                 assert "TEST PASSED" in log and "Failure: Program Completed!" in log
                 assert not any(token in log for token in
                                ("TEST FAILED", "** Fatal", "** Error", "GEMM_BOUNDARY START"))
-                assert (generated / "cpu-baseline/host.o").read_bytes() == (previous_sim / "host.o").read_bytes()
+                assert (generated / "cpu-baseline/06_kernel_riscv.o").read_bytes() == (previous_sim / "host.o").read_bytes()
                 assert (generated / "cpu-baseline/esp-app/testdata.h").read_bytes() == (previous_sim / "testdata.h").read_bytes()
                 original_manifest = json.loads((a.cpu_results / name / "esp/integration.json").read_text())
                 assert Path(original_manifest["simulation_soc_template"]).resolve() == template

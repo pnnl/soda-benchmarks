@@ -57,8 +57,8 @@ for item in (source / "tech/virtex7").iterdir():
         link(item, root / "tech/virtex7" / item.name)
 acc = root / "tech/virtex7/acc/sqr_bambu"
 for name in ("forward_kernel.v", "panda_libtech.v"):
-    copy(generated / "bambu" / name, acc / name)
-for mem in (generated / "bambu").glob("*.mem"):
+    copy(generated / "bambu_syn" / name, acc / name)
+for mem in (generated / "bambu_syn").glob("*.mem"):
     copy(mem, acc / mem.name)
 copy(template_root / "tech/virtex7/acc/sqr_bambu/sqr_bambu.xml",
      acc / "sqr_bambu.xml")

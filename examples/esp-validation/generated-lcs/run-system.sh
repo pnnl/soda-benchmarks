@@ -4,7 +4,7 @@
 set -euo pipefail
 example=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 repo=$(cd "$example/../../.." && pwd)
-generated=$(realpath "${1:?Usage: run-system.sh output/lcs ESP-root compiled-SoC [run-root]}")
+generated=$(realpath "${1:?Usage: run-system.sh output/esp/<flow> ESP-root compiled-SoC [run-root]}")
 esp=$(realpath "${2:?ESP checkout required}")
 soc=$(realpath "${3:?Compiled ESP SoC directory required}")
 run=${4:-$(mktemp -d /tmp/esp-generated-gemm.XXXXXX)}
@@ -13,7 +13,9 @@ run=$(realpath "$run")
 sim=$run/full-system
 mode=${LCS_SYSTEM_MODE:-esp}
 case "$mode" in esp|cpu-baseline) ;; *) echo "LCS_SYSTEM_MODE must be esp or cpu-baseline" >&2; exit 1 ;; esac
-app="$generated/$mode/esp-app"
+artifact_dir="$generated"
+if [[ "$mode" == cpu-baseline ]]; then artifact_dir="$generated/cpu-baseline"; fi
+app="$artifact_dir/esp-app"
 appname=$(sed -n 's/^APPNAME *:= *//p' "$app/Makefile")
 cp "$app/testdata.h" "$sim/"
 shopt -s nullglob
@@ -23,7 +25,7 @@ test -d "$soc/modelsim/work"
 test ! -e "$sim/work" # Use a fresh run directory; never nest/overwrite a library.
 cp -a "${ESP_MODELSIM_WORK:-$soc/modelsim/work}" "$sim/work"
 cp "$soc/soft-build/ariane/prom.srec" "$sim/"
-memories=("$generated/bambu/"*.mem)
+memories=("$generated/bambu_syn/"*.mem)
 if ((${#memories[@]})); then cp "${memories[@]}" "$sim/"; fi
 cat > "$sim/modelsim.ini" <<EOF
 [Library]
@@ -34,10 +36,10 @@ EOF
 
 cd "$sim"
 vlib gemm_lib
-vlog -sv +define+SODAP_LCS_GENERIC -work sqr_bambu "$generated/bambu/forward_kernel.v" \
-  "$generated/bambu/panda_libtech.v" "$example/../generated-gemm/sqr_bambu_basic_dma64.sv"
+vlog -sv +define+SODAP_LCS_GENERIC -work sqr_bambu "$generated/bambu_syn/forward_kernel.v" \
+  "$generated/bambu_syn/panda_libtech.v" "$example/../generated-gemm/sqr_bambu_basic_dma64.sv"
 prefix=${RISCV_PREFIX:-riscv64-unknown-elf-}
-cp "$generated/$mode/host.o" host.o
+cp "$artifact_dir/06_kernel_riscv.o" host.o
 drivers=$esp/soft/common/drivers
 cpu=$esp/soft/ariane
 libs=$soc/soft-build/ariane/drivers
@@ -87,16 +89,18 @@ test ! -s undefined-symbols.txt
 "${prefix}objcopy" -O srec --gap-fill 0 gemm_app.exe ram.srec
 "${prefix}objcopy" -O binary gemm_app.exe "$run/soft-build/ariane/systest.bin"
 (cd "$run" && python3 "$esp/utils/scripts/file_handling/bin2txt_vhx.py" 64 ariane)
-sha256sum "$generated/$mode/host.o" "$generated/bambu/forward_kernel.v" \
-  "$generated/bambu/panda_libtech.v" "$generated/layout.txt" \
+sha256sum "$artifact_dir/06_kernel_riscv.o" "$generated/bambu_syn/forward_kernel.v" \
+  "$generated/bambu_syn/panda_libtech.v" "$generated/layout.txt" \
   "$repo/examples/soda-plugins/lib/sodap/ExecutionEngine/EspRuntime.cpp" \
   "$repo/examples/soda-plugins/include/sodap/ExecutionEngine/ESPRuntime.h" \
   "$example/../generated-gemm/sqr_bambu_basic_dma64.sv" "$app/$appname.c" \
   "$example/baremetal-startup.S" test.ld testdata.h gemm_app.exe > inputs-and-software.sha256
-cat > run.tcl <<'EOF'
+sim_time_ms=${ESP_SIM_TIME_MS:-100}
+[[ "$sim_time_ms" =~ ^[1-9][0-9]*$ ]] || { echo "ESP_SIM_TIME_MS must be a positive integer" >&2; exit 1; }
+cat > run.tcl <<EOF
 onerror {quit -code 2 -f}
 onbreak {quit -code 0 -f}
-run 100 ms
+run $sim_time_ms ms
 puts "LCS_SYSTEM_SIM_TIME_LIMIT"
 quit -code 3 -f
 EOF

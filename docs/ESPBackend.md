@@ -14,7 +14,6 @@ sb-cli init --benchmark_name gemm --dataset MINI --dtype float32 \
   --flow transformed --backend esp --stage object \
   --device xc7vx485t-2ffg1761 --clock_period 20 --output_dir gemm_lcs
 make -C benches/experiments/gemm_lcs LCS_PROFILE=true LCS_DMA_WORD_STRIDE=2 object cpu-baseline-object
-make -C benches/experiments/gemm_lcs LCS_PROFILE=true LCS_DMA_WORD_STRIDE=2 verilog
 ```
 
 The container needs the plugin built and `MLIR_PLUGIN_PATH`/`SODAP_DIR` set as
@@ -23,17 +22,19 @@ architecture XML and `ac_channel` operations used by this pipeline. The local
 validation used `agostini01/soda-trixie:v19.03`; each HLS output records
 `bambu-version.txt`, the command and input checksums.
 
-All generated artifacts are under `output/lcs/`:
+The `object` stage builds both `06_kernel_riscv.o` and `06_verilog.v`; the
+`verilog` alias can also request just RTL. All generated artifacts are under
+`output/esp/<flow>/` (`transformed` in the example; the CLI default is `baseline`):
 
 | Artifact | Purpose |
 |---|---|
 | `outlined.mlir`, `kernel.mlir`, `argument_order.txt` | Common kernel and the actual argument permutation used by both builds |
-| `accelerator.ll`, `architecture.xml` | Bambu inputs |
-| `host.ll`, `esp/host.o`, `esp/esp-app/` | Offload host and staged baremetal application |
-| `cpu_baseline.ll`, `cpu-baseline/host.o`, `cpu-baseline/esp-app/` | The same tiled/fused kernel executed on the RISC-V processor |
+| `05_hw_acc.ll`, `architecture.xml` | Bambu inputs |
+| `05_kernel_riscv.ll`, `06_kernel_riscv.o`, `esp-app/` | Offload host and staged baremetal application |
+| `05_cpu_baseline.ll`, `cpu-baseline/06_kernel_riscv.o`, `cpu-baseline/esp-app/` | The same tiled/fused kernel executed on the RISC-V processor |
 | `testdata.h` | Inputs and PyTorch golden results; all returned tensors are checked |
 | `layout.txt` | Selected physical word stride and profiling mode |
-| `bambu/` | Generated RTL, support modules and memory initialization files; see `rtl-files.txt` and `rtl.sha256` |
+| `bambu_syn/` | Generated RTL, support modules and memory initialization files; see `rtl-files.txt` and `rtl.sha256` |
 
 The CPU baseline uses the same outlined function and argument order. It measures
 the generated CPU implementation, not a tuned BLAS library. The generated HLS
@@ -90,10 +91,10 @@ invocations with backpressure and a 50,000-cycle write-control stall:
 
 ```sh
 examples/esp-validation/generated-lcs/run-adapter.sh \
-  benches/experiments/gemm_lcs/output/lcs /tmp/gemm_lcs_adapter
+  benches/experiments/gemm_lcs/output/esp/transformed /tmp/gemm_lcs_adapter
 ```
 
-`generated-lcs/run-system.sh output/lcs ESP-root compiled-SoC run-directory`
+`generated-lcs/run-system.sh output/esp/transformed ESP-root compiled-SoC run-directory`
 reuses the ESP validation SoC with L2/LLC disabled and its `sld,sqr_bambu` socket
 and runs the generated application on its RISC-V processor. Set
 `LCS_SYSTEM_MODE=cpu-baseline` to run the baseline instead, in another fresh run
@@ -109,10 +110,10 @@ multibuffering. These are compiler limitations, independent of the DMA adapter.
 
 ## Existing FFN flow
 
-The remainder documents the previous fixed-point FFN path. Its explicit
-`output/esp/<flow>/06_kernel_riscv.o` and `07_kernel.riscv` Make targets remain
-available. Select the `esp` or `esp-ir` recipe explicitly when using those
-targets; the default ESP stage aliases above use the generated LCS path.
+The remainder is historical documentation of the fixed-point FFN path. The
+reconciled default ESP targets now build generated LCS accelerators; selecting
+an old FFN recipe does not switch those targets back. Use the preserved FFN
+revision and its documented commands when reproducing those experiments.
 
 `--backend` picks what consumes the LLVM IR soda-opt produces. `bambu`
 synthesizes it. The two backends described here compile it instead:
