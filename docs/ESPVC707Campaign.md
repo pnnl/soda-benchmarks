@@ -6,9 +6,22 @@ uses MINI float32 inputs and the unchanged absolute validation threshold
 `1e-3`. The hardware is generated through SODA and Bambu; it is not the older
 FFN accelerator executing these kernels through batch-matmul calls.
 
+Completed on 4 November 2026: all seven generated host/accelerator pairs passed
+full-system RTL simulation, all seven CPU baselines passed, and all seven
+VC707 bitstreams were produced with nonnegative reported setup/hold slack.
+No physical-board run was performed in this campaign.
+
 The final campaign lives at `local-results/vc707-20261104-buffered` in the validation
 checkout. `status.json` records progress; `results.csv` and `results.json`
 collect completed runs. Board testing is a subsequent, manual step.
+The `fpga` status in those files means successful bitstream generation and
+report checks; it does not mean an application has run on the physical board.
+
+The starting point is PR #17 at `e5d2515`. Generation used the local fixes
+through `77fb9c4`; the buffered adapter is commit `6a3b19a`, and the campaign
+automation is `20418d8`. These are local validation-branch commits. The ESP
+source is based on `900ae43`, with the existing compiled SoC fixture described
+below. `environment.json` records full hashes, tool versions and local paths.
 
 The first campaign, `local-results/vc707-20261103`, generated all seven hardware
 and software pairs afresh and exposed an early-write deadlock in GESUMMV.
@@ -16,6 +29,10 @@ The final set reuses those unchanged generated artifacts and rebuilds the
 integrations with bounded write buffering in the adapter. The failure, VCD,
 and correction are described in
 [ESPNativeDMAWriteBuffer.md](ESPNativeDMAWriteBuffer.md).
+Some final-run directories link back to that preserved initial campaign;
+retain both directories. The completed `deployment-and-evidence.tar.gz`
+contains actual deployment files and reports for transfer, without relying
+on those links. It does not bundle the ESP checkout or EDA tools.
 
 ## Generation and integration
 
@@ -148,6 +165,25 @@ performance. The adapter stress-test durations are not performance numbers.
 ESP signals normal application completion with `** Failure: Program Completed!`.
 The scripts require that specific completion signal and `TEST PASSED`, while
 rejecting other simulator failures, errors and timeouts.
+
+## FPGA implementation results
+
+All images target the VC707's `xc7vx485tffg1761-2`, with a 50 MHz
+processor/accelerator and 100 MHz NoC/memory domain. Slack is the worst reported
+value across the constrained SoC paths. Resource counts below cover the
+generated accelerator plus its DMA adapter, excluding the socket and other
+SoC tiles; complete SoC utilization is retained in `results.json` and the
+Vivado reports.
+
+| Kernel | Setup slack (ns) | Hold slack (ns) | LUTs | FFs | DSPs | BRAM36 / BRAM18 |
+|---|---:|---:|---:|---:|---:|---:|
+| GEMM | 0.575 | 0.054 | 5,675 | 4,005 | 4 | 1 / 20 |
+| SYR2K | 0.785 | 0.050 | 8,306 | 5,712 | 6 | 2 / 32 |
+| TRMM | 0.094 | 0.051 | 4,517 | 3,496 | 4 | 1 / 16 |
+| SYMM | 0.888 | 0.054 | 6,609 | 4,639 | 4 | 1 / 24 |
+| SYRK | 0.423 | 0.052 | 5,532 | 3,967 | 4 | 1 / 20 |
+| GESUMMV | 0.552 | 0.053 | 5,517 | 3,793 | 6 | 2 / 28 |
+| DOITGEN | 0.396 | 0.052 | 4,666 | 3,783 | 2 | 0 / 0 |
 
 Vivado's reported setup/hold slack covers constrained paths. The reused ESP
 fixture retains two reset-controlled latch endpoints in the memory tile's

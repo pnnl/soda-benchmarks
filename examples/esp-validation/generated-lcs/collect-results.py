@@ -112,7 +112,7 @@ for name, state in states.items():
             files = {Path(node.attrib["Path"].replace("$PPRDIR", str(project.parent))).resolve()
                      for node in ET.parse(project).findall(".//File")}
             for rel in manifest["rtl_sha256"]:
-                if Path(rel).suffix in (".v", ".sv"):
+                if Path(rel).suffix in (".v", ".sv", ".mem"):
                     assert (folder / "esp" / rel).resolve() in files, \
                         f"Vivado project omits generated input: {name}/{rel}"
             item["vivado_uses_installed_rtl"] = True
