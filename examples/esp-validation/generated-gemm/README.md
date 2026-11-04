@@ -33,6 +33,11 @@ is not reconstructed by this example.
 * The wrapper registers `conf_done` for one cycle before starting the generated
   core. This lets the ESP socket complete configuration before the first DMA
   request. It also waits for its write adapter to drain before exposing DONE.
+* Write descriptors are accepted locally and issued to ESP only after a complete
+  output chunk is buffered. Larger writes are split into bounded chunks. This
+  prevents an early write command from occupying ESP's native DMA engine while
+  the core still needs reads to produce the output; see
+  [the GESUMMV regression](../../../docs/ESPNativeDMAWriteBuffer.md).
 
 The runtime still permits **one live shared buffer**. Sequential alloc/run/free
 calls work, but ESP's baremetal bump allocator may not reclaim memory on free.

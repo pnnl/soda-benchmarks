@@ -10,9 +10,20 @@ python3 "$example/make-vectors.py" "$lcs" "$build"
 shopt -s nullglob
 memories=("$lcs/bambu/"*.mem)
 if ((${#memories[@]})); then cp "${memories[@]}" "$build/"; fi
-iverilog -g2012 -I"$build" -s lcs_dma64_tb -o "$build/test.vvp" \
+iverilog -g2012 -I"$build" -s lcs_dma64_tb \
+  -Plcs_dma64_tb.SERIAL_DMA="${LCS_SERIAL_DMA:-1}" \
+  -Plcs_dma64_tb.WRITE_BUFFER_BEATS="${LCS_WRITE_BUFFER_BEATS:-16}" -o "$build/test.vvp" \
   "$lcs/bambu/forward_kernel.v" "$lcs/bambu/panda_libtech.v" \
   "$example/../generated-gemm/sqr_bambu_basic_dma64.sv" "$example/dma64_tb.sv"
 cd "$build"
-vvp ./test.vvp +gemm_stall=50000 | tee simulation.log
-grep -q 'LCS_DMA64 PASS errors=0' simulation.log
+# A long initial stall alone can conceal an early-write deadlock. Exercise
+# both immediate commands and delayed commands unless a single case is chosen.
+stalls=(0 50000)
+if [[ -n ${LCS_STALL_CYCLES+x} ]]; then stalls=("$LCS_STALL_CYCLES"); fi
+: > simulation.log
+for stall in "${stalls[@]}"; do
+  log="simulation-stall${stall}.log"
+  vvp ./test.vvp +gemm_stall="$stall" | tee "$log"
+  cat "$log" >> simulation.log
+  grep -q 'LCS_DMA64 PASS errors=0' "$log"
+done

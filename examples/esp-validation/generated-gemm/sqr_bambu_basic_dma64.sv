@@ -5,14 +5,17 @@
 // Read requests use 32-bit word indices/lengths; ESP uses 64-bit beat indices.
 // Reads may start/end on either half. Writes must cover aligned whole beats
 // (true for this GEMM); no read-modify-write or partial-write support is claimed.
+// Stage complete write chunks before occupying ESP's single DMA engine: Bambu
+// can publish a write command before the reads needed to produce its data.
 module sqr_bambu_basic_dma64 #(
 `ifdef SODAP_LCS_GENERIC
   parameter CHECK_ARCHIVE_GEMM = 0,
-  parameter TIMEOUT_CYCLES = 1000000
+  parameter TIMEOUT_CYCLES = 1000000,
 `else
   parameter CHECK_ARCHIVE_GEMM = 1,
-  parameter TIMEOUT_CYCLES = 100000
+  parameter TIMEOUT_CYCLES = 100000,
 `endif
+  parameter WRITE_BUFFER_BEATS = 16
 ) (
   input clk, rst, conf_done,
   output reg acc_done,
@@ -41,8 +44,15 @@ module sqr_bambu_basic_dma64 #(
   reg read_active, read_full, read_half;
   reg [31:0] read_words_left;
   reg [63:0] read_buffer;
-  reg write_active, write_half, write_full, done_pending;
-  reg [31:0] write_beats_left, write_low, write_high;
+  reg write_half, done_pending;
+  localparam W_IDLE=2'd0, W_FILL=2'd1, W_REQUEST=2'd2, W_SEND=2'd3;
+  localparam WCOUNT_BITS = $clog2(WRITE_BUFFER_BEATS+1);
+  reg [1:0] write_state;
+  reg [31:0] write_beats_left, write_low, write_index, write_chunk_length;
+  reg [WCOUNT_BITS-1:0] write_fill_count, write_send_index;
+  reg [63:0] write_buffer [0:WRITE_BUFFER_BEATS-1];
+  wire write_active = write_state != W_IDLE;
+  wire write_full = write_state == W_REQUEST || write_state == W_SEND;
   reg core_start;
 
   // conf_done is asserted in ESP's CONFIG state. The core can produce its
@@ -86,23 +96,24 @@ module sqr_bambu_basic_dma64 #(
   assign dma_read_ctrl_data_user = 0;
   assign dma_read_chnl_ready = read_active && !read_full;
 
-  assign dma_write_ctrl_valid = write_request_valid && !write_active && allow_write_request;
-  assign write_request_ready = dma_write_ctrl_ready && !write_active && allow_write_request;
-  assign dma_write_ctrl_data_index = write_request[31:0] >> 1;
-  assign dma_write_ctrl_data_length = write_request[63:32] >> 1;
+  assign dma_write_ctrl_valid = write_state == W_REQUEST && allow_write_request;
+  assign write_request_ready = write_state == W_IDLE;
+  assign dma_write_ctrl_data_index = write_index;
+  assign dma_write_ctrl_data_length = write_chunk_length;
   assign dma_write_ctrl_data_size = 3'd3;
   assign dma_write_ctrl_data_user = 0;
-  assign core_write_ready = write_active && !write_full;
-  assign dma_write_chnl_valid = write_full;
-  assign dma_write_chnl_data = {write_high, write_low};
+  assign core_write_ready = write_state == W_FILL;
+  assign dma_write_chnl_valid = write_state == W_SEND;
+  assign dma_write_chnl_data = write_buffer[write_send_index];
   assign debug = {26'b0, done_pending, write_active, write_full, write_half, read_active, read_full};
 
   always @(posedge clk) begin
     if (!rst) begin
       read_active <= 0; read_full <= 0; read_half <= 0;
       read_words_left <= 0; read_buffer <= 0;
-      write_active <= 0; write_half <= 0; write_full <= 0;
-      write_beats_left <= 0; write_low <= 0; write_high <= 0;
+      write_state <= W_IDLE; write_half <= 0;
+      write_beats_left <= 0; write_low <= 0; write_index <= 0;
+      write_chunk_length <= 0; write_fill_count <= 0; write_send_index <= 0;
       done_pending <= 0; acc_done <= 0;
     end else begin
       acc_done <= 0;
@@ -124,18 +135,43 @@ module sqr_bambu_basic_dma64 #(
           read_full <= 0; read_half <= 0;
         end else read_half <= 1;
       end
-      if (dma_write_ctrl_valid && dma_write_ctrl_ready) begin
-        write_active <= 1;
+      // Consume the core's descriptor independently of ESP. Its output data
+      // may depend on further reads, so never reserve ESP's DMA engine yet.
+      if (write_request_valid && write_request_ready) begin
+        write_state <= W_FILL;
+        write_index <= write_request[31:0] >> 1;
         write_beats_left <= write_request[63:32] >> 1;
+        write_chunk_length <= (write_request[63:32] >> 1) > WRITE_BUFFER_BEATS ?
+                              WRITE_BUFFER_BEATS : (write_request[63:32] >> 1);
+        write_fill_count <= 0; write_send_index <= 0; write_half <= 0;
       end
       if (core_write_valid && core_write_ready) begin
         if (!write_half) begin write_low <= core_write_data; write_half <= 1; end
-        else begin write_high <= core_write_data; write_full <= 1; write_half <= 0; end
+        else begin
+          write_buffer[write_fill_count] <= {core_write_data, write_low};
+          write_fill_count <= write_fill_count + 1;
+          write_half <= 0;
+          if (write_fill_count + 1 == write_chunk_length)
+            write_state <= W_REQUEST;
+        end
       end
-      if (write_full && dma_write_chnl_ready) begin
-        write_full <= 0;
-        write_beats_left <= write_beats_left - 1;
-        if (write_beats_left == 1) write_active <= 0;
+      if (dma_write_ctrl_valid && dma_write_ctrl_ready) begin
+        write_state <= W_SEND;
+        write_send_index <= 0;
+      end
+      if (dma_write_chnl_valid && dma_write_chnl_ready) begin
+        if (write_send_index + 1 == write_chunk_length) begin
+          write_beats_left <= write_beats_left - write_chunk_length;
+          write_index <= write_index + write_chunk_length;
+          write_fill_count <= 0; write_send_index <= 0;
+          if (write_beats_left == write_chunk_length)
+            write_state <= W_IDLE;
+          else begin
+            write_state <= W_FILL;
+            write_chunk_length <= (write_beats_left - write_chunk_length) > WRITE_BUFFER_BEATS ?
+                                  WRITE_BUFFER_BEATS : (write_beats_left - write_chunk_length);
+          end
+        end else write_send_index <= write_send_index + 1;
       end
       if (core_done) done_pending <= 1;
       if (done_pending && !write_active && !write_full && !write_half && !read_active) begin
@@ -147,6 +183,7 @@ module sqr_bambu_basic_dma64 #(
   // Passive simulation checks. No operand data is supplied by this monitor.
   // synthesis translate_off
   integer invocation = 0, nr, nw, read_words, read_beats, write_words, write_beats, blocked;
+  initial if (WRITE_BUFFER_BEATS < 1) $fatal(1,"WRITE_BUFFER_BEATS must be positive");
   reg monitoring_run = 0;
   reg rr_held = 0, wr_held = 0, wd_held = 0;
   reg [63:0] rr_previous, wr_previous, wd_previous;
@@ -191,13 +228,13 @@ module sqr_bambu_basic_dma64 #(
       end
       if (read_full && core_read_ready) read_words++;
       if (dma_read_chnl_valid && dma_read_chnl_ready) read_beats++;
-      if (dma_write_ctrl_valid && dma_write_ctrl_ready) begin
+      if (write_request_valid && write_request_ready) begin
         if (write_request[0] || write_request[32] || write_request[63:32] == 0 ||
             (CHECK_ARCHIVE_GEMM && (write_request[63:32] != 4 ||
              write_request[31:0] < 416 || write_request[31:0]+write_request[63:32] > 512)))
           $fatal(1,"GEMM unsupported write request %h", write_request);
-        nw++;
       end
+      if (dma_write_ctrl_valid && dma_write_ctrl_ready) nw++;
       if (core_write_valid && core_write_ready) write_words++;
       if (dma_write_chnl_valid && dma_write_chnl_ready) write_beats++;
       if (acc_done) begin

@@ -2,7 +2,7 @@
 // Component test: generated IP + width adapter + backpressured 64-bit memory.
 // This is not a full-system ESP simulation.
 `timescale 1ns/1ps
-module lcs_dma64_tb;
+module lcs_dma64_tb #(parameter SERIAL_DMA = 1, parameter WRITE_BUFFER_BEATS = 16);
   `include "parameters.svh"
   reg clk=0; always #5 clk=!clk;
   reg rst=0, start=0, hold_read=0;
@@ -15,9 +15,13 @@ module lcs_dma64_tb;
   real error_value;
   wire rdvalid=rleft>0 && (hold_read || cycles%5!=0);
   wire wdready=wleft>0 && cycles%7!=0;
-  assign rr=rleft==0 && cycles%7!=0;
-  assign wr=wleft==0 && cycles%11!=0;
-  sqr_bambu_basic_dma64 #(.CHECK_ARCHIVE_GEMM(0), .TIMEOUT_CYCLES(1000000)) dut(
+  // The native ESP socket services one read or write transaction at a time.
+  // Independent channels hide an early write command that waits for data
+  // whose computation still requires DMA reads.
+  assign rr=rleft==0 && (!SERIAL_DMA || wleft==0) && cycles%7!=0;
+  assign wr=wleft==0 && (!SERIAL_DMA || (rleft==0 && !rv)) && cycles%11!=0;
+  sqr_bambu_basic_dma64 #(.CHECK_ARCHIVE_GEMM(0), .TIMEOUT_CYCLES(1000000),
+                         .WRITE_BUFFER_BEATS(WRITE_BUFFER_BEATS)) dut(
     .clk(clk),.rst(rst),.conf_done(start),.acc_done(done),.debug(),
     .dma_read_ctrl_valid(rv),.dma_read_ctrl_ready(rr),.dma_read_ctrl_data_index(ri),.dma_read_ctrl_data_length(rl),
     .dma_read_ctrl_data_size(),.dma_read_ctrl_data_user(),
