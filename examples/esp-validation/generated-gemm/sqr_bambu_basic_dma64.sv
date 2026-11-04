@@ -5,7 +5,15 @@
 // Read requests use 32-bit word indices/lengths; ESP uses 64-bit beat indices.
 // Reads may start/end on either half. Writes must cover aligned whole beats
 // (true for this GEMM); no read-modify-write or partial-write support is claimed.
-module sqr_bambu_basic_dma64 (
+module sqr_bambu_basic_dma64 #(
+`ifdef SODAP_LCS_GENERIC
+  parameter CHECK_ARCHIVE_GEMM = 0,
+  parameter TIMEOUT_CYCLES = 1000000
+`else
+  parameter CHECK_ARCHIVE_GEMM = 1,
+  parameter TIMEOUT_CYCLES = 100000
+`endif
+) (
   input clk, rst, conf_done,
   output reg acc_done,
   output [31:0] debug,
@@ -153,7 +161,7 @@ module sqr_bambu_basic_dma64 (
       if (monitoring_run && (cycles == 16 || cycles == 1000))
         $display("GEMM_HANDSHAKE cycles=%0d rst=%b core_req=%b req=%h socket_req=%b grant=%b active=%b core_done=%b",
                  cycles,rst,read_request_valid,read_request,dma_read_ctrl_valid,dma_read_ctrl_ready,read_active,core_done);
-      if (monitoring_run && cycles == 100000) $fatal(1,"GEMM hardware timeout");
+      if (monitoring_run && cycles == TIMEOUT_CYCLES) $fatal(1,"GEMM hardware timeout");
       if (rr_held && (!dma_read_ctrl_valid ||
           {dma_read_ctrl_data_length,dma_read_ctrl_data_index} !== rr_previous))
         $fatal(1,"GEMM read request changed while stalled");
@@ -170,9 +178,10 @@ module sqr_bambu_basic_dma64 (
       wd_previous = dma_write_chnl_data;
       if (write_request_valid && !write_request_ready) blocked++;
       if (dma_read_ctrl_valid && dma_read_ctrl_ready) begin
-        if (read_request[63:32] == 0 || read_request[31:0]+read_request[63:32] > 514)
+        if (read_request[63:32] == 0 ||
+            (CHECK_ARCHIVE_GEMM && read_request[31:0]+read_request[63:32] > 514))
           $fatal(1,"GEMM invalid read request %h", read_request);
-        if (nr < 2) begin
+        if (CHECK_ARCHIVE_GEMM && nr < 2) begin
           if (read_request !== {32'd1, 32'(512+nr)} || dma_read_ctrl_data_length != 1 ||
               dma_read_ctrl_data_index != 256) $fatal(1,"GEMM scalar adapter failure");
           $display("GEMM_SCALAR word_index=%0d words=1 beat_index=%0d beats=%0d lane=%0d",
@@ -183,8 +192,9 @@ module sqr_bambu_basic_dma64 (
       if (read_full && core_read_ready) read_words++;
       if (dma_read_chnl_valid && dma_read_chnl_ready) read_beats++;
       if (dma_write_ctrl_valid && dma_write_ctrl_ready) begin
-        if (write_request[0] || write_request[32] || write_request[63:32] != 4 ||
-            write_request[31:0] < 416 || write_request[31:0]+write_request[63:32] > 512)
+        if (write_request[0] || write_request[32] || write_request[63:32] == 0 ||
+            (CHECK_ARCHIVE_GEMM && (write_request[63:32] != 4 ||
+             write_request[31:0] < 416 || write_request[31:0]+write_request[63:32] > 512)))
           $fatal(1,"GEMM unsupported write request %h", write_request);
         nw++;
       end
@@ -194,7 +204,7 @@ module sqr_bambu_basic_dma64 (
         monitoring_run = 0;
         $display("GEMM_BOUNDARY RESULT invocation=%0d requests=%0d/%0d words=%0d/%0d beats=%0d/%0d cycles=%0d blocked=%0d",
                  invocation,nr,nw,read_words,write_words,read_beats,write_beats,cycles,blocked);
-        if (nr!=218 || nw!=24 || read_words!=866 || write_words!=96 || read_beats!=434 || write_beats!=48)
+        if (CHECK_ARCHIVE_GEMM && (nr!=218 || nw!=24 || read_words!=866 || write_words!=96 || read_beats!=434 || write_beats!=48))
           $fatal(1,"GEMM DMA count mismatch");
       end
     end

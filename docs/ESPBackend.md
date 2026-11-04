@@ -1,5 +1,119 @@
 # The `cpu` and `esp` backends for `sb-cli`
 
+## Generated load/compute/store accelerators
+
+The `esp` backend now builds the matching host and accelerator from the same
+outlined kernel. Shapes and DMA offsets remain compile-time constants. Each
+benchmark needs its own generated IP and matching ESP SoC/bitstream.
+
+See [the local LCS validation report](ESPLCSValidation.md) for the tested MINI
+subset, remaining failures and the distinction between component and SoC tests.
+
+```sh
+sb-cli init --benchmark_name gemm --dataset MINI --dtype float32 \
+  --flow transformed --backend esp --stage object \
+  --device xc7vx485t-2ffg1761 --clock_period 20 --output_dir gemm_lcs
+make -C benches/experiments/gemm_lcs LCS_PROFILE=true LCS_DMA_WORD_STRIDE=2 object cpu-baseline-object
+make -C benches/experiments/gemm_lcs LCS_PROFILE=true LCS_DMA_WORD_STRIDE=2 verilog
+```
+
+The container needs the plugin built and `MLIR_PLUGIN_PATH`/`SODAP_DIR` set as
+described in [ESPValidation.md](ESPValidation.md). Bambu must support the dataflow
+architecture XML and `ac_channel` operations used by this pipeline. The local
+validation used `agostini01/soda-trixie:v19.03`; each HLS output records
+`bambu-version.txt`, the command and input checksums.
+
+All generated artifacts are under `output/lcs/`:
+
+| Artifact | Purpose |
+|---|---|
+| `outlined.mlir`, `kernel.mlir`, `argument_order.txt` | Common kernel and the actual argument permutation used by both builds |
+| `accelerator.ll`, `architecture.xml` | Bambu inputs |
+| `host.ll`, `esp/host.o`, `esp/esp-app/` | Offload host and staged baremetal application |
+| `cpu_baseline.ll`, `cpu-baseline/host.o`, `cpu-baseline/esp-app/` | The same tiled/fused kernel executed on the RISC-V processor |
+| `testdata.h` | Inputs and PyTorch golden results; all returned tensors are checked |
+| `layout.txt` | Selected physical word stride and profiling mode |
+| `bambu/` | Generated RTL, support modules and memory initialization files; see `rtl-files.txt` and `rtl.sha256` |
+
+The CPU baseline uses the same outlined function and argument order. It measures
+the generated CPU implementation, not a tuned BLAS library. The generated HLS
+C testbench precedes DMA conversion and does not have the stream-top ABI, so the
+new HLS target deliberately does not pass it to `--generate-tb`.
+
+`LCS_PROFILE=true` inserts whole-function calls to `esp_prof_begin/end(7)` in
+both host variants, and measures allocation (5), packing (1), accelerator
+start/wait (2) and unpacking (3) in the offload. The application retains its
+outer timer (0); it does not nest the same profiler ID. The whole offload
+includes cleanup and profiling overhead. Start/wait includes runtime launch
+work such as cache handling, where applicable. Compare region 7, or the outer
+region 0, between the two applications on the same ESP processor/clock/cache
+configuration. Comparing just region 2 against the CPU excludes offload overhead.
+Native runs report nanoseconds; RISC-V runs report cycles. Native times are not
+FPGA speedup measurements. Changing `LCS_PROFILE` rebuilds the generated hosts.
+
+`LCS_DMA_WORD_STRIDE=2` is an optional initial DMA64-compatible layout: each
+32-bit value occupies the low word of its own 64-bit slot. The compiler doubles
+addresses and request lengths, discards read padding and supplies zero write
+padding. The host uses the matching strided copy helpers. This doubles tensor
+storage and transfer traffic and is a functional starting point, not a bandwidth
+optimization. The default, `LCS_DMA_WORD_STRIDE=1`, retains dense storage. Both
+pipelines receive the same option, and changing it rebuilds their artifacts.
+Never mix a host and accelerator generated with different layout settings.
+
+The host conservatively copies all arguments in, including outputs, before
+launch. This preserves read/write arguments and untouched portions of partial
+outputs. Removing output copies requires a proof of complete overwrite.
+
+When building the staged offload application inside ESP, supply
+`SODAP_ESP_DEVICE_ID` and `SODAP_ESP_DEVICE_NAME` from the generated socket's XML
+as Make variables. The application rejects an unspecified device instead of
+silently probing the legacy FFN. For the existing validation socket these were
+`0x07a` and `sld,sqr_bambu`; another socket may use different values. The
+`binary` stage still requires ESP's SoC build environment and RISC-V support
+libraries. An object or successful HLS run does not establish full-system
+correctness.
+
+### Current integration limits
+
+The generated channels carry 32-bit data words and 64-bit requests packed as
+`(word_count << 32) | word_offset`. The existing validation adapter only supports
+aligned, even-word writes to its 64-bit ESP port. Dense GEMM MINI generates
+five-word writes and cannot use that adapter unchanged. Stride 2 resolves this
+geometry by making every transfer start and end at a 64-bit slot boundary. Do
+not round dense lengths or discard lanes: that can corrupt adjacent elements.
+Efficient dense partial writes remain future work. No generated RTL is
+hand-edited by this flow.
+
+The component test below uses the generated RTL and adapter with a 64-bit
+memory model, checks all outputs, inputs and padding, and exercises two
+invocations with backpressure and a 50,000-cycle write-control stall:
+
+```sh
+examples/esp-validation/generated-lcs/run-adapter.sh \
+  benches/experiments/gemm_lcs/output/lcs /tmp/gemm_lcs_adapter
+```
+
+`generated-lcs/run-system.sh output/lcs ESP-root compiled-SoC run-directory`
+reuses the ESP validation SoC with L2/LLC disabled and its `sld,sqr_bambu` socket
+and runs the generated application on its RISC-V processor. Set
+`LCS_SYSTEM_MODE=cpu-baseline` to run the baseline instead, in another fresh run
+directory. It requires ModelSim, the ESP RISC-V libraries/toolchain, and LLD
+(`LD_LLD` selects it). The older installed GNU linker cannot parse Clang 19's
+ISA attributes; the runner uses LLD without modifying the generated object.
+There is no artificial stall by default; `GEMM_STALL=50000` enables a stress
+run that must not be used as a performance measurement.
+
+On the reviewed MINI dataset, GEMM, SYR2K, TRMM, SYMM, SYRK, BICG, GESUMMV,
+DOITGEN and MVT generate LLVM. THREEMM, GEMVER, ATAX and TWOMM still fail during
+multibuffering. These are compiler limitations, independent of the DMA adapter.
+
+## Existing FFN flow
+
+The remainder documents the previous fixed-point FFN path. Its explicit
+`output/esp/<flow>/06_kernel_riscv.o` and `07_kernel.riscv` Make targets remain
+available. Select the `esp` or `esp-ir` recipe explicitly when using those
+targets; the default ESP stage aliases above use the generated LCS path.
+
 `--backend` picks what consumes the LLVM IR soda-opt produces. `bambu`
 synthesizes it. The two backends described here compile it instead:
 
