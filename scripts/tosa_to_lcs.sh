@@ -3,14 +3,16 @@
 # RISC-V program that drives it. The IR after each pass, whole modules, all goes to
 # one file: <outdir>/ir_after_each_pass.mlir. Run it with pixi, in the devcontainer.
 #
-# Usage: pixi run ./scripts/tosa_to_lcs.sh <input_tosa.mlir> [<outdir>]
+# Usage: ./scripts/tosa_to_lcs.sh <input_tosa.mlir> [<outdir>]
+# The output directory defaults to the input directory. Set LCS_PROFILE=true to instrument
+# 05_kernel_riscv.ll and 05_cpu_baseline.ll with matching whole-kernel regions.
 #
 # Writes in <outdir>:
 #   ir_after_each_pass.mlir         the IR after each pass
-#   05_hw_acc.ll                    for Bambu, with architecture.xml
+#   05_hw_acc.ll                  for Bambu, with architecture.xml
 #   architecture.xml
-#   05_kernel_riscv.ll              for the RISC-V core
-#   ac_channel_specializations.ll   needed to build accelerator.ll
+#   05_kernel_riscv.ll                         for the RISC-V core
+#   ac_channel_specializations.ll   needed to build 05_hw_acc.ll
 #   forward_kernel_testbench.c      written by soda-opt, not used here
 
 set -eou pipefail
@@ -23,7 +25,6 @@ fi
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "$REPO_DIR/scripts/check_docker.sh"
 INPUT=$(realpath "$1")
-# Defaults to the input's directory.
 OUT_DIR="${2:-$(dirname "$1")}"
 mkdir -p "$OUT_DIR"
 cd "$OUT_DIR"
@@ -32,6 +33,11 @@ MLIR_PLUGIN_PATH="${MLIR_PLUGIN_PATH:-$REPO_DIR/examples/soda-plugins/build/lib/
 PLUGIN="--load-dialect-plugin=$MLIR_PLUGIN_PATH --load-pass-plugin=$MLIR_PLUGIN_PATH"
 TRANSFORM="${LCS_TRANSFORM:-$REPO_DIR/scripts/lcs/transform.mlir}"
 TOP=forward_kernel
+PROFILE=${LCS_PROFILE:-false}
+WORD_STRIDE=${LCS_DMA_WORD_STRIDE:-1}
+case "$WORD_STRIDE" in 1|2) ;; *) echo "LCS_DMA_WORD_STRIDE must be 1 or 2" >&2; exit 1 ;; esac
+printf 'dma_word_stride=%s\nprofile=%s\n' "$WORD_STRIDE" "$PROFILE" > layout.txt
+case "$PROFILE" in true|false) ;; *) echo "LCS_PROFILE must be true or false" >&2; exit 1 ;; esac
 DUMP=ir_after_each_pass.mlir
 : > "$DUMP"
 
@@ -86,11 +92,14 @@ IR=$(step "$FRONTEND_DUMP" mlir-opt "$INPUT" $PLUGIN --pass-pipeline="builtin.mo
   )")
 
 section "$FRONTEND_DUMP" "Outlining forward_kernel, soda-opt"
+OUTLINED=$(step "$FRONTEND_DUMP" soda-opt \
+  --convert-all-to-soda -soda-outline-bambu-code <<< "$IR")
+printf '%s\n' "$OUTLINED" > outlined.mlir
+python3 "$REPO_DIR/scripts/lcs/argument_order.py" outlined.mlir > argument_order.txt
 KERNEL=$(step "$FRONTEND_DUMP" soda-opt \
-  --convert-all-to-soda \
-  -soda-outline-bambu-code \
   -soda-extract-arguments-to-c-testbench=using-bare-ptr \
-  -soda-generate-bambu-accelcode=no-aa <<< "$IR")
+  -soda-generate-bambu-accelcode=no-aa <<< "$OUTLINED")
+printf '%s\n' "$KERNEL" > kernel.mlir
 
 section "$ACC_DUMP" "Accelerator: to dataflow, mlir-opt"
 IR=$(step "$ACC_DUMP" mlir-opt $PLUGIN --pass-pipeline="builtin.module(
@@ -100,7 +109,7 @@ IR=$(step "$ACC_DUMP" mlir-opt $PLUGIN --pass-pipeline="builtin.module(
     func.func(buffer-loop-hoisting),
     transform-interpreter{entry-point=multibuffer},
     transform-interpreter{entry-point=split},
-    sodap-dataflow-copy-to-dma{top-func=$TOP},
+    sodap-dataflow-copy-to-dma{top-func=$TOP dma-word-stride=$WORD_STRIDE},
     func.func(
       sodap-dataflow-tasks-to-nodes
     ),
@@ -132,8 +141,12 @@ $DOCKER_RUN mlir-translate --mlir-to-llvmir <<< "$IR" \
 
 section "$HOST_DUMP" "Host: the ESP calls, soda-opt"
 IR=$(step "$HOST_DUMP" soda-opt $PLUGIN \
-  --pass-pipeline="builtin.module(sodap-kernel-to-esp-accelerator)" <<< "$KERNEL")
+  --pass-pipeline="builtin.module(sodap-kernel-to-esp-accelerator{profile=$PROFILE dma-word-stride=$WORD_STRIDE})" <<< "$KERNEL")
 
+if [ "$PROFILE" = true ]; then
+  IR=$(step "$HOST_DUMP" soda-opt $PLUGIN \
+    --pass-pipeline="builtin.module(sodap-profile-kernel)" <<< "$IR")
+fi
 section "$HOST_DUMP" "Host: to LLVM, soda-opt"
 IR=$(step "$HOST_DUMP" soda-opt \
   --lower-all-to-llvm="use-bare-ptr-memref-call-conv" \
@@ -141,5 +154,17 @@ IR=$(step "$HOST_DUMP" soda-opt \
   --reconcile-unrealized-casts <<< "$IR")
 
 $DOCKER_RUN mlir-translate --mlir-to-llvmir -o 05_kernel_riscv.ll <<< "$IR"
+
+# The same outlined function and argument order, executed entirely by the CPU.
+# This is a baseline for this tiling/fusion schedule, not a tuned BLAS baseline.
+IR=$KERNEL
+if [ "$PROFILE" = true ]; then
+  IR=$(step "$HOST_DUMP" soda-opt $PLUGIN \
+    --pass-pipeline="builtin.module(sodap-profile-kernel)" <<< "$IR")
+fi
+IR=$(step "$HOST_DUMP" soda-opt \
+  --lower-all-to-llvm="use-bare-ptr-memref-call-conv" \
+  --convert-func-to-llvm --reconcile-unrealized-casts <<< "$IR")
+$DOCKER_RUN mlir-translate --mlir-to-llvmir -o 05_cpu_baseline.ll <<< "$IR"
 
 echo "IR after each pass: $(pwd)/$DUMP"

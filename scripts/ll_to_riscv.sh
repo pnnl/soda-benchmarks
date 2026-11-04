@@ -52,7 +52,7 @@ APP_DIR="$OUTPUT_DIR/esp-app"
 
 echo "[ll_to_riscv] target : $RISCV_TARGET -march=$RISCV_MARCH -mabi=$RISCV_MABI"
 $DOCKER_RUN $CC --target=$RISCV_TARGET -march=$RISCV_MARCH -mabi=$RISCV_MABI \
-  -O2 -c "$INPUT_LL" -o "$OUTPUT_OBJ"
+  -mcmodel="${RISCV_CMODEL:-medany}" -O2 -c "$INPUT_LL" -o "$OUTPUT_OBJ"
 echo "[ll_to_riscv] wrote  : $OUTPUT_OBJ"
 
 # ---------------------------------------------------------------------------
@@ -115,6 +115,22 @@ cat > "$APP_DIR/Makefile" <<MAKEFILE
 APPNAME := $APP_NAME
 
 CFLAGS += -I.
+# For a generated accelerator, use the ID/name from its ESP socket XML.
+ESP_REQUIRE_DEVICE := ${ESP_REQUIRE_DEVICE:-0}
+ifeq (\$(ESP_REQUIRE_DEVICE),1)
+ifndef SODAP_ESP_DEVICE_ID
+\$(error Set SODAP_ESP_DEVICE_ID and SODAP_ESP_DEVICE_NAME for the generated socket)
+endif
+ifndef SODAP_ESP_DEVICE_NAME
+\$(error Set SODAP_ESP_DEVICE_NAME for the generated socket)
+endif
+endif
+ifdef SODAP_ESP_DEVICE_ID
+CFLAGS += -DSODAP_ESP_DEVICE_ID=\$(SODAP_ESP_DEVICE_ID)
+endif
+ifdef SODAP_ESP_DEVICE_NAME
+CFLAGS += '-DSODAP_ESP_DEVICE_NAME="\$(SODAP_ESP_DEVICE_NAME)"'
+endif
 
 include \$(DRIVERS)/common_bare.mk
 

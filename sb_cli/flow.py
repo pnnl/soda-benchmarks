@@ -89,6 +89,7 @@ _TARGET_TEMPLATES: dict[tuple[str, str], str] = {
     ("esp", "llvm"): "$(ODIR)/esp/{flow}/05_kernel_riscv.ll $(ODIR)/esp/{flow}/05_hw_acc.ll",
     ("esp", "object"): "$(ODIR)/esp/{flow}/06_kernel_riscv.o $(ODIR)/esp/{flow}/06_verilog.v",
     ("esp", "binary"): "$(ODIR)/esp/{flow}/07_kernel.riscv",
+    ("esp", "verilog"): "$(ODIR)/esp/{flow}/06_verilog.v",
 }
 
 

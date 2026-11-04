@@ -45,7 +45,8 @@ int main(void)
         td_elem_t err = TD_OUT[i] - td_golden[i];
         if (err < 0) err = -err;
         if (err > max_err) max_err = err;
-        if (err > (td_elem_t)TD_TOL) {
+        /* The negated comparison also rejects NaNs. */
+        if (!(err <= (td_elem_t)TD_TOL)) {
             if (errors < 10)
                 printf("  MISMATCH at [%u]: got=%g want=%g err=%g\n", i,
                        (double)TD_OUT[i], (double)td_golden[i], (double)err);

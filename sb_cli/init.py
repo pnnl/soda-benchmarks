@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import re
 import shutil
-from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
 
@@ -36,12 +35,9 @@ _GENERATED_FILES = [
 _SC_BUILDER = "siliconcompiler"
 _SC_FLOW_FILE = "sc_flow.py"
 
-# The `esp` backend is only reached through the schedule that rewrites
-# linalg.batch_matmul into ESP runtime calls, so selecting the backend selects the
-# recipe. An explicit --instrumentation still wins, which is what lets an ESP
-# experiment carry a schedule that does something else as well.
+# The generated-accelerator ESP path uses scripts/lcs/transform.mlir. The esp
+# and esp-ir recipes remain available for the explicit legacy FFN targets.
 _ESP_BACKEND = "esp"
-_ESP_RECIPE = "esp"
 
 # The only flow whose mkinc rule feeds transform.mlir to the transform
 # interpreter; the others never read the schedule at all.
@@ -251,11 +247,9 @@ def scaffold(config: ExperimentConfig, output_dir: str | None, base_dir: Path) -
     # Resolve the instrumentation recipe (None for the "none" sentinel) before
     # creating files so an unknown recipe fails fast.
     if config.backend == _ESP_BACKEND and config.instrumentation == NONE_RECIPE:
-        config = replace(config, instrumentation=_ESP_RECIPE)
         print(
-            f"[sb-cli] Backend '{_ESP_BACKEND}': selected the "
-            f"'{_ESP_RECIPE}' transform schedule "
-            "(pass --instrumentation to override)"
+            "[sb-cli] Backend 'esp': generated LCS accelerator and matching host "
+            "(make LCS_PROFILE=true enables profiling)"
         )
     recipe = resolve_recipe(config.instrumentation)
 
