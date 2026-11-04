@@ -50,7 +50,8 @@ flags=(-O2 -march=rv64imafdc -mabi=lp64d -mcmodel=medany -fno-common
 "${prefix}gcc" "${flags[@]}" -std=gnu99 -c "$app/$appname.c" -o app.o
 "${prefix}gcc" "${flags[@]}" -std=gnu99 -c "$repo/examples/soda-plugins/lib/sodap/ExecutionEngine/esp_prof.c" -o profiler.o
 "${prefix}gcc" "${flags[@]}" -std=gnu99 -c "$cpu/common/syscalls.c" -o syscalls.o
-"${prefix}gcc" "${flags[@]}" -c "$cpu/riscv-tests/benchmarks/common/crt.S" -o crt.o
+"${prefix}gcc" "${flags[@]}" -D_init=esp_init_bss -c "$cpu/riscv-tests/benchmarks/common/crt.S" -o crt.o
+"${prefix}gcc" "${flags[@]}" -c "$example/baremetal-startup.S" -o startup.o
 "${prefix}g++" "${flags[@]}" -std=c++17 -fno-exceptions -fno-rtti \
   -DSODAP_ESP_DEVICE_ID=0x07a '-DSODAP_ESP_DEVICE_NAME="sld,sqr_bambu"' \
   -I"$repo/examples/soda-plugins/include" \
@@ -63,13 +64,15 @@ import sys
 s = Path(sys.argv[1]).read_text()
 s = s.replace('.text : { *(.text) }', '.text : { *(.text .text.*) }\n  .rodata : { *(.rodata .rodata.*) }\n  /DISCARD/ : { *(.eh_frame .eh_frame.*) }')
 s = s.replace('.data : { *(.data) }', '.data : { *(.data .data.*) }')
-s = s.replace('.bss : { *(.bss) }', '.bss : { *(.bss .bss.* COMMON) }')
+assert s.count('.sbss : {') == 1 and s.count('.bss : { *(.bss) }') == 1
+s = s.replace('.sbss : {', '.sbss : {\n    . = ALIGN(8);\n    __esp_bss_start = .;')
+s = s.replace('.bss : { *(.bss) }', '.bss : { *(.bss .bss.* COMMON) . = ALIGN(8); __esp_bss_end = .; }')
 Path('test.ld').write_text(s)
 LINKER
 # Older ESP GNU linkers cannot parse Clang 19's Zicsr/Zmmul ISA attributes.
 # LLD links the original object without stripping architecture information.
 "${LD_LLD:-ld.lld}" -m elf64lriscv -static \
-  app.o runtime.o host.o profiler.o syscalls.o crt.o \
+  app.o runtime.o host.o profiler.o syscalls.o crt.o startup.o \
   -T test.ld \
   "$libs/probe/libprobe.a" "$libs/monitors/libmonitors.a" \
   "$libs/utils/baremetal/libutils.a" \
@@ -89,7 +92,7 @@ sha256sum "$generated/$mode/host.o" "$generated/bambu/forward_kernel.v" \
   "$repo/examples/soda-plugins/lib/sodap/ExecutionEngine/EspRuntime.cpp" \
   "$repo/examples/soda-plugins/include/sodap/ExecutionEngine/ESPRuntime.h" \
   "$example/../generated-gemm/sqr_bambu_basic_dma64.sv" "$app/$appname.c" \
-  testdata.h gemm_app.exe > inputs-and-software.sha256
+  "$example/baremetal-startup.S" test.ld testdata.h gemm_app.exe > inputs-and-software.sha256
 cat > run.tcl <<'EOF'
 onerror {quit -code 2 -f}
 onbreak {quit -code 0 -f}

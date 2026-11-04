@@ -9,7 +9,9 @@ FFN accelerator executing these kernels through batch-matmul calls.
 Completed on 4 November 2026: all seven generated host/accelerator pairs passed
 full-system RTL simulation, all seven CPU baselines passed, and all seven
 VC707 bitstreams were produced with nonnegative reported setup/hold slack.
-No physical-board run was performed in this campaign.
+Subsequent testing on VC707-03 exposed an application-startup issue, described
+below. After correcting it, all seven CPU baselines and all seven accelerator
+applications passed on the board (14/14).
 
 The final campaign lives at `local-results/vc707-20261104-buffered` in the validation
 checkout. `status.json` records progress; `results.csv` and `results.json`
@@ -193,19 +195,74 @@ claim that every SoC path is constrained. The build separately checks that
 the accelerator's sequential logic is on the intended 50 MHz clock. DRC
 warnings and advisory messages are retained in `drc.rpt` and `results.json`.
 
+## VC707-03 board results
+
+The complete restart at 16:17 on 4 November 2026 programmed all seven images
+and passed all 14 CPU/offload tests with the corrected startup. The raw UART
+capture, per-step logs and JSON/CSV results are in
+`local-results/manual-board-20261104-161717.dagB22/`. Bitstream hashes match the
+original campaign; executable hashes match the corrected-app manifest.
+
+| Kernel | CPU kernel cycles | Full offload cycles | Accelerator region cycles | Max error (e-9) |
+|---|---:|---:|---:|---:|
+| GEMM | 413,578 | 2,127,697 | 76,316 | 1,907 |
+| SYR2K | 943,652 | 2,368,858 | 64,214 | 2,861 |
+| TRMM | 318,231 | 1,986,532 | 36,622 | 1,907 |
+| SYMM | 323,232 | 2,111,238 | 50,737 | 15,259 |
+| SYRK | 493,025 | 2,229,100 | 36,956 | 1,907 |
+| GESUMMV | 61,176 | 1,840,373 | 15,731 | 3,815 |
+| DOITGEN | 301,659 | 2,429,772 | 219,901 | 238 |
+
+These are single cold invocations at 50 MHz, with the same 1,000,000 e-9
+threshold. Every maximum error matches simulation. Full offload includes
+allocation/probing (and its UART output), packing, launch/wait, unpacking and
+cleanup; the accelerator column is the host's launch/wait region. The complete
+offloads remain slower than the CPU baselines at these MINI sizes.
+
+GESUMMV's offload report lacks its benchmark banner; its passing numerical
+result and complete profile are attributed using the logged executable and
+boot order. This is explicit in `board-results.json`. Earlier ESPLink timeouts
+did not recur in this complete restart; their cause remains undetermined.
+
 ## Manual FPGA test
+
+### Application startup correction
+
+Loading GESUMMV after its CPU baseline exposed stale `.sbss`/`.bss` data in
+DDR: `esp_alloc_shared` reported an already-live buffer on its first call.
+ESPLink loads a raw binary, which omits these sections, and the reused ESP
+startup initializes TLS but does not clear ordinary BSS. The previous CPU
+image places initialized tensor data at the offload runtime's BSS addresses.
+The initial simulations did not expose this because their RAM image was
+padded with zeros.
+
+`baremetal-startup.S` now clears both sections before the original ESP `_init`.
+`run-system.sh` redirects the CRT's `_init` call to `esp_init_bss` at compilation,
+defines aligned linker bounds and includes this startup code. Generated host objects, runtime
+objects and accelerator RTL are unchanged by this correction.
+
+Corrected executables for all seven kernels are stored separately at
+`local-results/vc707-20261104-startup/<kernel>/deploy/`. The original campaign,
+measurements and archive are preserved. `manifest.json` in the new directory
+records the executable hashes and validation status; `startup-regression/`
+contains a focused ESP full-system startup test with BSS deliberately filled
+with `0xa5`. All 14 corrected benchmark executables passed the subsequent VC707-03 campaign.
+Use the existing bitstreams with these new executables.
 
 Open and record the UART on the board host as usual. These commands do not
 open or configure the UART. From the validation checkout:
 
 ```sh
 export CAMPAIGN="$PWD/local-results/vc707-20261104-buffered"
+export APPS="$PWD/local-results/vc707-20261104-startup"
 export XILINX_VIVADO=/opt/xilinx/Vivado/2023.2
 export PATH="$XILINX_VIVADO/bin:/opt/riscv/bin:$PATH"
-export FPGA_HOST=espdev    # replace if the JTAG server is elsewhere
+# VC707-03, with the board reserved and the UART recording on espdev:
+export FPGA_HOST=espdev XIL_HW_SERVER_PORT=3131
+export ESPLINK_IP=128.59.22.75 ESPLINK_PORT=46313
 kernel=gemm
 soc="$CAMPAIGN/$kernel/esp/socs/vc707"
-deploy="$CAMPAIGN/$kernel/deploy"
+deploy="$APPS/$kernel/deploy"
 
 (cd "$deploy" && sha256sum -c SHA256SUMS)
 make -C "$soc" fpga-program FPGA_HOST="$FPGA_HOST"
@@ -223,6 +280,26 @@ make -C "$soc" fpga-run TEST_PROGRAM="$deploy/$kernel-cpu.exe"
 Repeat with `syr2k`, `trmm`, `symm`, `syrk`, `gesummv`, and `doitgen`, programming
 the matching image each time. Record `TEST PASSED`, max error/tolerance and
 the profiling table. Each bitstream must be paired with its own executable.
+
+To automate these commands from the already-configured Emilia shell, leaving
+minicom recording independently:
+
+```sh
+examples/esp-validation/generated-lcs/run-all-board.sh
+```
+
+This programs each of the seven images once and runs its corrected CPU and
+offload executables, waiting 15 seconds after each application. Use
+`REPEATS=3 WAIT_SECONDS=20` before the command to change the repetition count
+and pause. Optional kernel arguments select a subset; `--dry-run` prints the
+sequence without contacting the board. Timestamped command logs are saved
+under `local-results/manual-board-*`. The script stops on command errors but
+does not read UART or determine numerical pass/fail; those results remain in
+the existing minicom recording. It inherits the exported FPGA/ESPLink settings.
+Programming is limited to 180 seconds and each application-loading command
+to 60 seconds (`PROGRAM_TIMEOUT` and `LOAD_TIMEOUT`). Output is line-buffered
+so ESPLink's reset/download progress remains visible. These command timeouts
+are separate from the post-launch pause and do not establish application completion.
 
 ## Remaining unsupported cases
 
