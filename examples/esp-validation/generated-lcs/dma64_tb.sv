@@ -64,6 +64,7 @@ module lcs_dma64_tb #(parameter SERIAL_DMA = 1, parameter WRITE_BUFFER_BEATS = 1
       start=1; @(negedge clk); start=0;
       wait(done); @(negedge clk);
       if(rleft || wleft) $fatal(1,"done before DMA drained");
+      $writememh($sformatf("actual-%0d.hex",run_id),mem);
       for(i=0;i<WORDS;i=i+1) begin
         if(mask[i] == 2) begin
           error_value = fp32(mem[i]) - fp32(gold[i]);

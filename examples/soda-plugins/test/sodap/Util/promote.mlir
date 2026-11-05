@@ -55,10 +55,13 @@ func.func @matmul(%A: memref<8x12xf32>, %B: memref<12x16xf32>, %C: memref<8x16xf
 
 // gemm after tiling and bufferization: the A and C tiles are copied in, each
 // right after its subview (C before the matmul that does not read it), the
-// output tile is only copied out, B (used whole) and the local %mm stay.
+// output tile is only copied out. B is read-only and used whole, so it is
+// copied once before the nest. The local %mm stays.
 // CHECK-LABEL: func.func @gemm
 // CHECK-SAME: (%[[C:.*]]: memref<20x25xf32>, %[[A:.*]]: memref<20x30xf32>, %[[B:.*]]: memref<30x25xf32>, %[[OUT:.*]]: memref<20x25xf32>)
 // CHECK: %[[BA:.*]] = memref.alloc() : memref<4x30xf32>
+// CHECK: %[[BB:.*]] = memref.alloc() : memref<30x25xf32>
+// CHECK-NEXT: memref.copy %[[B]], %[[BB]]
 // CHECK: %[[BC:.*]] = memref.alloc() : memref<4x25xf32>
 // CHECK: %[[BO:.*]] = memref.alloc() : memref<4x25xf32>
 // CHECK: scf.for %[[I:.*]] =
@@ -67,7 +70,7 @@ func.func @matmul(%A: memref<8x12xf32>, %B: memref<12x16xf32>, %C: memref<8x16xf
 // CHECK-NEXT: %[[AT:.*]] = memref.subview %[[A]][%[[I]], 0]
 // CHECK-NEXT: memref.copy %[[AT]], %[[BA]]
 // CHECK-NEXT: %[[MM:.*]] = memref.alloc() : memref<4x25xf32>
-// CHECK:   linalg.generic {{.*}} ins(%[[BA]], %[[B]] : {{.*}}) outs(%[[MM]] :
+// CHECK:   linalg.generic {{.*}} ins(%[[BA]], %[[BB]] : {{.*}}) outs(%[[MM]] :
 // CHECK:   %[[OT:.*]] = memref.subview %[[OUT]][%[[I]], 0]
 // CHECK-NOT: memref.copy %[[OT]]
 // CHECK:   linalg.generic {{.*}} ins(%[[BC]], %[[MM]] : {{.*}}) outs(%[[BO]] :
@@ -156,6 +159,30 @@ func.func @scale(%alpha: memref<f32>, %X: memref<8x8xf32>, %Y: memref<8x8xf32>) 
         %0 = arith.mulf %a, %x : f32
         linalg.yield %0 : f32
       }
+    }
+  }
+  return
+}
+
+// A write through a subview forbids hoisting a whole-input snapshot. Keep the
+// whole read in place so that a later DMA/tiling pass must handle the dependence.
+// CHECK-LABEL: func.func @written_whole
+// CHECK-SAME: (%[[A:.*]]: memref<4x4xf32>)
+// CHECK-NOT: memref.copy %[[A]],
+// CHECK: linalg.generic {{.*}} ins(%[[A]] : memref<4x4xf32>)
+func.func @written_whole(%A: memref<4x4xf32>) {
+  %c0 = arith.constant 0 : index
+  %c2 = arith.constant 2 : index
+  %c4 = arith.constant 4 : index
+  %zero = arith.constant 0.0 : f32
+  %tmp = memref.alloc() : memref<4x4xf32>
+  scf.for %i = %c0 to %c4 step %c2 {
+    %tile = memref.subview %A[%i, 0] [2, 4] [1, 1] : memref<4x4xf32> to memref<2x4xf32, strided<[4, 1], offset: ?>>
+    linalg.fill ins(%zero : f32) outs(%tile : memref<2x4xf32, strided<[4, 1], offset: ?>>)
+    linalg.generic {indexing_maps = [#id, #id], iterator_types = ["parallel", "parallel"]}
+        ins(%A : memref<4x4xf32>) outs(%tmp : memref<4x4xf32>) {
+    ^bb0(%in: f32, %out: f32):
+      linalg.yield %in : f32
     }
   }
   return

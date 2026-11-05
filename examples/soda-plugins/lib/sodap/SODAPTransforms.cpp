@@ -227,13 +227,36 @@ static ::mlir::memref::SubViewOp argumentTile(::mlir::Value value) {
   return subview;
 }
 
+/// Prove that this argument and its subviews are only read. This permits a
+/// whole static input left by fusion to be copied once before the nest. Unknown
+/// users and any write forbid hoisting, including writes through a subview.
+static bool isReadOnlyBuffer(::mlir::Value value) {
+  using namespace ::mlir;
+  for (OpOperand &use : value.getUses()) {
+    Operation *user = use.getOwner();
+    if (auto view = dyn_cast<memref::SubViewOp>(user)) {
+      if (!isReadOnlyBuffer(view.getResult()))
+        return false;
+    } else if (auto op = dyn_cast<linalg::LinalgOp>(user)) {
+      if (!op.isDpsInput(&use))
+        return false;
+    } else if (auto copy = dyn_cast<memref::CopyOp>(user)) {
+      if (use.getOperandNumber() != 0)
+        return false;
+    } else {
+      return false;
+    }
+  }
+  return true;
+}
+
 ::mlir::DiagnosedSilenceableFailure mlir::transform::PromoteTilesOp::apply(
     ::mlir::transform::TransformRewriter &rewriter,
     ::mlir::transform::TransformResults &results,
     ::mlir::transform::TransformState &state) {
   // The linalg operands of each tile, in program order. A tile is a subview
-  // of a function argument, keyed with no nest, or a scalar argument, which
-  // cannot be tiled, keyed with the outermost loop: one buffer per nest.
+  // of a function argument, keyed with no nest, or a whole read-only argument,
+  // keyed with the outermost loop: one buffer per nest.
   struct Tile {
     SmallVector<OpOperand *> uses;
     bool copyIn = false;
@@ -268,10 +291,12 @@ static ::mlir::memref::SubViewOp argumentTile(::mlir::Value value) {
       Value region = operand.get();
       Operation *nest = nullptr;
       if (!argumentTile(region)) {
-        // Any other argument used whole is a tiling left out: kept as is, for
-        // the DMA to reject.
+        // Fusion can leave whole static inputs in the nest. Loading them once
+        // is a conservative fallback; choosing smaller tiles is separate work.
         auto type = dyn_cast<MemRefType>(region.getType());
-        if (!isFunctionArgument(region) || !type || type.getRank() != 0)
+        if (!isFunctionArgument(region) || !type)
+          continue;
+        if (type.getRank() != 0 && !isReadOnlyBuffer(region))
           continue;
         nest = outermostLoop(op);
         if (linalgOp.isDpsInit(&operand)) {
@@ -308,7 +333,7 @@ static ::mlir::memref::SubViewOp argumentTile(::mlir::Value value) {
     Value buffer = rewriter.create<memref::AllocOp>(
         loc, MemRefType::get(type.getShape(), type.getElementType()));
 
-    // A scalar is the same for the whole nest: copied in once, before it.
+    // Whole read-only arguments are copied once, before the nest.
     if (nest) {
       rewriter.create<memref::CopyOp>(loc, region, buffer);
       for (OpOperand *use : tile.uses)
@@ -350,9 +375,34 @@ static void toggleSlot(::mlir::RewriterBase &rewriter, ::mlir::Location loc,
   rewriter.create<memref::StoreOp>(loc, next, var);
 }
 
-/// Multibuffers `alloc` with the slot in a variable switched once per iteration
-/// of the loop around its users (see the op description). Checks everything
-/// before touching the IR.
+/// Subviews of intermediate tensors must follow the selected bank, including
+/// their offset/stride types. Visit parents before children when rebasing.
+static void replaceBufferAndRebaseSubviews(::mlir::RewriterBase &rewriter,
+                                           ::mlir::Value from,
+                                           ::mlir::Value to) {
+  using namespace ::mlir;
+  SmallVector<memref::SubViewOp> views;
+  auto collect = [&](auto &&self, Value value) -> void {
+    for (Operation *user : value.getUsers())
+      if (auto view = dyn_cast<memref::SubViewOp>(user)) {
+        views.push_back(view);
+        self(self, view.getResult());
+      }
+  };
+  collect(collect, from);
+  rewriter.replaceAllUsesWith(from, to);
+  for (memref::SubViewOp view : views) {
+    auto type = memref::SubViewOp::inferRankReducedResultType(
+        view.getType().getShape(), view.getSourceType(), view.getMixedOffsets(),
+        view.getMixedSizes(), view.getMixedStrides());
+    rewriter.modifyOpInPlace(view, [&] {
+      view.getResult().setType(cast<MemRefType>(type));
+    });
+  }
+}
+
+/// Multibuffers `alloc` with a slot switched once per iteration of the common
+/// loop around all direct and subview users. Checks before touching the IR.
 static ::mlir::FailureOr<::mlir::memref::AllocOp>
 multiBufferOverNest(::mlir::RewriterBase &rewriter,
                     ::mlir::memref::AllocOp alloc, int64_t factor) {
@@ -361,15 +411,26 @@ multiBufferOverNest(::mlir::RewriterBase &rewriter,
   if (!type.hasStaticShape() || !type.getLayout().isIdentity() ||
       alloc.use_empty())
     return failure();
-  if (llvm::any_of(alloc->getUsers(), [](Operation *user) {
-        return !isa<linalg::LinalgOp, memref::CopyOp>(user);
-      }))
+  SmallVector<Operation *> users;
+  auto collectUsers = [&](auto &&self, Value value) -> LogicalResult {
+    for (Operation *user : value.getUsers()) {
+      users.push_back(user);
+      if (auto view = dyn_cast<memref::SubViewOp>(user)) {
+        if (failed(self(self, view.getResult())))
+          return failure();
+      } else if (!isa<linalg::LinalgOp, memref::CopyOp>(user)) {
+        return failure();
+      }
+    }
+    return success();
+  };
+  if (failed(collectUsers(collectUsers, alloc)))
     return failure();
 
   // The innermost loop holding every user: the slot changes once per
   // iteration of it.
-  auto level = (*alloc->getUsers().begin())->getParentOfType<scf::ForOp>();
-  while (level && llvm::any_of(alloc->getUsers(), [&](Operation *user) {
+  auto level = users.front()->getParentOfType<scf::ForOp>();
+  while (level && llvm::any_of(users, [&](Operation *user) {
            return !level->isProperAncestor(user);
          }))
     level = level->getParentOfType<scf::ForOp>();
@@ -409,7 +470,7 @@ multiBufferOverNest(::mlir::RewriterBase &rewriter,
   rewriter.setInsertionPoint(level.getBody()->getTerminator());
   toggleSlot(rewriter, loc, var, slot, factor);
 
-  rewriter.replaceAllUsesWith(alloc, view);
+  replaceBufferAndRebaseSubviews(rewriter, alloc, view);
   rewriter.eraseOp(alloc);
   return newAlloc;
 }
@@ -743,7 +804,7 @@ splitStages(::mlir::RewriterBase &rewriter, ::mlir::scf::ForOp nest,
       rewriter.setInsertionPointToStart(&task.getBody().front());
       Value buffer = rewriter.create<memref::AllocOp>(
           loc, MemRefType::get(type.getShape(), type.getElementType()));
-      rewriter.replaceAllUsesWith(slotView.getResult(), buffer);
+      replaceBufferAndRebaseSubviews(rewriter, slotView.getResult(), buffer);
       rewriter.setInsertionPoint(slotView->getBlock()->getTerminator());
       rewriter.create<linalg::CopyOp>(loc, buffer, slotView.getResult());
     }

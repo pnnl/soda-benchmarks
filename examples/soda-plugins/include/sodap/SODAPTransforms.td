@@ -106,7 +106,10 @@ def PromoteTilesOp : Op<Transform_Dialect, "sodap.promote",
 
     A scalar argument (`memref<f32>`), which cannot be tiled, is a tile of
     its own: a buffer per nest, copied in once, right before the outermost
-    loop. Other arguments used whole inside the loop are left untouched.
+    loop. Whole static tensor arguments are also copied once when all their
+    uses (including subviews) are known reads. Written tensors or arguments
+    with unknown users are left untouched. This fallback uses a full tensor
+    buffer; it does not choose a smaller tile or guarantee a hardware fit.
 
     #### Return modes
 
@@ -130,7 +133,9 @@ def MultiBufferOp : Op<Transform_Dialect, "sodap.multibuffer",
   let description = [{
     Like `transform.memref.multibuffer`, expands the allocation by `factor`
     along a new leading dimension and makes its users, which must be linalg
-    ops or `memref.copy` inside an `scf.for`, access one slot of it.
+    ops or `memref.copy` inside an `scf.for`, access one slot of it. Nested
+    `memref.subview` users are supported: their types are recomputed for the
+    selected bank, and the common loop encloses the views and their users.
 
     The difference is the slot index. Upstream uses the iteration of the
     innermost loop alone, which restarts every time that loop does. Here the
