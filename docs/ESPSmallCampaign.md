@@ -65,14 +65,63 @@ and the passing accelerator full-system simulation and FPGA checks.
 
 ## Local artifacts and status
 
-The campaign is under `local-results/vc707-small-20261104/` in the reconciled
-worktree. `status.json` records simulation and FPGA stages; each kernel also
+The campaign completed on November 5, 2026: all ten selected kernels passed
+native numerical checks, adapter tests and full-system RTL simulation, and
+produced VC707 bitstreams with positive setup and hold slack. The final
+collector reports **10/10 ready for board**. No new board execution is claimed.
+
+The campaign is under `local-results/vc707-small-20261104/` in
+`/home/william/bambu-esp-example/experiments/soda-pr17-reconciled`.
+`status.json` records simulation and FPGA stages; each kernel also
 has `generation.json`, generation/native logs, generated-input checksums,
-isolated ESP files and implementation reports. Completed deployment files
-will be in `<kernel>/deploy/`: the bitstream, offload executable, CPU baseline
-executable, boot ROM files and checksums.
+isolated ESP files and implementation reports. Deployment files are in
+`<kernel>/deploy/`: `<kernel>.bit`, `<kernel>.exe`, `<kernel>-cpu.exe`,
+`prom.bin`, `prom.srec` and `SHA256SUMS`. Each application must be used with
+its matching fixed-shape bitstream.
 
 The original validated MINI campaign is preserved. No board is programmed by
-this campaign. FPGA results are pending until the corresponding stages report
-`PASS`; successful Bambu synthesis alone is not a claim of device fit or timing
-closure.
+this campaign. The generated LLVM, objects, RTL and initialization files retain
+their generation-time checksums. The collector also verifies the installed RTL,
+the Vivado project inputs and the correspondence between the simulated and
+implemented SoC files.
+
+## Results
+
+These are full-system RTL simulation cycle counts, with the CPU and accelerator
+at 50 MHz and the NoC/memory at 100 MHz. L2/LLC caches are disabled and DMA is
+noncoherent. The numerical threshold is **1,000,000 in the error column's
+units**, equivalent to absolute error 0.001.
+
+`Kernel cycles` includes allocation, packing, accelerator execution and
+unpacking. `Hardware cycles` measures the accelerator boundary, including DMA
+and memory stalls; it is part of the kernel interval, not an additional cost.
+WNS and WHS are the implemented SoC's worst setup and hold slack.
+
+| Kernel | Max error (10^-9) | Kernel cycles | Hardware cycles | WNS (ns) | WHS (ns) |
+|---|---:|---:|---:|---:|---:|
+| gemm | 11,444 | 5,513,088 | 578,239 | 0.629 | 0.050 |
+| syr2k | 7,629 | 7,319,814 | 1,150,982 | 0.515 | 0.052 |
+| trmm | 7,629 | 4,861,474 | 794,386 | 0.586 | 0.052 |
+| symm | 30,518 | 6,062,308 | 1,111,886 | 0.541 | 0.054 |
+| syrk | 5,722 | 5,886,199 | 597,966 | 0.578 | 0.050 |
+| gesummv | 15,259 | 3,574,948 | 100,748 | 0.506 | 0.051 |
+| doitgen | 954 | 12,170,999 | 966,643 | 0.885 | 0.050 |
+| threemm | 3,815 | 7,059,949 | 2,708,472 | 0.400 | 0.051 |
+| atax | 30,518 | 7,617,983 | 4,459,079 | 0.613 | 0.050 |
+| twomm | 183,105 | 6,478,169 | 2,193,987 | 0.469 | 0.052 |
+
+CPU baseline binaries have native numerical validation and successful RISC-V
+link checks. Their board timings remain to be measured, so this table does not
+claim CPU-to-accelerator speedups.
+
+The [evidence directory](validation/esp-small-20261104/) contains per-kernel
+adapter logs and full-system UART extracts, with hashes of the complete
+simulator transcripts. ESP ends a successful simulation with
+`Failure: Program Completed!`; this is the testbench's completion marker.
+The runner additionally requires `TEST PASSED` and rejects fatal errors,
+unexpected failures and timeouts.
+
+- [Results CSV](validation/esp-small-20261104/results.csv): profiling regions and timing margins.
+- [Results JSON](validation/esp-small-20261104/results.json): validation status, resource use, clocks and deployment checksums.
+- [Provenance](validation/esp-small-20261104/provenance.json): commits, compiler fingerprint and generated-input hashes.
+- [Excluded kernels](validation/esp-small-20261104/excluded.json) and [GEMVER native log](validation/esp-small-20261104/gemver-native.log): the two Bambu failures and unchanged numerical failure kept outside this campaign.

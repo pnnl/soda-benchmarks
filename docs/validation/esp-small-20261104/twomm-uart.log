@@ -1,0 +1,31 @@
+# Extract from full-system ModelSim transcript, starting at CPU boot; trailing whitespace removed.
+# Full transcript SHA256: aec1356a93cb85f51378f5550108977d8319bb4b9ba713140db1f898f3d2fc9d
+# ESP-Ariane boot loader
+#
+# kernel=twomm dataset=SMALL dtype=float32 elements=3200 tol=%g
+# [probe] sld,sqr_bambu.0 registered
+# 		Address   : 0x60010000
+# 		Interrupt : 6
+# Time       30512395000000 Breakaway address 0012c0
+# GEMM_BOUNDARY START invocation=1 stall_until=0
+# GEMM_HANDSHAKE cycles=16 rst=1 core_req=0 req=0000000200006978 socket_req=0 grant=0 active=1 core_done=0
+# GEMM_HANDSHAKE cycles=1000 rst=1 core_req=0 req=00000014000005a0 socket_req=0 grant=0 active=1 core_done=0
+# GEMM_BOUNDARY RESULT invocation=1 requests=6402/320 words=307204/6400 beats=153602/3200 cycles=2193987 blocked=11322
+# ---------------------------------
+# TEST PASSED (max error: %g)
+# max error = 183105 e-9, tolerance = 1000000 e-9
+# ---------------------------------
+# region        cycles       calls        mean     share
+# ------------------------------------------------------
+# total            6478947       1     6478947     100%
+# pack             2453984       1     2453984      37%
+# accel            2194488       1     2194488      33%
+# unpack            799934       1      799934      12%
+# alloc            1028395       1     1028395      15%
+# kernel           6478169       1     6478169      99%
+# ------------------------------------------------------
+# ** Failure: Program Completed!
+#    Time: 136533640 ns  Iteration: 0  Process: /testbench/soc_inst/line__200 File: /home/william/bambu-esp-example/validation/nico-bc6890a/soda/esp/socs/compare/top.vhd
+# Break in Process line__200 at /home/william/bambu-esp-example/validation/nico-bc6890a/soda/esp/socs/compare/top.vhd line 203
+# End time: 02:01:17 on Nov 05,2026, Elapsed time: 1:21:35
+# Errors: 1, Warnings: 1080

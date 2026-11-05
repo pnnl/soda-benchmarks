@@ -12,6 +12,11 @@ MLIR fixes and diagnostic output capture were prepared on
 `0081c52` on `local/esp-lcs-small-ready`, without the candidate Bambu patch.
 These local branches have not been pushed.
 
+This report records the reconciliation checkpoint. The subsequent
+[SMALL campaign](ESPSmallCampaign.md) completed full-system RTL validation and
+VC707 bitstream generation for ten kernels, including THREEMM, ATAX and TWOMM.
+Those new images have not yet been tested on the board.
+
 ## Build interface and preserved fixes
 
 Tommaso's naming and stage behavior are retained:
@@ -89,9 +94,10 @@ start/wait overhead as well and measures 578,718 cycles. The complete profiled
 offload takes 5,513,088 cycles, including allocation and data copies. The
 simulation runner exits successfully (exit 0).
 
-No SMALL bitstream or SMALL board run is claimed. Each fixed-shape SMALL design
-needs its own implementation and matching host application; the MINI
-bitstreams do not execute the larger shapes.
+At this checkpoint there was no SMALL bitstream or SMALL board run. The later
+[SMALL campaign](ESPSmallCampaign.md) supplies the per-kernel implementations
+and matching host applications; the MINI bitstreams do not execute the larger
+shapes.
 
 ## Failures and local fixes
 
@@ -165,6 +171,10 @@ load/store service or host-sequenced offloads remain alternatives if that
 sharing is unsupported.
 
 ## Next validation steps
+
+This was the plan at the reconciliation checkpoint. The later SMALL campaign
+completed the full-system and FPGA implementation steps below for ten kernels.
+Board testing, BICG/MVT and GEMVER remain separate work.
 
 1. Review the two MLIR fixes separately from the build-flow reconciliation.
    They preserve the seven validated MINI designs and expand generation without

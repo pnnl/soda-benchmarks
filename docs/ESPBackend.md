@@ -108,6 +108,8 @@ The initial nine-kernel LLVM coverage and four multibuffering failures are
 recorded in [ESPLCSValidation.md](ESPLCSValidation.md). The subsequent local
 reconciliation and MLIR fixes, including the remaining Bambu and numerical
 failures, are tracked in [ESPPR17Reconciliation.md](ESPPR17Reconciliation.md).
+The completed ten-kernel SMALL simulation and bitstream campaign is documented
+in [ESPSmallCampaign.md](ESPSmallCampaign.md).
 
 ## Existing FFN flow
 
