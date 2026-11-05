@@ -8,6 +8,11 @@ The subsequent seven-kernel full-system simulation and VC707 image campaign
 is documented in [ESPVC707Campaign.md](ESPVC707Campaign.md). The initial
 GEMM measurements below are retained as historical evidence.
 
+For the later reconciliation with Tommaso's `346b48e` update, SMALL checks,
+and fixes for intermediate subviews, see
+[ESPPR17Reconciliation.md](ESPPR17Reconciliation.md). Results below describe
+the earlier checkpoint.
+
 ## Changes under test
 
 - Connect the ESP `object` stage to the generated LCS host, and add a `verilog`

@@ -2,7 +2,8 @@
 // Component test: generated IP + width adapter + backpressured 64-bit memory.
 // This is not a full-system ESP simulation.
 `timescale 1ns/1ps
-module lcs_dma64_tb #(parameter SERIAL_DMA = 1, parameter WRITE_BUFFER_BEATS = 16);
+module lcs_dma64_tb #(parameter SERIAL_DMA = 1, parameter WRITE_BUFFER_BEATS = 16,
+                     parameter TIMEOUT_CYCLES = 1000000);
   `include "parameters.svh"
   reg clk=0; always #5 clk=!clk;
   reg rst=0, start=0, hold_read=0;
@@ -20,7 +21,7 @@ module lcs_dma64_tb #(parameter SERIAL_DMA = 1, parameter WRITE_BUFFER_BEATS = 1
   // whose computation still requires DMA reads.
   assign rr=rleft==0 && (!SERIAL_DMA || wleft==0) && cycles%7!=0;
   assign wr=wleft==0 && (!SERIAL_DMA || (rleft==0 && !rv)) && cycles%11!=0;
-  sqr_bambu_basic_dma64 #(.CHECK_ARCHIVE_GEMM(0), .TIMEOUT_CYCLES(1000000),
+  sqr_bambu_basic_dma64 #(.CHECK_ARCHIVE_GEMM(0), .TIMEOUT_CYCLES(TIMEOUT_CYCLES),
                          .WRITE_BUFFER_BEATS(WRITE_BUFFER_BEATS)) dut(
     .clk(clk),.rst(rst),.conf_done(start),.acc_done(done),.debug(),
     .dma_read_ctrl_valid(rv),.dma_read_ctrl_ready(rr),.dma_read_ctrl_data_index(ri),.dma_read_ctrl_data_length(rl),
@@ -38,7 +39,7 @@ module lcs_dma64_tb #(parameter SERIAL_DMA = 1, parameter WRITE_BUFFER_BEATS = 1
   endfunction
   always @(posedge clk) if(rst) begin
     cycles<=cycles+1;
-    if(cycles>2000000) $fatal(1,"adapter timeout");
+    if(cycles>2*TIMEOUT_CYCLES+1000) $fatal(1,"adapter timeout");
     hold_read <= rdvalid && !rdready;
     if(rv&&rr) begin
       if(rl==0 || 2*(ri+rl)>WORDS) $fatal(1,"read bounds");

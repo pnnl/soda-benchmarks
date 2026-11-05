@@ -95,8 +95,21 @@ sha256sum "$artifact_dir/06_kernel_riscv.o" "$generated/bambu_syn/forward_kernel
   "$repo/examples/soda-plugins/include/sodap/ExecutionEngine/ESPRuntime.h" \
   "$example/../generated-gemm/sqr_bambu_basic_dma64.sv" "$app/$appname.c" \
   "$example/baremetal-startup.S" test.ld testdata.h gemm_app.exe > inputs-and-software.sha256
+if [[ ${ESP_BUILD_ONLY:-0} == 1 ]]; then
+  echo 'BUILT: baremetal application linked; simulation not run'
+  exit 0
+fi
 sim_time_ms=${ESP_SIM_TIME_MS:-100}
 [[ "$sim_time_ms" =~ ^[1-9][0-9]*$ ]] || { echo "ESP_SIM_TIME_MS must be a positive integer" >&2; exit 1; }
+timeout_cycles=${LCS_TIMEOUT_CYCLES:-1000000}
+[[ "$timeout_cycles" =~ ^[1-9][0-9]*$ ]] && ((timeout_cycles < 100000000)) || {
+  echo 'LCS_TIMEOUT_CYCLES must be between 1 and 99999999' >&2; exit 1;
+}
+if [[ ${ESP_INSTRUCTION_TRACE:-1} == 0 ]]; then
+  # Preserve UART and DMA checks while avoiding large passive CPU trace files.
+  ln -s /dev/null trace_hart_0.log
+  ln -s /dev/null trace_hart_0_commit.log
+fi
 cat > run.tcl <<EOF
 onerror {quit -code 2 -f}
 onbreak {quit -code 0 -f}
@@ -109,6 +122,7 @@ vsim -c -suppress 3812,2697,8617,151,143,8386,3009,2685,2718 \
   -uvmcontrol=disable -t fs +notimingchecks work.testbench work.glbl \
   -G/testbench/soc_inst/gen_mig_model/mig_axiram/kbytes="${ESP_SIM_RAM_KBYTES:-16384}" \
   -do 'do run.tcl' -l simulation.log +gemm_stall="${GEMM_STALL:-0}" \
+  +gemm_timeout="$timeout_cycles" \
   > console.log 2>&1
 python3 - <<'PY'
 from pathlib import Path

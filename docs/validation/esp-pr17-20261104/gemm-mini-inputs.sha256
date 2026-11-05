@@ -1,0 +1,12 @@
+d92ddc8a3954c687d7c681fb28ca3e5aa2a48565cc10cd4daf4a644b72dec658  /home/william/bambu-esp-example/experiments/soda-pr17-reconciled/local-experiments/experiments/2026_11_04_23_37_03/output/esp/transformed/06_kernel_riscv.o
+574ec1c7d75ef3630b5d959256883f13a6f90c82e8df972ff0c6b4e193283f22  /home/william/bambu-esp-example/experiments/soda-pr17-reconciled/local-experiments/experiments/2026_11_04_23_37_03/output/esp/transformed/bambu_syn/forward_kernel.v
+e6c8a5a160c69e8295378f711ada87e5008621c3f524e29ad93c98f49fb7b5b8  /home/william/bambu-esp-example/experiments/soda-pr17-reconciled/local-experiments/experiments/2026_11_04_23_37_03/output/esp/transformed/bambu_syn/panda_libtech.v
+c1c0b60004fb9c6808d7a02abe3288d31015ea0d65021c516c4592fc17aed797  /home/william/bambu-esp-example/experiments/soda-pr17-reconciled/local-experiments/experiments/2026_11_04_23_37_03/output/esp/transformed/layout.txt
+c94ea24ca15ee30b9de57dc9fe4fca60eb309734c58826472dd3da5683a7e6d6  /home/william/bambu-esp-example/experiments/soda-pr17-reconciled/examples/soda-plugins/lib/sodap/ExecutionEngine/EspRuntime.cpp
+8c75faea5c03f74a06c53d20feeda2a147fceb8896a639ce89951ba458748b58  /home/william/bambu-esp-example/experiments/soda-pr17-reconciled/examples/soda-plugins/include/sodap/ExecutionEngine/ESPRuntime.h
+6e62ba5a8285de0ce4f830af3806319d1d9bd1e9cb4d6421d6a0e53387bdcb30  /home/william/bambu-esp-example/experiments/soda-pr17-reconciled/examples/esp-validation/generated-lcs/../generated-gemm/sqr_bambu_basic_dma64.sv
+600a13241efa495cd0f8d9b936198c0f151376f16fb2b494fe520e86beb937a5  /home/william/bambu-esp-example/experiments/soda-pr17-reconciled/local-experiments/experiments/2026_11_04_23_37_03/output/esp/transformed/esp-app/gemm_mini.c
+95390b6bb1e5c55f6bef20a15819f3c84b4cab92600954fc70328144068daa0d  /home/william/bambu-esp-example/experiments/soda-pr17-reconciled/examples/esp-validation/generated-lcs/baremetal-startup.S
+8fba1b962249afb4a52afb045325211fc9d0e26d8a67cbcca256471d56135c7c  test.ld
+b1c18c8009814c386918b0790fee0ede98b0fdf5480562607a3484d2cf4e65a5  testdata.h
+b9db10b7c24908b9573ff64934766125b0aca86179b965432cc9328bd508035d  gemm_app.exe

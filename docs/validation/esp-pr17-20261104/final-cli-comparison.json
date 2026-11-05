@@ -1,0 +1,79 @@
+[
+  {
+    "kernel": "threemm",
+    "inputs": {
+      "05_hw_acc.ll": true,
+      "05_kernel_riscv.ll": true,
+      "05_cpu_baseline.ll": true,
+      "architecture.xml": true,
+      "argument_order.txt": true,
+      "testdata.h": true
+    },
+    "rtl_except_build_metadata": {
+      "forward_kernel.v": true,
+      "panda_libtech.v": true
+    },
+    "memory_files": {
+      "array_430439.mem": true,
+      "array_429844.mem": true,
+      "array_430148.mem": true
+    }
+  },
+  {
+    "kernel": "atax",
+    "inputs": {
+      "05_hw_acc.ll": true,
+      "05_kernel_riscv.ll": true,
+      "05_cpu_baseline.ll": true,
+      "architecture.xml": true,
+      "argument_order.txt": true,
+      "testdata.h": true
+    },
+    "rtl_except_build_metadata": {
+      "forward_kernel.v": false,
+      "panda_libtech.v": true
+    },
+    "memory_files": {
+      "array_429386.mem": false,
+      "array_429621.mem": false
+    }
+  },
+  {
+    "kernel": "twomm",
+    "inputs": {
+      "05_hw_acc.ll": true,
+      "05_kernel_riscv.ll": true,
+      "05_cpu_baseline.ll": true,
+      "architecture.xml": true,
+      "argument_order.txt": true,
+      "testdata.h": true
+    },
+    "rtl_except_build_metadata": {
+      "forward_kernel.v": false,
+      "panda_libtech.v": true
+    },
+    "memory_files": {
+      "array_429952.mem": false,
+      "array_429645.mem": false
+    }
+  },
+  {
+    "kernel": "gemver",
+    "inputs": {
+      "05_hw_acc.ll": true,
+      "05_kernel_riscv.ll": true,
+      "05_cpu_baseline.ll": true,
+      "architecture.xml": true,
+      "argument_order.txt": true,
+      "testdata.h": true
+    },
+    "rtl_except_build_metadata": {
+      "forward_kernel.v": true,
+      "panda_libtech.v": true
+    },
+    "memory_files": {
+      "array_430518.mem": true,
+      "array_430776.mem": true
+    }
+  }
+]

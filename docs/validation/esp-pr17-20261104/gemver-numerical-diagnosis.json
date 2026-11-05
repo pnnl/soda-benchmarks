@@ -1,0 +1,15 @@
+{
+  "reference": "PyTorch float32",
+  "max_abs_error": 0.001220703125,
+  "threshold_unchanged": 0.001,
+  "failing_elements": 1,
+  "worst_index": 32,
+  "actual": 4023.986572265625,
+  "reference_f32": 4023.98779296875,
+  "reference_f64_same_f32_inputs": 4023.987486571672,
+  "worst_difference_float32_ulps": 5.0,
+  "max_relative_error": 3.033565676150847e-07,
+  "native_max_error_vs_f64": 0.0009143060469796183,
+  "pytorch_f32_max_error_vs_f64": 0.00033092436660808744,
+  "note": "CPU-only execution; does not validate generated hardware. The threshold has not been changed."
+}

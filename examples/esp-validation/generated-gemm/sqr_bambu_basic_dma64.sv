@@ -183,6 +183,13 @@ module sqr_bambu_basic_dma64 #(
   // Passive simulation checks. No operand data is supplied by this monitor.
   // synthesis translate_off
   integer invocation = 0, nr, nw, read_words, read_beats, write_words, write_beats, blocked;
+  integer simulation_timeout = TIMEOUT_CYCLES;
+  initial begin
+    if ($value$plusargs("gemm_timeout=%d", simulation_timeout)) begin
+      if (simulation_timeout < 1 || simulation_timeout >= 100000000)
+        $fatal(1,"gemm_timeout must be between 1 and 99999999 cycles");
+    end
+  end
   initial if (WRITE_BUFFER_BEATS < 1) $fatal(1,"WRITE_BUFFER_BEATS must be positive");
   reg monitoring_run = 0;
   reg rr_held = 0, wr_held = 0, wd_held = 0;
@@ -198,7 +205,7 @@ module sqr_bambu_basic_dma64 #(
       if (monitoring_run && (cycles == 16 || cycles == 1000))
         $display("GEMM_HANDSHAKE cycles=%0d rst=%b core_req=%b req=%h socket_req=%b grant=%b active=%b core_done=%b",
                  cycles,rst,read_request_valid,read_request,dma_read_ctrl_valid,dma_read_ctrl_ready,read_active,core_done);
-      if (monitoring_run && cycles == TIMEOUT_CYCLES) $fatal(1,"GEMM hardware timeout");
+      if (monitoring_run && cycles == simulation_timeout) $fatal(1,"GEMM hardware timeout");
       if (rr_held && (!dma_read_ctrl_valid ||
           {dma_read_ctrl_data_length,dma_read_ctrl_data_index} !== rr_previous))
         $fatal(1,"GEMM read request changed while stalled");

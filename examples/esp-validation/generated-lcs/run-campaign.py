@@ -20,9 +20,17 @@ p.add_argument("--kernels", nargs="+", default=["gemm", "syr2k", "trmm", "symm",
 p.add_argument("--flow", choices=("baseline", "optimized", "transformed"), default="transformed")
 p.add_argument("--sim-jobs", type=int, default=2)
 p.add_argument("--fpga-jobs", type=int, default=2)
+p.add_argument("--adapter-timeout", type=int, default=600, help="Wall-clock seconds")
+p.add_argument("--system-timeout", type=int, default=7200, help="Wall-clock seconds")
+p.add_argument("--cpu-build-only", action="store_true",
+               help="Link the matching CPU baseline for board tests without claiming a CPU RTL simulation pass")
 p.add_argument("--cpu-results", type=Path,
                help="Reuse passing CPU baselines with identical generated object and input data")
 a = p.parse_args()
+if a.cpu_build_only and a.cpu_results:
+    p.error("--cpu-build-only and --cpu-results cannot be combined")
+if min(a.sim_jobs, a.fpga_jobs, a.adapter_timeout, a.system_timeout) < 1:
+    p.error("Job counts and timeouts must be positive")
 root, esp, template = (x.resolve() for x in (a.campaign, a.esp_source, a.compiled_soc))
 here = Path(__file__).resolve().parent
 lock = threading.Lock()
@@ -76,10 +84,10 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=a.fpga_jobs) as synthesis
                 run(["python3", here / "prepare-soc.py", generated, esp, template, folder / "esp"],
                     folder / "prepare.log")
             run([here / "run-adapter.sh", generated, folder / "adapter"],
-                folder / "adapter.log", timeout=600)
+                folder / "adapter.log", timeout=a.adapter_timeout)
             update(name, adapter="PASS", stage="system-esp")
             run([here / "run-system.sh", generated, esp, template, folder / "system-esp"],
-                folder / "system-esp.log", timeout=7200)
+                folder / "system-esp.log", timeout=a.system_timeout)
             deploy = folder / "deploy"
             deploy.mkdir()
             shutil.copy2(folder / "system-esp/full-system/gemm_app.exe", deploy / f"{name}.exe")
@@ -102,16 +110,19 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=a.fpga_jobs) as synthesis
                 update(name, cpu_baseline_reused=str(previous))
             else:
                 env = dict(os.environ, LCS_SYSTEM_MODE="cpu-baseline")
+                if a.cpu_build_only:
+                    env["ESP_BUILD_ONLY"] = "1"
                 run([here / "run-system.sh", generated, esp, template, folder / "system-cpu"],
-                    folder / "system-cpu.log", env=env, timeout=7200)
+                    folder / "system-cpu.log", env=env, timeout=a.system_timeout)
             shutil.copy2(folder / "system-cpu/full-system/gemm_app.exe", deploy / f"{name}-cpu.exe")
-            update(name, system_cpu="PASS", stage="simulation-complete")
+            update(name, system_cpu="BUILT" if a.cpu_build_only else "PASS", stage="validation-complete")
         except Exception as error:
             update(name, stage="FAILED", error=str(error))
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=a.sim_jobs) as simulation:
         list(simulation.map(kernel, a.kernels))
 (root / "campaign.done").write_text(datetime.datetime.now().astimezone().isoformat() + "\n")
-if any(state.get("system_esp") != "PASS" or state.get("system_cpu") != "PASS" or
+expected_cpu = "BUILT" if a.cpu_build_only else "PASS"
+if any(state.get("system_esp") != "PASS" or state.get("system_cpu") != expected_cpu or
        state.get("fpga") != "PASS" for state in states.values()):
     raise SystemExit(1)

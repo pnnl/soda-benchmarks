@@ -9,9 +9,10 @@
 #
 # Writes in <outdir>:
 #   ir_after_each_pass.mlir         the IR after each pass
-#   05_hw_acc.ll                  for Bambu, with architecture.xml
+#   05_hw_acc.ll                    for Bambu, with architecture.xml
 #   architecture.xml
-#   05_kernel_riscv.ll                         for the RISC-V core
+#   05_kernel_riscv.ll              for the RISC-V core
+#   05_cpu_baseline.ll              matching CPU-only baseline
 #   ac_channel_specializations.ll   needed to build 05_hw_acc.ll
 #   forward_kernel_testbench.c      written by soda-opt, not used here
 

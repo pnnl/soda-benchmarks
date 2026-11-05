@@ -1,0 +1,112 @@
+[
+  {
+    "kernel": "gemm",
+    "identical": {
+      "05_hw_acc.ll": true,
+      "05_kernel_riscv.ll": true,
+      "05_cpu_baseline.ll": true,
+      "06_kernel_riscv.o": true,
+      "testdata.h": true
+    },
+    "rtl_equal_ignoring_generation_banner": {
+      "forward_kernel.v": true,
+      "panda_libtech.v": true,
+      "array_429514.mem": true
+    }
+  },
+  {
+    "kernel": "syr2k",
+    "identical": {
+      "05_hw_acc.ll": true,
+      "05_kernel_riscv.ll": true,
+      "05_cpu_baseline.ll": true,
+      "06_kernel_riscv.o": true,
+      "testdata.h": true
+    },
+    "rtl_equal_ignoring_generation_banner": {
+      "forward_kernel.v": true,
+      "panda_libtech.v": true,
+      "array_430313.mem": true,
+      "array_430011.mem": true
+    }
+  },
+  {
+    "kernel": "trmm",
+    "identical": {
+      "05_hw_acc.ll": true,
+      "05_kernel_riscv.ll": true,
+      "05_cpu_baseline.ll": true,
+      "06_kernel_riscv.o": true,
+      "testdata.h": true
+    },
+    "rtl_equal_ignoring_generation_banner": {
+      "forward_kernel.v": false,
+      "panda_libtech.v": true,
+      "array_429268.mem": false,
+      "array_429436.mem": false,
+      "array_429310.mem": false
+    }
+  },
+  {
+    "kernel": "symm",
+    "identical": {
+      "05_hw_acc.ll": true,
+      "05_kernel_riscv.ll": true,
+      "05_cpu_baseline.ll": true,
+      "06_kernel_riscv.o": true,
+      "testdata.h": true
+    },
+    "rtl_equal_ignoring_generation_banner": {
+      "forward_kernel.v": true,
+      "panda_libtech.v": true,
+      "array_429670.mem": true,
+      "array_429517.mem": true
+    }
+  },
+  {
+    "kernel": "syrk",
+    "identical": {
+      "05_hw_acc.ll": true,
+      "05_kernel_riscv.ll": true,
+      "05_cpu_baseline.ll": true,
+      "06_kernel_riscv.o": true,
+      "testdata.h": true
+    },
+    "rtl_equal_ignoring_generation_banner": {
+      "forward_kernel.v": false,
+      "panda_libtech.v": true,
+      "array_429507.mem": false
+    }
+  },
+  {
+    "kernel": "gesummv",
+    "identical": {
+      "05_hw_acc.ll": true,
+      "05_kernel_riscv.ll": true,
+      "05_cpu_baseline.ll": true,
+      "06_kernel_riscv.o": true,
+      "testdata.h": true
+    },
+    "rtl_equal_ignoring_generation_banner": {
+      "forward_kernel.v": true,
+      "panda_libtech.v": true,
+      "array_429543.mem": true,
+      "array_429780.mem": true
+    }
+  },
+  {
+    "kernel": "doitgen",
+    "identical": {
+      "05_hw_acc.ll": true,
+      "05_kernel_riscv.ll": true,
+      "05_cpu_baseline.ll": true,
+      "06_kernel_riscv.o": true,
+      "testdata.h": true
+    },
+    "rtl_equal_ignoring_generation_banner": {
+      "forward_kernel.v": true,
+      "panda_libtech.v": true,
+      "array_429388.mem": true
+    }
+  }
+]
