@@ -27,6 +27,26 @@ def SODAPSwitchBarFoo: Pass<"sodap-switch-bar-foo", "::mlir::ModuleOp"> {
   }];
 }
 
+def LinalgRankReduceContractions
+    : Pass<"sodap-linalg-rank-reduce-contractions"> {
+  let summary = "Drop the unit batch dim of linalg contractions";
+  let description = [{
+    Runs upstream's `linalg::populateContractionOpRankReducingPatterns`, which
+    has no pass of its own in LLVM 19: a contraction with a unit batch or a
+    unit outer dim becomes the next smaller named op, between
+    `collapse_shape`/`expand_shape` of its operands. For example
+    `linalg.batch_matmul` 1×M×K becomes `linalg.matmul`, and `linalg.matmul`
+    with a unit M becomes `linalg.vecmat`. The op stays named, so
+    `linalg-fold-unit-extent-dims` and `linalg-fuse-elementwise-ops` leave it
+    alone.
+  }];
+  let dependentDialects = [
+    "::mlir::linalg::LinalgDialect",
+    "::mlir::tensor::TensorDialect",
+    "::mlir::memref::MemRefDialect"
+  ];
+}
+
 def ViewOpGraph : Pass<"soda-view-op-graph"> {
   let summary = "Print Graphviz visualization of an operation";
   let description = [{

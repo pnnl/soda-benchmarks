@@ -6,6 +6,10 @@
 //
 //===----------------------------------------------------------------------===//
 #include "mlir/Dialect/Func/IR/FuncOps.h"
+#include "mlir/Dialect/Linalg/IR/Linalg.h"
+#include "mlir/Dialect/Linalg/Transforms/Transforms.h"
+#include "mlir/Dialect/MemRef/IR/MemRef.h"
+#include "mlir/Dialect/Tensor/IR/Tensor.h"
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/PatternMatch.h"
 #include "mlir/Rewrite/FrozenRewritePatternSet.h"
@@ -18,7 +22,21 @@
 namespace mlir::sodap {
 #define GEN_PASS_DEF_SODAPSWITCHBARFOO
 #define GEN_PASS_DEF_TAGOPS
+#define GEN_PASS_DEF_LINALGRANKREDUCECONTRACTIONS
 #include "sodap/SODAPPasses.h.inc"
+
+namespace {
+struct LinalgRankReduceContractions
+    : impl::LinalgRankReduceContractionsBase<LinalgRankReduceContractions> {
+  void runOnOperation() final {
+    RewritePatternSet patterns(&getContext());
+    linalg::populateContractionOpRankReducingPatterns(patterns);
+    if (failed(applyPatternsAndFoldGreedily(getOperation(),
+                                            std::move(patterns))))
+      signalPassFailure();
+  }
+};
+} // namespace
 
 namespace {
 class SODAPSwitchBarFooRewriter : public OpRewritePattern<func::FuncOp> {

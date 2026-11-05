@@ -74,14 +74,13 @@ IR=$(step "$FRONTEND_DUMP" mlir-opt "$INPUT" $PLUGIN --pass-pipeline="builtin.mo
       tosa-to-arith,
       tosa-to-tensor,
       tosa-to-linalg-named,
-      tosa-to-linalg
+      tosa-to-linalg,
+      sodap-linalg-rank-reduce-contractions
     ),
-    linalg-generalize-named-ops,
     linalg-fold-unit-extent-dims,
     linalg-fuse-elementwise-ops,
-    linalg-specialize-generic-ops,
+    canonicalize,
     transform-preload-library{transform-library-paths=$TRANSFORM},
-    linalg-generalize-named-ops,
     transform-interpreter{entry-point=tile},
     one-shot-bufferize{bufferize-function-boundaries function-boundary-type-conversion=identity-layout-map},
     canonicalize,
