@@ -51,6 +51,17 @@ space. UART output, DMA protocol checks, numerical results and profiler
 output remain enabled. CPU baseline executables are linked for board use,
 after native numerical validation; `--cpu-build-only` does **not** claim a
 full-system CPU-baseline simulation pass. Their status is `BUILT`, not `PASS`.
+The collector makes this distinction explicit:
+
+```sh
+python3 examples/esp-validation/generated-lcs/collect-results.py "$CAMPAIGN" \
+  --allow-built-cpu-baseline --require-complete
+```
+
+Without `--allow-built-cpu-baseline`, its original requirement for a passing
+CPU full-system simulation remains in place. With the flag, readiness requires
+a passing native numerical check, a linked RISC-V ELF with no undefined symbols,
+and the passing accelerator full-system simulation and FPGA checks.
 
 ## Local artifacts and status
 

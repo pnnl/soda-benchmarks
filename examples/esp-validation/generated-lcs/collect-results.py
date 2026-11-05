@@ -12,6 +12,8 @@ from pathlib import Path
 p = argparse.ArgumentParser()
 p.add_argument("campaign", type=Path)
 p.add_argument("--require-complete", action="store_true")
+p.add_argument("--allow-built-cpu-baseline", action="store_true",
+               help="Accept a native-tested, linked CPU baseline for board use; do not claim CPU RTL validation")
 a = p.parse_args()
 root = a.campaign.resolve()
 states = json.loads((root / "status.json").read_text())
@@ -116,15 +118,36 @@ for name, state in states.items():
                     assert (folder / "esp" / rel).resolve() in files, \
                         f"Vivado project omits generated input: {name}/{rel}"
             item["vivado_uses_installed_rtl"] = True
-    ready = (offload.get("pass") and cpu.get("pass") and state.get("fpga") == "PASS")
+    native = simulation(folder / "native.log")
+    native_log = (folder / "native.log").read_text() if (folder / "native.log").exists() else ""
+    native_pass = ("TEST PASSED" in native_log and "TEST FAILED" not in native_log
+                   and native.get("error_e9", float("inf")) <= native.get("tolerance_e9", -1))
+    cpu_sim = folder / "system-cpu/full-system"
+    cpu_header = (cpu_sim / "elf-header.txt").read_text() if (cpu_sim / "elf-header.txt").exists() else ""
+    cpu_link_pass = (state.get("system_cpu") == "BUILT"
+                     and (cpu_sim / "gemm_app.exe").is_file()
+                     and (cpu_sim / "undefined-symbols.txt").is_file()
+                     and not (cpu_sim / "undefined-symbols.txt").read_text().strip()
+                     and "RISC-V" in cpu_header and "double-float ABI" in cpu_header
+                     and re.search(r"Entry point address:\s+0x80000000", cpu_header))
+    cpu_ready = bool(cpu.get("pass") or
+                     (a.allow_built_cpu_baseline and native_pass and cpu_link_pass))
+    item["cpu_baseline_validation"] = ("full-system" if cpu.get("pass") else
+                                        "native+link" if cpu_ready else "incomplete")
+    item["cpu_native"] = {"pass": native_pass,
+                          "error_e9": native.get("error_e9"),
+                          "tolerance_e9": native.get("tolerance_e9")}
+    ready = (offload.get("pass") and cpu_ready and state.get("fpga") == "PASS")
     item["ready_for_board"] = bool(ready)
     if a.require_complete:
         assert ready, f"Incomplete campaign: {name}"
         assert item.get("rtl_unchanged") and item.get("soc_matches_simulation_fixture")
         assert item.get("vivado_uses_installed_rtl")
-        for result in (offload, cpu):
+        for result in (offload, cpu if cpu.get("pass") else native):
             assert result["error_e9"] <= result["tolerance_e9"]
-        assert "kernel" in offload["regions"] and "kernel" in cpu["regions"]
+        assert "kernel" in offload["regions"]
+        if cpu.get("pass"):
+            assert "kernel" in cpu["regions"]
         assert float(timing["STATS.WNS"]) >= 0 and float(timing["STATS.WHS"]) >= 0
         for connection, expected in (("chip_refclk", 20), ("clkm", 10),
                                      ("accelerator_sequential_cells", 20)):
@@ -138,7 +161,8 @@ for name, state in states.items():
         assert digest(deploy / f"{name}.bit") == digest(folder / "fpga/top.bit") == digest(soc / "top.bit")
     results[name] = item
     row = dict(kernel=name, system_esp=offload.get("status", "PENDING"),
-               system_cpu=cpu.get("status", "PENDING"), fpga=state.get("fpga", "PENDING"),
+               system_cpu=state.get("system_cpu", cpu.get("status", "PENDING")),
+               cpu_validation=item["cpu_baseline_validation"], fpga=state.get("fpga", "PENDING"),
                error_e9=offload.get("error_e9", ""), cpu_error_e9=cpu.get("error_e9", ""),
                cpu_cycles=cpu.get("regions", {}).get("kernel", ""),
                offload_cycles=offload.get("regions", {}).get("kernel", ""),
