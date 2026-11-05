@@ -150,7 +150,7 @@ bool fitsInBuffer(const char *what, int64_t offset, int64_t rows, int64_t ld,
 // else having gone first. Only on the SoC -- on the host, libc's malloc serves.
 #ifdef __riscv
 namespace {
-constexpr unsigned long kBumpBytes = 64ul * 1024ul;
+constexpr unsigned long kBumpBytes = 128ul * 1024ul;
 constexpr unsigned long kBumpMagic = 0x45535042ul; // "ESPB"
 unsigned char g_bump[kBumpBytes];
 unsigned long g_bumpOff;
