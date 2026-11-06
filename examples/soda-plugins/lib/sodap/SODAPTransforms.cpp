@@ -13,6 +13,7 @@
 #include "sodap/SODAPTransforms.h"
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/Dialect/Bufferization/IR/Bufferization.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/Linalg/IR/Linalg.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
@@ -51,6 +52,7 @@ void SODAPTransformsExtension::init() {
   declareGeneratedDialect<::mlir::affine::AffineDialect>();
   declareGeneratedDialect<::mlir::memref::MemRefDialect>();
   declareGeneratedDialect<::mlir::arith::ArithDialect>();
+  declareGeneratedDialect<::mlir::bufferization::BufferizationDialect>();
   declareGeneratedDialect<::mlir::scf::SCFDialect>();
   declareGeneratedDialect<::mlir::tensor::TensorDialect>();
   declareGeneratedDialect<::mlir::sodap::dataflow::DataflowDialect>();
@@ -100,15 +102,18 @@ tileSizes(::mlir::OpBuilder &builder, ::mlir::linalg::LinalgOp op, int64_t size,
     ::mlir::transform::TransformRewriter &rewriter,
     ::mlir::transform::TransformResults &results,
     ::mlir::transform::TransformState &state) {
-  // The op producing each result, before anything changes, with the tile of
-  // its function.
+  // The op producing each yielded value, before anything changes, with the
+  // tile of its function.
   llvm::MapVector<Operation *, int64_t> lasts;
   for (Operation *target : state.getPayloadOps(getTarget())) {
-    auto func = dyn_cast<func::FuncOp>(target);
+    auto task = dyn_cast<sodap::dataflow::TaskOp>(target);
+    auto func = task ? task->getParentOfType<func::FuncOp>() : nullptr;
     if (!func)
-      return emitSilenceableError() << "expected func.func";
+      return emitSilenceableError()
+             << "expected a dataflow.task in a func.func";
 
-    // The GCD of every loop range, so every loop tiles evenly.
+    // The GCD of every loop range in the function, so every loop tiles
+    // evenly and every task gets the same tile.
     int64_t gcd = 0;
     Operation *dynamic = nullptr;
     func.walk([&](linalg::LinalgOp op) {
@@ -130,15 +135,13 @@ tileSizes(::mlir::OpBuilder &builder, ::mlir::linalg::LinalgOp op, int64_t size,
       --size;
 
     Value invalid;
-    func.walk([&](func::ReturnOp ret) {
-      for (Value result : ret.getOperands()) {
-        auto last = result.getDefiningOp<linalg::LinalgOp>();
-        if (!last || last.getNumParallelLoops() == 0)
-          invalid = result;
-        else
-          lasts.insert({last, size});
-      }
-    });
+    for (Value result : task.getYieldOp().getOperands()) {
+      auto last = result.getDefiningOp<linalg::LinalgOp>();
+      if (!last || last.getNumParallelLoops() == 0)
+        invalid = result;
+      else
+        lasts.insert({last, size});
+    }
     if (invalid) {
       DiagnosedSilenceableFailure diag =
           emitSilenceableError()
@@ -154,6 +157,17 @@ tileSizes(::mlir::OpBuilder &builder, ::mlir::linalg::LinalgOp op, int64_t size,
         tileSizes(rewriter, cast<linalg::LinalgOp>(last), size, true));
     scf::SCFTileAndFuseOptions options;
     options.setTilingOptions(parallelTiling);
+    // Fuse only the tileable producers in the task. LLVM 19 clones a producer
+    // before checking that it can be tiled and leaves the clone behind when it
+    // can't: a task reading another task's result would get a copy of that
+    // whole task in its loop.
+    Operation *task = last->getParentOfType<sodap::dataflow::TaskOp>();
+    options.setFusionControlFn(
+        [task](tensor::ExtractSliceOp, OpResult producer, bool) {
+          Operation *op = producer.getOwner();
+          return std::make_tuple(
+              isa<TilingInterface>(op) && task->isAncestor(op), false);
+        });
     rewriter.setInsertionPoint(last);
     FailureOr<scf::SCFTileAndFuseResult> nest =
         scf::tileConsumerAndFuseProducersUsingSCF(
@@ -193,6 +207,206 @@ tileSizes(::mlir::OpBuilder &builder, ::mlir::linalg::LinalgOp op, int64_t size,
 void mlir::transform::TileAndFuseOp::getEffects(
     ::llvm::SmallVectorImpl<::mlir::MemoryEffects::EffectInstance> &effects) {
   onlyReadsHandle(getTargetMutable(), effects);
+  modifiesPayload(effects);
+}
+
+::mlir::DiagnosedSilenceableFailure mlir::transform::CreateTasksOp::apply(
+    ::mlir::transform::TransformRewriter &rewriter,
+    ::mlir::transform::TransformResults &results,
+    ::mlir::transform::TransformState &state) {
+  namespace df = ::mlir::sodap::dataflow;
+  SmallVector<Operation *> dispatches;
+  for (Operation *target : state.getPayloadOps(getTarget())) {
+    auto func = dyn_cast<func::FuncOp>(target);
+    if (!func || !func.getBody().hasOneBlock())
+      return emitSilenceableError() << "expected a func.func with one block";
+    Block &body = func.getBody().front();
+
+    // The compute ops, in program order.
+    SmallVector<Operation *> computes;
+    for (Operation &op : body.without_terminator()) {
+      auto linalgOp = dyn_cast<linalg::LinalgOp>(op);
+      if (linalgOp && linalgOp.hasPureTensorSemantics())
+        computes.push_back(&op);
+      else if (!isa<tensor::EmptyOp, arith::ConstantOp>(op)) {
+        DiagnosedSilenceableFailure diag =
+            emitSilenceableError()
+            << "expected only linalg ops on tensors, tensor.empty and "
+               "constants";
+        diag.attachNote(op.getLoc()) << "op";
+        return diag;
+      }
+    }
+    if (computes.empty())
+      return emitSilenceableError() << "expected a linalg op";
+
+    // The partition: ops chained through their inits, then the groups.
+    llvm::EquivalenceClasses<Operation *> partition;
+    auto isCompute = [&](Operation *op) {
+      return op && partition.findValue(op) != partition.end();
+    };
+    for (Operation *op : computes) {
+      partition.insert(op);
+      for (OpOperand &init : cast<linalg::LinalgOp>(op).getDpsInitsMutable())
+        if (Operation *producer = init.get().getDefiningOp();
+            isCompute(producer))
+          partition.unionSets(op, producer);
+    }
+    for (Value handle : getGroups()) {
+      Operation *first = nullptr;
+      for (Operation *op : state.getPayloadOps(handle)) {
+        if (!func->isAncestor(op))
+          continue;
+        if (!isCompute(op)) {
+          DiagnosedSilenceableFailure diag =
+              emitSilenceableError()
+              << "expected grouped ops to be linalg ops of the function";
+          diag.attachNote(op->getLoc()) << "op";
+          return diag;
+        }
+        if (first)
+          partition.unionSets(first, op);
+        first = op;
+      }
+    }
+
+    // The groups, in program order of their first op.
+    SmallVector<SmallVector<Operation *>> groups;
+    DenseMap<Operation *, unsigned> groupOfLeader;
+    for (Operation *op : computes) {
+      auto [it, inserted] = groupOfLeader.try_emplace(
+          partition.getLeaderValue(op), groups.size());
+      if (inserted)
+        groups.emplace_back();
+      groups[it->second].push_back(op);
+    }
+    auto groupOf = [&](Operation *op) {
+      return groupOfLeader.lookup(partition.getLeaderValue(op));
+    };
+
+    // The task order: a group after the groups whose results it uses, in
+    // program order when there is a choice.
+    SmallVector<llvm::SmallSetVector<unsigned, 4>> deps(groups.size());
+    for (auto [i, ops] : llvm::enumerate(groups))
+      for (Operation *op : ops)
+        for (Value operand : op->getOperands())
+          if (Operation *def = operand.getDefiningOp();
+              isCompute(def) && groupOf(def) != i)
+            deps[i].insert(groupOf(def));
+    SmallVector<unsigned> order;
+    SmallVector<bool> placed(groups.size(), false);
+    while (order.size() < groups.size()) {
+      unsigned next = 0;
+      while (next < groups.size() &&
+             (placed[next] || !llvm::all_of(deps[next], [&](unsigned dep) {
+               return placed[dep];
+             })))
+        ++next;
+      if (next == groups.size())
+        return emitSilenceableError() << "expected groups that don't depend "
+                                         "on each other";
+      placed[next] = true;
+      order.push_back(next);
+    }
+
+    // What each group yields, its results used outside it, and the init each
+    // one is written into: the root of its chain of inits, a tensor.empty.
+    SmallVector<llvm::SmallSetVector<Value, 4>> yields(groups.size());
+    SmallVector<llvm::SmallSetVector<OpOperand *, 4>> edges(groups.size());
+    for (unsigned i = 0; i < groups.size(); ++i)
+      for (Operation *op : groups[i])
+        for (OpResult result : op->getResults()) {
+          if (llvm::all_of(result.getUsers(), [&](Operation *user) {
+                return isCompute(user) && groupOf(user) == i;
+              }))
+            continue;
+          yields[i].insert(result);
+          OpOperand *init = nullptr;
+          for (OpResult value = result; value && isCompute(value.getOwner());
+               value = dyn_cast<OpResult>(init->get()))
+            init = cast<DestinationStyleOpInterface>(value.getOwner())
+                       .getTiedOpOperand(value);
+          if (!init->get().getDefiningOp<tensor::EmptyOp>()) {
+            DiagnosedSilenceableFailure diag =
+                emitSilenceableError()
+                << "expected an edge written into a tensor.empty";
+            diag.attachNote(op->getLoc()) << "op";
+            return diag;
+          }
+          edges[i].insert(init);
+        }
+
+    // The values the function returns, from the dispatch.
+    auto ret = cast<func::ReturnOp>(body.getTerminator());
+    llvm::SmallSetVector<Value, 4> outputs;
+    for (Value value : ret.getOperands())
+      if (isCompute(value.getDefiningOp()))
+        outputs.insert(value);
+
+    Location loc = func.getLoc();
+    rewriter.setInsertionPoint(ret);
+    auto dispatch = rewriter.create<df::DispatchOp>(
+        loc, TypeRange(ValueRange(outputs.getArrayRef())));
+    Block *dispatchBlock = rewriter.createBlock(&dispatch.getBody());
+    DenseMap<Value, Value> taskResults;
+    for (unsigned i : order) {
+      rewriter.setInsertionPointToEnd(dispatchBlock);
+      for (OpOperand *edge : edges[i]) {
+        auto empty = edge->get().getDefiningOp<tensor::EmptyOp>();
+        Value buffer = rewriter.create<bufferization::AllocTensorOp>(
+            empty.getLoc(), empty.getType(), empty.getDynamicSizes());
+        rewriter.modifyOpInPlace(edge->getOwner(), [&] { edge->set(buffer); });
+      }
+
+      auto task = rewriter.create<df::TaskOp>(
+          loc, TypeRange(ValueRange(yields[i].getArrayRef())));
+      Block *taskBlock = rewriter.createBlock(&task.getBody());
+      for (Operation *op : groups[i]) {
+        rewriter.moveOpBefore(op, taskBlock, taskBlock->end());
+        // A private init: a tensor.empty of its own, in the task.
+        for (OpOperand &operand : op->getOpOperands())
+          if (auto empty = operand.get().getDefiningOp<tensor::EmptyOp>();
+              empty && !task->isAncestor(empty)) {
+            rewriter.setInsertionPoint(op);
+            Value copy = rewriter.clone(*empty)->getResult(0);
+            rewriter.modifyOpInPlace(op, [&] { operand.set(copy); });
+          }
+      }
+      rewriter.setInsertionPointToEnd(taskBlock);
+      rewriter.create<df::YieldOp>(loc, yields[i].getArrayRef());
+
+      for (auto [value, result] : llvm::zip(yields[i], task.getResults())) {
+        rewriter.replaceUsesWithIf(value, result, [&](OpOperand &use) {
+          return !task->isAncestor(use.getOwner());
+        });
+        taskResults[value] = result;
+      }
+    }
+    rewriter.setInsertionPointToEnd(dispatchBlock);
+    SmallVector<Value> dispatchYields;
+    for (Value output : outputs)
+      dispatchYields.push_back(taskResults.lookup(output));
+    rewriter.create<df::YieldOp>(loc, dispatchYields);
+    for (auto [value, result] :
+         llvm::zip(dispatchYields, dispatch.getResults()))
+      rewriter.replaceUsesWithIf(value, result, [&](OpOperand &use) {
+        return use.getOwner() == ret;
+      });
+
+    for (Operation &op : llvm::make_early_inc_range(body))
+      if (isa<tensor::EmptyOp>(op) && op.use_empty())
+        rewriter.eraseOp(&op);
+    dispatches.push_back(dispatch);
+  }
+  results.set(cast<OpResult>(getDispatch()), dispatches);
+  return DiagnosedSilenceableFailure::success();
+}
+
+void mlir::transform::CreateTasksOp::getEffects(
+    ::llvm::SmallVectorImpl<::mlir::MemoryEffects::EffectInstance> &effects) {
+  onlyReadsHandle(getTargetMutable(), effects);
+  onlyReadsHandle(getGroupsMutable(), effects);
+  producesHandle(getOperation()->getOpResults(), effects);
   modifiesPayload(effects);
 }
 

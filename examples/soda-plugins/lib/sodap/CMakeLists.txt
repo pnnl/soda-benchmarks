@@ -28,6 +28,7 @@ add_mlir_dialect_library(MLIRSODAP
         MLIRTensorDialect
         MLIRTilingInterface
         MLIRArithDialect
+        MLIRBufferizationDialect
         MLIRTransformUtils
         MLIRSODAPDataflow
         )

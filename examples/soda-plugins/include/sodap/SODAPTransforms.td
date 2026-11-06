@@ -46,19 +46,25 @@ def TagOpsOp : Op<Transform_Dialect, "sodap.tag_ops",
 def TileAndFuseOp : Op<Transform_Dialect, "sodap.tile_and_fuse",
     [DeclareOpInterfaceMethods<TransformOpInterface>,
      DeclareOpInterfaceMethods<MemoryEffectsOpInterface>]> {
-  let summary = "Tiles the nest of each result of a function, by iterator type";
+  let summary = "Tiles the nest of each result of a task, by iterator type";
   let description = [{
-    Takes functions on tensors. For each linalg op producing a returned value:
+    Takes tasks on tensors (`dataflow.task`, from
+    `transform.sodap.create_tasks`), each tiled on its own. For each linalg
+    op producing a value the task yields:
 
     - tiles its parallel dims by the tile and fuses its producers, as
-      `transform.structured.fuse` does, so a fill lands in the parallel loops;
+      `transform.structured.fuse` does, so a fill lands in the parallel loops.
+      Only producers in the task are fused: the task's inputs (function
+      arguments, constants, other tasks' results) and the edge it writes
+      (a `bufferization.alloc_tensor` in the dispatch) are not tileable ops;
     - then, in that nest, tiles the reduction dims of every linalg op having
       some by the tile, as `transform.structured.tile_using_for` does, so
       the accumulator stays across the reduction loop.
 
     The tile is the largest divisor of the GCD of the loop ranges of every
-    linalg op in the function that is at most `max_tile_size`: every loop
-    tiles evenly, so every tile is static. Loop ranges 60, 70, 80 and
+    linalg op in the task's function that is at most `max_tile_size`: every
+    loop tiles evenly, so every tile is static, and every task of the
+    function gets the same tile. Loop ranges 60, 70, 80 and
     `max_tile_size = 10` give 10; 8, 12, 16 give 4.
 
     The tile sizes come from the iterator types of each op, so one script fits
@@ -69,9 +75,9 @@ def TileAndFuseOp : Op<Transform_Dialect, "sodap.tile_and_fuse",
     #### Return modes
 
     Returns nothing, and only reads the handle. Fails silenceably, without
-    changing the IR, if a target is not a `func.func`, a returned value is
-    not produced by a linalg op with a parallel dim, or a loop range is
-    dynamic. Fails definitely if tiling fails.
+    changing the IR, if a target is not a `dataflow.task` in a `func.func`,
+    a yielded value is not produced by a linalg op with a parallel dim, or a
+    loop range in the function is dynamic. Fails definitely if tiling fails.
   }];
 
   let arguments = (ins
@@ -85,6 +91,52 @@ def TileAndFuseOp : Op<Transform_Dialect, "sodap.tile_and_fuse",
 
 // Not PromoteOp: that class is transform.structured.promote, and a second one
 // would share its TypeID and never get registered.
+def CreateTasksOp : Op<Transform_Dialect, "sodap.create_tasks",
+    [DeclareOpInterfaceMethods<TransformOpInterface>,
+     DeclareOpInterfaceMethods<MemoryEffectsOpInterface>]> {
+  let summary = "Groups the linalg ops of a function into compute tasks";
+  let description = [{
+    Takes functions on tensors, before tiling, holding only linalg ops,
+    `tensor.empty` and constants. Wraps their linalg ops in one
+    `dataflow.dispatch` with one `dataflow.task` per group, just before the
+    `func.return`:
+
+    - Ops chained through their inits share a group, so a fill lands with the
+      op it initializes. With no `groups`, this is the partition.
+    - Each `groups` handle puts its ops, and the ops chained to them, in one
+      group. A handle's ops in another function are ignored.
+
+    The tasks follow the order of their dependencies, in program order when
+    there is a choice. Each task yields its results used outside it: those
+    are the edges. The init each edge is written into, through the chain of
+    inits in the task, must be a `tensor.empty`: it becomes a
+    `bufferization.alloc_tensor` in the dispatch, right before the task, so
+    the edge is allocated there. The other `tensor.empty` inits get a copy in
+    the task, and stay private to it. The dispatch yields the returned
+    values.
+
+    Constants and function arguments stay outside the dispatch: they are the
+    memory edges, for the load tasks.
+
+    #### Return modes
+
+    Returns the dispatch ops. Fails silenceably, without changing the IR, if
+    a target is not a `func.func` with one block, holds another kind of op
+    or no linalg op, a grouped op is not one of its linalg ops, the groups
+    depend on each other, or an edge isn't written into a `tensor.empty`.
+  }];
+
+  let arguments = (ins TransformHandleTypeInterface:$target,
+                       Variadic<TransformHandleTypeInterface>:$groups);
+
+  let results = (outs TransformHandleTypeInterface:$dispatch);
+
+  let assemblyFormat = [{
+    $target (`groups` `(` $groups^ `)`)? attr-dict `:`
+    functional-type(operands, results)
+  }];
+}
+
 def PromoteTilesOp : Op<Transform_Dialect, "sodap.promote",
     [FunctionalStyleTransformOpTrait, MemoryEffectsOpInterface,
      DeclareOpInterfaceMethods<TransformOpInterface>]> {
