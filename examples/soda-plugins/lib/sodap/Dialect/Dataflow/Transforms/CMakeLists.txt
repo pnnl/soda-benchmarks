@@ -1,5 +1,8 @@
 add_mlir_dialect_library(MLIRSODAPDataflowTransforms
         CopyToDMA.cpp
+        LoadStore.cpp
+        PingPong.cpp
+        Schedule.cpp
         InferTopInterface.cpp
         NodesToFunc.cpp
         TasksToNodes.cpp
@@ -18,6 +21,7 @@ add_mlir_dialect_library(MLIRSODAPDataflowTransforms
         MLIRFuncDialect
         MLIRAffineDialect
         MLIRArithDialect
+        MLIRLinalgDialect
         MLIRMemRefDialect
         MLIRSCFDialect
         MLIRDialectUtils

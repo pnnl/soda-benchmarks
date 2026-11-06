@@ -232,8 +232,8 @@ struct CopyToDMA : public dataflow::impl::CopyToDMABase<CopyToDMA> {
 
     MLIRContext *ctx = &getContext();
     Location loc = top.getLoc();
-    auto ctrlType = StreamType::get(ctx, IntegerType::get(ctx, 64), 8);
-    auto dataType = StreamType::get(ctx, IntegerType::get(ctx, 32), 16);
+    auto ctrlType = StreamType::get(ctx, IntegerType::get(ctx, 64), 4);
+    auto dataType = StreamType::get(ctx, IntegerType::get(ctx, 32), 1);
     unsigned next = top.getNumArguments();
     for (Type type : {ctrlType, dataType, ctrlType, dataType})
       top.insertArgument(next++, type, DictionaryAttr::get(ctx), loc);

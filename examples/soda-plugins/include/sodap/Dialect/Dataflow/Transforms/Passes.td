@@ -11,6 +11,161 @@
 
 include "mlir/Pass/PassBase.td"
 
+def LoadStore :
+    Pass<"sodap-dataflow-load-store", "::mlir::func::FuncOp"> {
+  let summary = "Add the load and the store task of a dispatch";
+  let description = [{
+    Works on memrefs, after `buffer-results-to-out-params`, on a function
+    holding one `dataflow.dispatch` of compute tasks. Afterwards nothing but
+    allocations and constants is left outside the dispatch, which runs
+    load → compute tasks → store:
+
+    - Load: every function argument or constant (`memref.get_global`) a
+      compute task reads gets a buffer of its own in the dispatch, which the
+      task reads instead, and one task at the start of the dispatch copies
+      them all in (`memref.copy`). An input read by two compute tasks is
+      copied into a buffer for each.
+    - Store: the `memref.copy` of a dispatch result into an out-param, which
+      `buffer-results-to-out-params` adds after the dispatch, moves into it,
+      as a task at its end copying the buffer the dispatch yields. The
+      dispatch result is left unused, for canonicalize to drop. The store
+      copies a tile per iteration of its writer's prefix: the writer's outer
+      loops whose induction variable is the offset of its access along a dim
+      of the buffer, with the step as size (`Prefix.h`). Each tile goes out as
+      soon as the writer is done with it. With an empty prefix, it copies the
+      whole buffer.
+
+    The load buffers are whole: `sodap-dataflow-schedule` tiles the loads.
+
+    Example:
+
+    ```mlir
+    %r = dataflow.dispatch : memref<4xf32> {
+      %o = memref.alloc() : memref<4xf32>
+      dataflow.task {
+        linalg.copy ins(%arg0 : memref<4xf32>) outs(%o : memref<4xf32>)
+      }
+      dataflow.yield %o : memref<4xf32>
+    }
+    memref.copy %r, %arg1 : memref<4xf32> to memref<4xf32>
+    // becomes
+    %r = dataflow.dispatch : memref<4xf32> {
+      %in = memref.alloc() : memref<4xf32>
+      dataflow.task {
+        memref.copy %arg0, %in : memref<4xf32> to memref<4xf32>
+      }
+      %o = memref.alloc() : memref<4xf32>
+      dataflow.task {
+        linalg.copy ins(%in : memref<4xf32>) outs(%o : memref<4xf32>)
+      }
+      dataflow.task {
+        memref.copy %o, %arg1 : memref<4xf32> to memref<4xf32>
+      }
+      dataflow.yield %o : memref<4xf32>
+    }
+    ```
+
+    Fails on more than one dispatch, on more than one out-param (not
+    supported yet), and on a compute task that writes a function argument or
+    a constant, or reads one with a dynamic shape or another layout.
+  }];
+  let dependentDialects = [
+    "::mlir::sodap::dataflow::DataflowDialect",
+    "::mlir::arith::ArithDialect",
+    "::mlir::memref::MemRefDialect",
+    "::mlir::scf::SCFDialect"
+  ];
+}
+
+def Schedule :
+    Pass<"sodap-dataflow-schedule", "::mlir::func::FuncOp"> {
+  let summary = "Give the tasks of a dispatch one loop nest, built on demand";
+  let description = [{
+    Works on the dispatches `sodap-dataflow-load-store` leaves: a first task
+    copying whole arguments and constants into load buffers, the compute
+    tasks, and a last task, the store. Every task gets the same loop nest,
+    built on demand, and keeps its own ops of it:
+
+    - Start from the nest of the store, the last task.
+    - Where a task reads a tile of a buffer another task writes, put the
+      writer's nest, with the loops stepping through the written tiles
+      pinned to the tile read (or narrowed to it, if it holds several), and
+      go on into it the same way.
+    - Where a task reads a load buffer, the load task copies the tile in from
+      the argument or constant, through the same views. A scalar is copied at
+      each read.
+
+    The load task keeps the copies, each compute task its ops, the store its
+    copies; the loops and views left with none of a task's ops are dropped,
+    and a task's top-level allocations stay at its start. This is the
+    always-load schedule: a tile read again (under a loop that doesn't index
+    it) is made again, its loads issued again. On every buffer shared by two
+    tasks, the writer and the reader then walk the same tiles in the same
+    order: `sodap-dataflow-ping-pong` can synchronise them with a depth-1
+    token per tile.
+
+    On trmm (matmul of the transpose of A_lower, then `alpha *`, then the
+    store), per tile of the result, the loads are:
+
+    ```
+    for i: for j:
+      load alpha
+      for k:
+        load the A, lower_mask, eye tiles of (k, i)   // A_lower behind A_lower^T (i, k)
+        load B[k, j]
+    ```
+
+    and A_lower, its transpose and the matmul run under the same i, j, k.
+
+    Fails on a compute task read by more than one task (each tile it makes
+    goes to one read), on a compute task the store doesn't depend on, on a
+    read of another task's buffer that isn't a tile of it through static,
+    unit-stride subviews, or covers part of a written tile.
+  }];
+  let dependentDialects = [
+    "::mlir::sodap::dataflow::DataflowDialect",
+    "::mlir::arith::ArithDialect",
+    "::mlir::memref::MemRefDialect",
+    "::mlir::scf::SCFDialect"
+  ];
+}
+
+def PingPong :
+    Pass<"sodap-dataflow-ping-pong", "::mlir::func::FuncOp"> {
+  let summary = "Synchronise the tasks of a dispatch with ping-pong buffers";
+  let description = [{
+    Works on the dispatches `sodap-dataflow-schedule` leaves: tasks sharing
+    buffers a tile at a time, the writer and the readers of each walking the
+    same tiles in the same order. Each such buffer becomes a ping-pong of its
+    tile, `memref<2 x tile>`, with a `!dataflow.stream<i8, 1>` per reader
+    carrying the slot. In a task, the tile's level is the innermost block
+    holding all the task's accesses to the buffer, run once per tile:
+
+    - The writer keeps a slot variable. It writes the tile in the slot, then,
+      after its last access of the level, writes the slot to every reader's
+      stream and switches to the other slot. A writer that also reads the
+      buffer (an accumulation) works on a private tile, copied in the slot
+      before the tokens: Bambu wants each task on a ping-pong buffer to be a
+      writer or a reader, not both.
+    - A reader peeks the slot before its first access of the level and reads
+      the stream after its last.
+
+    Depth 1 is enough: the writer's push of the next token blocks until the
+    reader frees the previous slot, so it never writes a slot in use.
+
+    Fails on a buffer shared by tasks written by none or several of them, on
+    a task using it in tiles of another shape, or on a reader reading a
+    number of tiles other than the writer writes (when the loops have
+    constant trip counts).
+  }];
+  let dependentDialects = [
+    "::mlir::sodap::dataflow::DataflowDialect",
+    "::mlir::arith::ArithDialect",
+    "::mlir::linalg::LinalgDialect",
+    "::mlir::memref::MemRefDialect"
+  ];
+}
+
 def TasksToNodes :
     Pass<"sodap-dataflow-tasks-to-nodes", "::mlir::func::FuncOp"> {
   let summary = "Lower dataflow tasks to nodes with explicit ports";
@@ -92,10 +247,10 @@ def CopyToDMA :
     one after the other in argument order, in words. They are replaced by the
     four streams of a DMA engine, appended to the top's arguments:
 
-        read requests  !dataflow.stream<i64, 8>
-        read data      !dataflow.stream<i32, 16>
-        write requests !dataflow.stream<i64, 8>
-        write data     !dataflow.stream<i32, 16>
+        read requests  !dataflow.stream<i64, 4>
+        read data      !dataflow.stream<i32, 1>
+        write requests !dataflow.stream<i64, 4>
+        write data     !dataflow.stream<i32, 1>
 
     Every `memref.copy` from a tile (`memref.subview`) of such an argument
     becomes, for each row of the tile along its innermost dimension, a read

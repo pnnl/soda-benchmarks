@@ -8,7 +8,7 @@
 // CHECK-DAG: #[[ADDRA:.*]] = affine_map<(d0, d1, d2) -> (d0 * 12 + d1 + d2 * 12)>
 // CHECK-DAG: #[[ADDRC:.*]] = affine_map<(d0, d1, d2) -> (d0 * 16 + d1 + d2 * 16 + 96)>
 // CHECK-LABEL: func.func @top
-// CHECK-SAME: (%[[RQ:.*]]: !dataflow.stream<i64, 8>, %[[RD:.*]]: !dataflow.stream<i32, 16>, %[[WQ:.*]]: !dataflow.stream<i64, 8>, %[[WD:.*]]: !dataflow.stream<i32, 16>)
+// CHECK-SAME: (%[[RQ:.*]]: !dataflow.stream<i64, 4>, %[[RD:.*]]: !dataflow.stream<i32, 1>, %[[WQ:.*]]: !dataflow.stream<i64, 4>, %[[WD:.*]]: !dataflow.stream<i32, 1>)
 // CHECK: %[[LEN:.*]] = arith.constant 17179869184 : i64
 
 // Load: inside the i and k loops, one request per row r.
@@ -20,7 +20,7 @@
 // CHECK:   %[[REQ:.*]] = arith.ori %[[A64]], %[[LEN]] : i64
 // CHECK:   dataflow.stream_write %[[RQ]], %[[REQ]]
 // CHECK:   scf.for %[[E:.*]] =
-// CHECK:     %[[W:.*]] = dataflow.stream_read %[[RD]] : (!dataflow.stream<i32, 16>) -> i32
+// CHECK:     %[[W:.*]] = dataflow.stream_read %[[RD]] : (!dataflow.stream<i32, 1>) -> i32
 // CHECK:     %[[F:.*]] = arith.bitcast %[[W]] : i32 to f32
 // CHECK:     memref.store %[[F]], %{{.*}}[%[[R]], %[[E]]]
 // CHECK-NOT: memref.copy
