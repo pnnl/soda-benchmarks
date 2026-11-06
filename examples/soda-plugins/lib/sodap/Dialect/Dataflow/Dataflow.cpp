@@ -18,8 +18,11 @@
 #include "sodap/Dialect/Dataflow/Dataflow.h"
 
 #include "mlir/Analysis/Liveness.h"
+#include "mlir/Dialect/Tensor/IR/Tensor.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/DialectImplementation.h"
+#include "mlir/Interfaces/DestinationStyleOpInterface.h"
+#include "mlir/Interfaces/LoopLikeInterface.h"
 #include "mlir/Transforms/RegionUtils.h"
 #include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/TypeSwitch.h"
@@ -140,6 +143,28 @@ struct SimplifyDispatchOrTaskOutputs : public OpRewritePattern<OpType> {
   }
 };
 
+/// Use a value defined above the op instead of the result that yields it. After
+/// bufferization this exposes the buffer a task writes: a store whose
+/// destination is allocated in the function is then returned directly, and
+/// `buffer-results-to-out-params{hoist-static-allocs}` makes it the out-param.
+template <typename OpType>
+struct ForwardDefinedAbove : public OpRewritePattern<OpType> {
+  using OpRewritePattern<OpType>::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(OpType op,
+                                PatternRewriter &rewriter) const override {
+    bool changed = false;
+    for (auto [result, value] :
+         llvm::zip(op.getResults(), op.getYieldOp().getOperands()))
+      if (!result.use_empty() &&
+          !op.getBody().isAncestor(value.getParentRegion())) {
+        rewriter.replaceAllUsesWith(result, value);
+        changed = true;
+      }
+    return success(changed);
+  }
+};
+
 /// Inline a dispatch or task op into its parent when `condition` holds.
 ///
 /// `condition` is a plain function pointer rather than a `llvm::function_ref`
@@ -174,13 +199,21 @@ private:
 
 void DispatchOp::getCanonicalizationPatterns(RewritePatternSet &results,
                                              MLIRContext *context) {
-  results.add<SimplifyDispatchOrTaskOutputs<DispatchOp>>(context);
+  results.add<SimplifyDispatchOrTaskOutputs<DispatchOp>,
+              ForwardDefinedAbove<DispatchOp>>(context);
   results.add<InlineDispatchOrTask<DispatchOp>>(context, [](DispatchOp op) {
     return op.getOps<TaskOp>().empty() || llvm::hasSingleElement(op.getOps());
   });
 }
 
 LogicalResult DispatchOp::verify() {
+  // The soda ops by name: the plugin doesn't link the soda dialect.
+  Operation *parent = (*this)->getParentOp();
+  StringRef name = parent->getName().getStringRef();
+  if (!isa<func::FuncOp, affine::AffineForOp>(parent) &&
+      name != "soda.launch" && name != "soda.func")
+    return emitOpError("expects parent op to be one of 'func.func, "
+                       "affine.for, soda.launch, soda.func'");
   if (getResultTypes() != getYieldOp().getOperandTypes())
     return emitOpError("yield type doesn't align with result type");
   return success();
@@ -196,15 +229,53 @@ YieldOp DispatchOp::getYieldOp() {
 
 void TaskOp::getCanonicalizationPatterns(RewritePatternSet &results,
                                          MLIRContext *context) {
-  results.add<SimplifyDispatchOrTaskOutputs<TaskOp>>(context);
+  results.add<SimplifyDispatchOrTaskOutputs<TaskOp>,
+              ForwardDefinedAbove<TaskOp>>(context);
   results.add<InlineDispatchOrTask<TaskOp>>(
       context, [](TaskOp op) { return llvm::hasSingleElement(op.getOps()); });
+}
+
+/// The task result the tensor `value` is, or is a slice of, if any.
+static OpResult taskResultOf(Value value) {
+  if (!isa<TensorType>(value.getType()))
+    return {};
+  while (auto slice = value.getDefiningOp<tensor::ExtractSliceOp>())
+    value = slice.getSource();
+  auto result = dyn_cast<OpResult>(value);
+  return result && isa<TaskOp>(result.getOwner()) ? result : OpResult();
 }
 
 LogicalResult TaskOp::verify() {
   if (getResultTypes() != getYieldOp().getOperandTypes())
     return emitOpError("yield type doesn't align with result type");
-  return success();
+
+  // On tensors, another task's result is read only: a destination (DPS init,
+  // loop init) would bufferize to a write into the other task's buffer, which
+  // Bambu can't have on a ping-pong buffer. A task's own results aren't in
+  // scope inside it, so any task result found here is another task's. On
+  // memrefs, writing a shared buffer is what tokens order, so it is allowed.
+  // ponytail: follows extract_slice only; add other view ops when tiling
+  // produces them.
+  WalkResult walk = getBody().walk([&](Operation *op) {
+    SmallVector<OpOperand *> inits;
+    if (auto dps = dyn_cast<DestinationStyleOpInterface>(op))
+      for (OpOperand &init : dps.getDpsInitsMutable())
+        inits.push_back(&init);
+    if (auto loop = dyn_cast<LoopLikeOpInterface>(op))
+      for (OpOperand &init : loop.getInitsMutable())
+        inits.push_back(&init);
+    for (OpOperand *init : inits)
+      if (OpResult result = taskResultOf(init->get())) {
+        InFlightDiagnostic diag =
+            emitOpError("writes the result of another task");
+        diag.attachNote(op->getLoc())
+            << "used as destination #" << init->getOperandNumber() << " here";
+        diag.attachNote(result.getOwner()->getLoc()) << "task defined here";
+        return WalkResult::interrupt();
+      }
+    return WalkResult::advance();
+  });
+  return failure(walk.wasInterrupted());
 }
 
 DispatchOp TaskOp::getDispatchOp() {

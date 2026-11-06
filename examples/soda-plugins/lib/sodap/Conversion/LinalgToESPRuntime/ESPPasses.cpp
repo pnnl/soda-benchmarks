@@ -58,6 +58,7 @@ namespace mlir::sodap {
 #define GEN_PASS_DEF_KERNELTOESPACCELERATOR
 #define GEN_PASS_DEF_PROFILEKERNEL
 #define GEN_PASS_DEF_LINALGBATCHMATMULTOESP
+#define GEN_PASS_DEF_ORDERKERNELARGUMENTS
 #include "sodap/SODAPPasses.h.inc"
 
 namespace {
@@ -354,13 +355,12 @@ static LogicalResult replaceBatchMatmul(linalg::BatchMatmulOp op,
   auto convert = [&](Value in, Value out, bool toToken) {
     unsigned rank = cast<MemRefType>(in.getType()).getRank();
     SmallVector<AffineMap> maps(2, builder.getMultiDimIdentityMap(rank));
-    SmallVector<utils::IteratorType> iters(rank,
-                                           utils::IteratorType::parallel);
+    SmallVector<utils::IteratorType> iters(rank, utils::IteratorType::parallel);
     builder.create<linalg::GenericOp>(
         loc, TypeRange{}, ValueRange{in}, ValueRange{out}, maps, iters,
         [&](OpBuilder &b, Location l, ValueRange args) {
-          Value v = toToken ? token.pack(b, l, args[0])
-                            : token.unpack(b, l, args[0]);
+          Value v =
+              toToken ? token.pack(b, l, args[0]) : token.unpack(b, l, args[0]);
           b.create<linalg::YieldOp>(l, v);
         });
   };
@@ -381,7 +381,8 @@ static LogicalResult replaceBatchMatmul(linalg::BatchMatmulOp op,
                   .getResult(0);
 
   // Step 2: Convert float inputs to fixed-point in shared memory.
-  // A's rows are K wide and unpadded; B's rows are N wide but stored Npad apart.
+  // A's rows are K wide and unpadded; B's rows are N wide but stored Npad
+  // apart.
   profBegin(kProfPack);
   if (marshalInIR) {
     convert(A, view(mem, A, offIn, K), /*toToken=*/true);
@@ -575,8 +576,8 @@ public:
     builder.setInsertionPointToEnd(&entry);
 
     auto constant = [&](int64_t value) -> Value {
-      return builder.create<arith::ConstantOp>(loc, i64Ty,
-                                               builder.getI64IntegerAttr(value));
+      return builder.create<arith::ConstantOp>(
+          loc, i64Ty, builder.getI64IntegerAttr(value));
     };
     auto mark = [&](const char *callee, uint32_t region) {
       if (!profile)
@@ -585,10 +586,11 @@ public:
       builder.create<func::CallOp>(loc, callee, TypeRange{}, ValueRange{id});
     };
     mark(kEspProfBegin, kProfAlloc);
-    Value handle = builder
-                       .create<func::CallOp>(loc, kEspAllocShared, TypeRange{i64Ty},
-                                             ValueRange{constant(words * 4)})
-                       .getResult(0);
+    Value handle =
+        builder
+            .create<func::CallOp>(loc, kEspAllocShared, TypeRange{i64Ty},
+                                  ValueRange{constant(words * 4)})
+            .getResult(0);
     mark(kEspProfEnd, kProfAlloc);
     mark(kEspProfBegin, kProfPack);
     for (const Argument &arg : arguments) {
@@ -600,7 +602,8 @@ public:
     }
     mark(kEspProfEnd, kProfPack);
     mark(kEspProfBegin, kProfAccel);
-    builder.create<func::CallOp>(loc, kEspAccelStart, TypeRange{}, ValueRange{});
+    builder.create<func::CallOp>(loc, kEspAccelStart, TypeRange{},
+                                 ValueRange{});
     builder.create<func::CallOp>(loc, kEspAccelWait, TypeRange{}, ValueRange{});
     mark(kEspProfEnd, kProfAccel);
     mark(kEspProfBegin, kProfUnpack);
@@ -665,8 +668,9 @@ public:
           return signalPassFailure();
         }
         if (type.getDimSize(0) != 1) {
-          op.emitError("ESP lowering requires a statically known batch size of 1 "
-                       "for every operand");
+          op.emitError(
+              "ESP lowering requires a statically known batch size of 1 "
+              "for every operand");
           return signalPassFailure();
         }
         if (marshalInIR && !type.hasStaticShape()) {
@@ -682,8 +686,9 @@ public:
         // function, including those in nested or different blocks.
         auto function = op->getParentOfType<func::FuncOp>();
         if (!function || ++perFunction[function.getOperation()] > 1) {
-          op.emitError("marshal=ir supports at most one ESP offload per function; "
-                       "use marshal=runtime for sequential offloads");
+          op.emitError(
+              "marshal=ir supports at most one ESP offload per function; "
+              "use marshal=runtime for sequential offloads");
           return signalPassFailure();
         }
       }
@@ -700,6 +705,100 @@ public:
                                     epilogue)))
         return signalPassFailure();
     }
+  }
+};
+
+/// The soda ops by name: the plugin doesn't link the soda dialect.
+class OrderKernelArguments
+    : public impl::OrderKernelArgumentsBase<OrderKernelArguments> {
+public:
+  void runOnOperation() override {
+    ModuleOp module = getOperation();
+    WalkResult result = module.walk([&](Operation *launch) {
+      if (launch->getName().getStringRef() != "soda.launch_func")
+        return WalkResult::advance();
+      return succeeded(order(module, launch)) ? WalkResult::advance()
+                                              : WalkResult::interrupt();
+    });
+    if (result.wasInterrupted())
+      signalPassFailure();
+  }
+
+private:
+  /// The op named `name` with symbol `symbol` under `scope`, if any.
+  static Operation *find(Operation *scope, StringRef name, StringAttr symbol) {
+    Operation *found = nullptr;
+    scope->walk([&](Operation *op) {
+      if (op->getName().getStringRef() == name &&
+          op->getAttrOfType<StringAttr>("sym_name") == symbol) {
+        found = op;
+        return WalkResult::interrupt();
+      }
+      return WalkResult::advance();
+    });
+    return found;
+  }
+
+  LogicalResult order(ModuleOp module, Operation *launch) {
+    auto ref = launch->getAttrOfType<SymbolRefAttr>("kernel");
+    Operation *container =
+        ref ? find(module, "soda.module", ref.getRootReference()) : nullptr;
+    Operation *kernel =
+        container ? find(container, "soda.func", ref.getLeafReference())
+                  : nullptr;
+    if (!kernel || kernel->getNumRegions() != 1 || kernel->getRegion(0).empty())
+      return launch->emitOpError("expected the kernel's soda.func");
+    if (auto sizes =
+            launch->getAttrOfType<DenseI32ArrayAttr>("operandSegmentSizes");
+        sizes && sizes.asArrayRef().front() != 0)
+      return launch->emitOpError("expected no async dependencies");
+
+    // Each operand a distinct argument of the caller: sort by its number.
+    Block &caller = launch->getParentOfType<func::FuncOp>().front();
+    SmallVector<unsigned> numbers;
+    for (Value operand : launch->getOperands()) {
+      auto arg = dyn_cast<BlockArgument>(operand);
+      if (!arg || arg.getOwner() != &caller ||
+          llvm::is_contained(numbers, arg.getArgNumber()))
+        return launch->emitOpError(
+            "expected distinct arguments of the caller as operands");
+      numbers.push_back(arg.getArgNumber());
+    }
+    auto order = llvm::to_vector(llvm::seq<unsigned>(0, numbers.size()));
+    llvm::sort(order,
+               [&](unsigned a, unsigned b) { return numbers[a] < numbers[b]; });
+
+    Block &entry = kernel->getRegion(0).front();
+    auto type = kernel->getAttrOfType<TypeAttr>("function_type");
+    auto function = type ? dyn_cast<FunctionType>(type.getValue()) : nullptr;
+    if (!function || entry.getNumArguments() != numbers.size() ||
+        function.getNumInputs() != numbers.size())
+      return kernel->emitOpError(
+          "expected as many arguments as the launch has operands");
+
+    // Permute the launch's operands, the kernel's arguments, their types and
+    // attributes alike.
+    unsigned n = numbers.size();
+    SmallVector<Value> operands;
+    SmallVector<Type> inputs;
+    for (unsigned i : order) {
+      operands.push_back(launch->getOperand(i));
+      inputs.push_back(function.getInput(i));
+      BlockArgument old = entry.getArgument(i);
+      old.replaceAllUsesWith(entry.addArgument(old.getType(), old.getLoc()));
+    }
+    entry.eraseArguments(0, n);
+    launch->setOperands(operands);
+    kernel->setAttr("function_type",
+                    TypeAttr::get(FunctionType::get(&getContext(), inputs,
+                                                    function.getResults())));
+    if (auto attrs = kernel->getAttrOfType<ArrayAttr>("arg_attrs")) {
+      SmallVector<Attribute> permuted;
+      for (unsigned i : order)
+        permuted.push_back(attrs[i]);
+      kernel->setAttr("arg_attrs", ArrayAttr::get(&getContext(), permuted));
+    }
+    return success();
   }
 };
 

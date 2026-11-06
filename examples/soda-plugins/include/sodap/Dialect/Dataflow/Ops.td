@@ -68,7 +68,8 @@ def StreamOp : DataflowOp<"stream", [
   let hasVerifier = 1;
   let builders = [
     OpBuilder<(ins "mlir::Type":$channel),
-        "build($_builder, $_state, channel, 1);">
+        "build($_builder, $_state, channel, "
+        "::llvm::cast<::mlir::sodap::dataflow::StreamType>(channel).getDepth());">
   ];
 }
 
@@ -140,13 +141,16 @@ def StreamPeekOp : DataflowOp<"stream_peek", []> {
 //===----------------------------------------------------------------------===//
 
 def DispatchOp : DataflowOp<"dispatch", [RecursiveMemoryEffects,
-      SingleBlockImplicitTerminator<"YieldOp">,
-      ParentOneOf<["func::FuncOp", "affine::AffineForOp"]>]> {
+      SingleBlockImplicitTerminator<"YieldOp">]> {
   let summary = "Represent a dataflow dispatch region";
   let description = [{
     Dispatch has a transparent region holding the stages to be dispatched. It
     is the analogue of an HLS `#pragma HLS DATAFLOW` region: every stage in the
     body runs concurrently, communicating through the streams declared in it.
+
+    Its parent is a `func.func`, an `affine.for`, or, during soda-opt's
+    outlining, a `soda.launch` (the function's body) then a `soda.func` (the
+    kernel, a `func.func` again after `-soda-generate-bambu-accelcode`).
   }];
 
   let results = (outs Variadic<AnyType>:$results);

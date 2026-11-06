@@ -272,6 +272,34 @@ def KernelToESPAccelerator : Pass<"sodap-kernel-to-esp-accelerator", "::mlir::Mo
   ];
 }
 
+def OrderKernelArguments : Pass<"sodap-order-kernel-arguments", "::mlir::ModuleOp"> {
+  let summary = "Give an outlined kernel its caller's argument order";
+  let description = [{
+    Run in soda-opt, right after `-soda-outline-bambu-code`. The outlining
+    orders the kernel's arguments by their first use in the body, so two
+    pipelines outlining the same function (the accelerator and the CPU
+    baseline) can give the kernel two orders, while the test data is built for
+    one (`argument_order.txt`). This pass permutes the operands of each
+    `soda.launch_func`, and the arguments of the `soda.func` it launches, into
+    the order of the caller's arguments: `argument_order.txt` is then
+    `0 1 2 ...` whatever the body.
+
+    Example:
+
+    ```mlir
+    soda.launch_func @k::@k args(%arg1 : memref<f32>, %arg0 : memref<4xf32>)
+    soda.func @k(%arg0: memref<f32>, %arg1: memref<4xf32>) kernel { ... }
+    // becomes
+    soda.launch_func @k::@k args(%arg0 : memref<4xf32>, %arg1 : memref<f32>)
+    soda.func @k(%arg0: memref<4xf32>, %arg1: memref<f32>) kernel { ... }
+    ```
+
+    Fails on a launch whose operands aren't distinct arguments of its caller,
+    or with async dependencies. The soda ops are matched by name: the plugin
+    doesn't link the soda dialect.
+  }];
+}
+
 def LinalgBatchMatmulToESP : Pass<"sodap-linalg-batch-matmul-to-esp", "::mlir::ModuleOp"> {
   let summary = "Replace linalg.batch_matmul with ESP accelerator runtime calls";
   let description = [{

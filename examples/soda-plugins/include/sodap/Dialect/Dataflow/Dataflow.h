@@ -92,6 +92,9 @@ void setTopFuncAttr(Operation *op);
 bool hasRuntimeAttr(Operation *op);
 void setRuntimeAttr(Operation *op);
 
+/// One-shot-bufferize support for dispatch, task and yield.
+void registerBufferizableOpInterfaceExternalModels(DialectRegistry &registry);
+
 } // namespace dataflow
 } // namespace sodap
 } // namespace mlir

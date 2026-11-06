@@ -109,3 +109,39 @@ func.func @stream_op_axis() {
 func.func @bad_stream_interface(%c: !dataflow.stream<f32, 8, m_axi>) {
   return
 }
+
+// -----
+
+// A task may read another task's result but not write it, even through a
+// slice: it would bufferize to a second writer of the producer's buffer.
+func.func @task_writes_another_task_result(%a: tensor<4x4xf32>) -> tensor<2x2xf32> {
+  %cst = arith.constant 0.0 : f32
+  %r = dataflow.dispatch : tensor<2x2xf32> {
+    // expected-note @+1 {{task defined here}}
+    %t = dataflow.task : tensor<4x4xf32> {
+      dataflow.yield %a : tensor<4x4xf32>
+    }
+    // expected-error @+1 {{writes the result of another task}}
+    %o = dataflow.task : tensor<2x2xf32> {
+      %s = tensor.extract_slice %t[0, 0] [2, 2] [1, 1] : tensor<4x4xf32> to tensor<2x2xf32>
+      // expected-note @+1 {{used as destination #1 here}}
+      %0 = linalg.fill ins(%cst : f32) outs(%s : tensor<2x2xf32>) -> tensor<2x2xf32>
+      dataflow.yield %0 : tensor<2x2xf32>
+    }
+    dataflow.yield %o : tensor<2x2xf32>
+  }
+  return %r : tensor<2x2xf32>
+}
+
+// -----
+
+func.func @dispatch_parent() {
+  scf.execute_region {
+    // expected-error @+1 {{'dataflow.dispatch' op expects parent op to be one of 'func.func, affine.for, soda.launch, soda.func'}}
+    dataflow.dispatch {
+      dataflow.yield
+    }
+    scf.yield
+  }
+  return
+}

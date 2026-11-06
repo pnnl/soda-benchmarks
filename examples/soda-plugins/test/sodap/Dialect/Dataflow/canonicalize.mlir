@@ -98,3 +98,29 @@ func.func @drop_unused_dispatch_result(%arg0: memref<8xf32>, %c: !dataflow.strea
   }
   return %0#0 : f32
 }
+
+// -----
+
+// A result that only yields a value defined above its task is that value. On
+// memrefs this exposes the buffer a task writes: here the dispatch result
+// becomes %buf, which the function can then return directly.
+// CHECK-LABEL: func.func @forward_defined_above
+func.func @forward_defined_above(%buf: memref<8xf32>, %v: f32) -> memref<8xf32> {
+  // CHECK: dataflow.dispatch {
+  %r = dataflow.dispatch : memref<8xf32> {
+    // CHECK: dataflow.task {
+    %t = dataflow.task : memref<8xf32> {
+      linalg.fill ins(%v : f32) outs(%buf : memref<8xf32>)
+      dataflow.yield %buf : memref<8xf32>
+    }
+    dataflow.task {
+      linalg.fill ins(%v : f32) outs(%t : memref<8xf32>)
+      dataflow.yield
+    }
+    dataflow.yield %t : memref<8xf32>
+  }
+  // CHECK: linalg.fill {{.*}} outs(%arg0
+  // CHECK: linalg.fill {{.*}} outs(%arg0
+  // CHECK: return %arg0
+  return %r : memref<8xf32>
+}

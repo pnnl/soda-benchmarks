@@ -32,6 +32,8 @@ mlirGetDialectPluginInfo() {
   return {MLIR_PLUGIN_API_VERSION, "SODA", LLVM_VERSION_STRING,
           [](DialectRegistry *registry) {
             registry->insert<sodap::dataflow::DataflowDialect>();
+            sodap::dataflow::registerBufferizableOpInterfaceExternalModels(
+                *registry);
             sodap::registerMyExtension(*registry);
             sodap::registerSODAPTransforms(*registry);
           }};
