@@ -47,6 +47,47 @@ def LinalgRankReduceContractions
   ];
 }
 
+def LinalgConstantsToIndices
+    : Pass<"sodap-linalg-constants-to-indices"> {
+  let summary = "Compute tril/triu/eye-like constant inputs of linalg.generic "
+                "from the loop indices";
+  let description = [{
+    A rank-2 dense constant whose element (i, j) depends only on the diagonal
+    d = j - i, as a step (`d >= k ? c1 : c0`, tril and triu) or a single
+    diagonal (`d == k ? c1 : c0`, eye), is dropped from the `ins` of every
+    `linalg.generic` that reads it through a permutation. The body computes it
+    instead, from `linalg.index`, `arith.cmpi` and `arith.select`, so the
+    constant needs no buffer and no load. Other constants are left alone.
+
+    This is upstream's `FoldScalarOrSplatConstant` (run by
+    `linalg-fuse-elementwise-ops`) for diagonal-structured constants: TOSA
+    has no tril, triu or eye, so PyTorch models pass them as constants.
+    ```mlir
+    %eye = arith.constant dense<[[1.0, 0.0], [0.0, 1.0]]> : tensor<2x2xf32>
+    %0 = linalg.generic ... ins(%a, %eye) outs(%e) {
+    ^bb0(%x: f32, %y: f32, %o: f32):
+      %s = arith.addf %x, %y : f32
+      linalg.yield %s : f32
+    }
+    // becomes
+    %0 = linalg.generic ... ins(%a) outs(%e) {
+    ^bb0(%x: f32, %o: f32):
+      %i = linalg.index 0 : index
+      %j = linalg.index 1 : index
+      %d = arith.subi %j, %i : index
+      %c = arith.cmpi eq, %d, %c0 : index
+      %y = arith.select %c, %one, %zero : f32
+      %s = arith.addf %x, %y : f32
+      linalg.yield %s : f32
+    }
+    ```
+  }];
+  let dependentDialects = [
+    "::mlir::arith::ArithDialect",
+    "::mlir::linalg::LinalgDialect"
+  ];
+}
+
 def ViewOpGraph : Pass<"soda-view-op-graph"> {
   let summary = "Print Graphviz visualization of an operation";
   let description = [{

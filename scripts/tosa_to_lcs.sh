@@ -118,6 +118,7 @@ FRONT_END="func.func(
     ),
     linalg-fold-unit-extent-dims,
     linalg-fuse-elementwise-ops,
+    func.func(sodap-linalg-constants-to-indices),
     canonicalize"
 BUFFERIZE="one-shot-bufferize{bufferize-function-boundaries function-boundary-type-conversion=identity-layout-map},
     canonicalize,
