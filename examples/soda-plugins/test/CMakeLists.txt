@@ -13,6 +13,7 @@ set(SODAPLUGINS_TEST_DEPENDS
         FileCheck count not
         # soda-capi-test
         SODAPlugin
+        SODATosaPlugin
         mlir_mockesp_runner_utils
         mlir_sodap_instr_runner_utils
         )
