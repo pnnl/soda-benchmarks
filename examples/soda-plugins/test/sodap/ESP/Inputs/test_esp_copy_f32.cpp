@@ -19,7 +19,46 @@ static uint32_t bits(const float &value) {
   return result;
 }
 
+static void testContiguousCopies() {
+  constexpr uint32_t guard = 0x5a5a5a5a;
+  // Include a signaling NaN: these are object copies, not FP arithmetic.
+  const uint32_t values[] = {0x80000000u, 0x7fc12345u, 0x7f812345u,
+                             0x7f800000u, 0xff800000u, 0x00000001u};
+  float source[16], output[16];
+  for (auto &value : source) std::memcpy(&value, &guard, sizeof(value));
+  std::memcpy(source + 2, values, sizeof(values));
+  // Singleton dimensions may have arbitrary strides and remain contiguous.
+  Descriptor<3> src{{source, source, 2}, {2, 1, 3}, {3, 99, 1}};
+  Descriptor<3> dst{{output, output, 5}, {2, 1, 3}, {3, -17, 1}};
+  for (int64_t stride : {1, 2, 3}) {
+    alignas(8) unsigned char storage[24 * sizeof(float) + 8] = {};
+    // Exercise both aligned word copies and the unaligned fallback.
+    for (unsigned misalignment : {0u, 1u}) {
+      for (auto &value : output) std::memcpy(&value, &guard, sizeof(value));
+      auto *shared = storage + misalignment;
+      for (unsigned i = 0; i < 24; ++i)
+        std::memcpy(shared + i * sizeof(float), &guard, sizeof(guard));
+      assert(sodap::copyMemRefF32(3, &src, shared, 24, 2, true, stride));
+      assert(sodap::copyMemRefF32(3, &dst, shared, 24, 2, false, stride));
+      for (unsigned i = 0; i < 24; ++i) {
+        uint32_t actual;
+        std::memcpy(&actual, shared + i * sizeof(float), sizeof(actual));
+        bool copied = i >= 2 && (i - 2) % stride == 0 &&
+                      (i - 2) / stride < 6;
+        assert(actual == (copied ? values[(i - 2) / stride] : guard));
+      }
+      for (unsigned i = 0; i < 16; ++i)
+        assert(bits(output[i]) == (i >= 5 && i < 11 ? values[i - 5] : guard));
+      unsigned char before[sizeof(storage)];
+      std::memcpy(before, storage, sizeof(storage));
+      assert(!sodap::copyMemRefF32(3, &src, shared, 24, 20, true, stride));
+      assert(std::memcmp(before, storage, sizeof(storage)) == 0);
+    }
+  }
+}
+
 int main() {
+  testContiguousCopies();
   constexpr unsigned words = 24;
   constexpr uint32_t guard = 0x5a5a5a5a;
   int64_t handle = esp_alloc_shared(words * sizeof(float));

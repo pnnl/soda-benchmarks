@@ -1,6 +1,8 @@
 set(LLVM_OPTIONAL_SOURCES
   EspRuntime.cpp
   EspRuntimeMock.cpp
+  ReusableGemmRuntime.cpp
+  ReusableOperatorRuntime.cpp
   DynamicOpCounterRuntime.cpp
   esp_prof.c
 )
@@ -11,6 +13,8 @@ set(LLVM_OPTIONAL_SOURCES
 add_mlir_library(mlir_mockesp_runner_utils
   SHARED
   EspRuntimeMock.cpp
+  ReusableGemmRuntime.cpp
+  ReusableOperatorRuntime.cpp
   esp_prof.c
 
   EXCLUDE_FROM_LIBMLIR

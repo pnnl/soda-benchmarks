@@ -1724,7 +1724,7 @@ class TestTransformSchedules:
         assert (exp_dir / "IPs" / "sodaInstrHWCounters.v").is_file()
         assert "BAMBU_IP_INTEGRATION=true" in (exp_dir / "Makefile").read_text()
 
-    def test_every_kernel_has_a_full_alo_soda_mini_set(self) -> None:
+    def test_polybench_kernels_have_a_full_alo_soda_mini_set(self) -> None:
         """65 files: 13 bare schedules plus one per instrumentation recipe."""
         from benches import catalog
         from sb_cli.schedules import resolve_schedule
@@ -1736,7 +1736,14 @@ class TestTransformSchedules:
             "change-location-exposed-ports",
             "hw-counters",
         ]
-        for kernel in catalog.available():
+        # These schedules cover the upstream PolyBench kernels. Additional
+        # validation apps (e.g. gemmreuse) use their own lowering path.
+        kernels = {
+            "atax", "bicg", "doitgen", "gemm", "gemver", "gesummv", "mvt",
+            "symm", "syr2k", "syrk", "threemm", "trmm", "twomm",
+        }
+        assert kernels <= set(catalog.available())
+        for kernel in kernels:
             for recipe in recipes:
                 path = resolve_schedule(
                     "alo_soda",
