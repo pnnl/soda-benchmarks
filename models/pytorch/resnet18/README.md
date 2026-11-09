@@ -3,6 +3,9 @@
 In this example, we will show how to lower a ResNet18 PyTorch model to LLVM IR
 using scripts from the MLIR Tools used by SODA [docker image](https://hub.docker.com/r/agostini01/soda).
 
+For pretrained 224×224 inference with reusable ESP convolution, addition and
+GEMM hardware, see the [reusable operator flow](../../../examples/esp-validation/reusable-nn/README.md).
+
 
 ## Instructions for docker users
 
