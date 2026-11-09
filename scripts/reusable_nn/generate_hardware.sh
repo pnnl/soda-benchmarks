@@ -11,13 +11,16 @@ for kind in conv add gemm; do
   cd "$out/$kind"
   printf 'module {}\n' > empty.mlir
   if [[ "$kind" == gemm ]]; then
-    generator="sodap-generate-reusable-gemm{top-name=gemm_kernel tile-m=${NN_GEMM_M:-4} tile-n=${NN_GEMM_N:-4} tile-k=${NN_GEMM_K:-4}}"
+    generator="sodap-generate-reusable-gemm{top-name=gemm_kernel tile-m=${NN_GEMM_M:-4} tile-n=${NN_GEMM_N:-4} tile-k=${NN_GEMM_K:-4} schedule=${NN_GEMM_SCHEDULE:-sequential}}"
   else
-    generator="sodap-generate-reusable-operator{kind=$kind tile-pixels=${NN_CONV_PIXELS:-4} output-lanes=${NN_CONV_LANES:-8} tile-channels=${NN_CONV_CHANNELS:-16} block-elements=${NN_ADD_BLOCK:-128}}"
+    schedule=sequential
+    if [[ "$kind" == conv ]]; then schedule=${NN_CONV_SCHEDULE:-sequential}; fi
+    generator="sodap-generate-reusable-operator{kind=$kind tile-pixels=${NN_CONV_PIXELS:-4} output-lanes=${NN_CONV_LANES:-8} tile-channels=${NN_CONV_CHANNELS:-16} block-elements=${NN_ADD_BLOCK:-128} schedule=$schedule}"
   fi
   printf '%s\n' "$generator" > schedule.txt
   mlir-opt empty.mlir "${plugins[@]}" --pass-pipeline="builtin.module($generator,canonicalize,cse)" -o hardware.mlir
   mlir-opt hardware.mlir "${plugins[@]}" --pass-pipeline="builtin.module(
+    func.func(promote-buffers-to-stack{max-alloc-size-in-bytes=1048576}),
     sodap-emit-bambu-architecture{top-func=${kind}_kernel file=architecture.xml},
     sodap-convert-dataflow-to-llvm,lower-affine,convert-scf-to-cf,
     convert-math-to-llvm,expand-strided-metadata,lower-affine,

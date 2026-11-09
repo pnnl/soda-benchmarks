@@ -282,7 +282,8 @@ def GenerateReusableGemm : Pass<"sodap-generate-reusable-gemm", "::mlir::ModuleO
     Option<"topName", "top-name", "std::string", "\"forward_kernel\"", "Hardware entry point">,
     Option<"tileM", "tile-m", "int64_t", "4", "Local output row tile extent">,
     Option<"tileN", "tile-n", "int64_t", "4", "Local output column tile extent">,
-    Option<"tileK", "tile-k", "int64_t", "4", "Local reduction tile extent">
+    Option<"tileK", "tile-k", "int64_t", "4", "Local reduction tile extent">,
+    Option<"schedule", "schedule", "std::string", "\"sequential\"", "sequential or lcs; independent of the runtime ABI">
   ];
   let dependentDialects = ["::mlir::arith::ArithDialect", "::mlir::func::FuncDialect",
       "::mlir::memref::MemRefDialect", "::mlir::scf::SCFDialect",
@@ -296,7 +297,8 @@ def GenerateReusableOperator : Pass<"sodap-generate-reusable-operator", "::mlir:
     Option<"pixels", "tile-pixels", "int64_t", "4", "Local output spatial tile">,
     Option<"lanes", "output-lanes", "int64_t", "8", "Parallel convolution output channels">,
     Option<"channels", "tile-channels", "int64_t", "16", "Local input channel tile">,
-    Option<"blockElements", "block-elements", "int64_t", "128", "Addition block size">
+    Option<"blockElements", "block-elements", "int64_t", "128", "Addition block size">,
+    Option<"schedule", "schedule", "std::string", "\"sequential\"", "sequential or lcs (convolution)">
   ];
   let dependentDialects = ["::mlir::arith::ArithDialect", "::mlir::func::FuncDialect",
       "::mlir::memref::MemRefDialect", "::mlir::scf::SCFDialect",

@@ -4,6 +4,7 @@ ESP_FLOW ?= baseline
 LCS_PROFILE ?= false
 LCS_DMA_WORD_STRIDE ?= 1
 LCS_REUSABLE_GEMM ?= false
+LCS_GEMM_SCHEDULE ?= sequential
 LCS_GEMM_TILE_M ?= 4
 LCS_GEMM_TILE_N ?= 4
 LCS_GEMM_TILE_K ?= 4
@@ -14,13 +15,13 @@ lcs-options:
 # Stable timestamps unless common layout/profiling options change.
 $(ODIR)/esp/lcs-options: lcs-options
 	mkdir -p $(dir $@)
-	@printf '%s\n' 'profile=$(LCS_PROFILE)' 'word_stride=$(LCS_DMA_WORD_STRIDE)' 'transform=$(LCS_TRANSFORM)' 'reusable=$(LCS_REUSABLE_GEMM)' 'gemm_tiles=$(LCS_GEMM_TILE_M),$(LCS_GEMM_TILE_N),$(LCS_GEMM_TILE_K)' > $@.tmp
+	@printf '%s\n' 'profile=$(LCS_PROFILE)' 'word_stride=$(LCS_DMA_WORD_STRIDE)' 'transform=$(LCS_TRANSFORM)' 'reusable=$(LCS_REUSABLE_GEMM)' 'gemm_schedule=$(LCS_GEMM_SCHEDULE)' 'gemm_tiles=$(LCS_GEMM_TILE_M),$(LCS_GEMM_TILE_N),$(LCS_GEMM_TILE_K)' > $@.tmp
 	@cmp -s $@.tmp $@ && rm $@.tmp || mv $@.tmp $@
 
 LCS_OUTPUTS = $(addprefix $(ODIR)/esp/%/,05_hw_acc.ll 05_kernel_riscv.ll 05_cpu_baseline.ll architecture.xml argument_order.txt kernel.mlir outlined.mlir layout.txt)
 # Multiple targets in one pattern rule share one lowering invocation.
 $(LCS_OUTPUTS): $(ODIR)/01_tosa.mlir $(SCRIPTS_DIR)/tosa_to_lcs.sh $(SCRIPTS_DIR)/tosa_to_reusable_gemm.sh $(SCRIPTS_DIR)/lcs/argument_order.py $(LCS_TRANSFORM) $(ODIR)/esp/lcs-options $(wildcard $(MLIR_PLUGIN_PATH))
-	LCS_PROFILE=$(LCS_PROFILE) LCS_DMA_WORD_STRIDE=$(LCS_DMA_WORD_STRIDE) LCS_TRANSFORM=$(LCS_TRANSFORM) LCS_REUSABLE_GEMM=$(LCS_REUSABLE_GEMM) LCS_GEMM_TILE_M=$(LCS_GEMM_TILE_M) LCS_GEMM_TILE_N=$(LCS_GEMM_TILE_N) LCS_GEMM_TILE_K=$(LCS_GEMM_TILE_K) $(SCRIPTS_DIR)/tosa_to_lcs.sh $< $(@D)
+	LCS_PROFILE=$(LCS_PROFILE) LCS_DMA_WORD_STRIDE=$(LCS_DMA_WORD_STRIDE) LCS_TRANSFORM=$(LCS_TRANSFORM) LCS_REUSABLE_GEMM=$(LCS_REUSABLE_GEMM) LCS_GEMM_SCHEDULE=$(LCS_GEMM_SCHEDULE) LCS_GEMM_TILE_M=$(LCS_GEMM_TILE_M) LCS_GEMM_TILE_N=$(LCS_GEMM_TILE_N) LCS_GEMM_TILE_K=$(LCS_GEMM_TILE_K) $(SCRIPTS_DIR)/tosa_to_lcs.sh $< $(@D)
 
 $(ODIR)/esp/%/testdata.h: $(FILE_PATH) $(ODIR)/esp/%/argument_order.txt
 	python $< --emit-testdata $@ --arg-order "$$(cat $(word 2,$^))"

@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 #include "sodap/SODAPPasses.h"
 #include "sodap/Dialect/Dataflow/Dataflow.h"
+#include "sodap/Dialect/Dataflow/Transforms/Passes.h"
 #include "sodap/ExecutionEngine/ReusableOperatorABI.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
+#include "mlir/Pass/PassManager.h"
 #include <cfloat>
 
 namespace mlir::sodap {
@@ -189,11 +191,136 @@ struct Generator {
   }
 };
 
+struct ConvPipeline : Generator {
+  using Generator::Generator;
+  enum Stage { Load, Compute, Store };
+  void tile(llvm::function_ref<void()> body) {
+    auto region=b.create<scf::ExecuteRegionOp>(loc,TypeRange{});
+    region->setAttr("sodap.dataflow_tile",b.getUnitAttr());
+    region.getRegion().push_back(new Block());
+    OpBuilder::InsertionGuard guard(b);
+    b.setInsertionPointToStart(&region.getRegion().front());
+    body(); b.create<scf::YieldOp>(loc);
+  }
+  Value config(Stage stage,Value computeConfig,Value storeConfig) {
+    Value config=alloc({OP_HEADER_FIELDS},b.getI32Type());
+    if(stage==Load) request(rc,z,idx(OP_HEADER_FIELDS*2));
+    loop(idx(OP_HEADER_FIELDS),[&](Value i) {
+      Value v=stage==Load ? readWord() :
+          b.create<StreamReadOp>(loc,b.getI32Type(),stage==Compute?computeConfig:storeConfig).getResult();
+      store(v,config,{i});
+      if(stage==Load) {
+        b.create<StreamWriteOp>(loc,computeConfig,v);
+        b.create<StreamWriteOp>(loc,storeConfig,v);
+      }
+    });
+    for(unsigned i=0;i<OP_HEADER_FIELDS;++i) cfg.push_back(load(config,{idx(i)}));
+    return both(cmp(arith::CmpIPredicate::eq,cfg[0],b.create<arith::ConstantIntOp>(loc,OP_CONV_MAGIC,32)),
+                cmp(arith::CmpIPredicate::eq,cfg[1],b.create<arith::ConstantIntOp>(loc,OP_VERSION,32)));
+  }
+  void build(Stage stage,int64_t pixels,int64_t lanes,int64_t channels,
+             Value a,ArrayRef<Value> weights,Value bias,Value result,
+             Value computeConfig,Value storeConfig) {
+    SmallVector<Value> accum;
+    if(stage==Compute)
+      for(int64_t lane=0;lane<lanes;++lane) accum.push_back(alloc({pixels}));
+    Value valid=config(stage,computeConfig,storeConfig);
+    condition(valid,[&] {
+      Value n=field(CONV_N),ih=field(CONV_IH),iw=field(CONV_IW),ic=field(CONV_IC);
+      Value oc=field(CONV_OC),kh=field(CONV_KH),kw=field(CONV_KW);
+      Value oh=field(CONV_OH),ow=field(CONV_OW),sh=field(CONV_SH),sw=field(CONV_SW);
+      Value pt=field(CONV_PT),pl=field(CONV_PL),dh=field(CONV_DH),dw=field(CONV_DW);
+      Value baseA=field(CONV_A),baseW=field(CONV_W),baseBias=field(CONV_BIAS),baseC=field(CONV_C);
+      Value activation=cmp(arith::CmpIPredicate::ne,field(CONV_RELU),z);
+      Value plane=mul(oh,ow);
+      loop(n,[&](Value batch) {
+        loop(z,plane,idx(pixels),[&](Value start) {
+          Value rows=bound(plane,start,pixels);
+          loop(z,oc,idx(lanes),[&](Value outChannel) {
+            Value columns=bound(oc,outChannel,lanes);
+            if(stage==Compute)
+              loop(rows,[&](Value p) {
+                for(int64_t lane=0;lane<lanes;++lane) store(fzero,accum[lane],{p});
+              });
+            if(stage!=Store) {
+              loop(kh,[&](Value ky) { loop(kw,[&](Value kx) {
+                loop(z,ic,idx(channels),[&](Value inChannel) {
+                  Value depth=bound(ic,inChannel,channels);
+                  tile([&] {
+                    if(stage==Load) {
+                      loop(rows,[&](Value p) {
+                        Value linear=add(start,p);
+                        Value y=b.create<arith::DivUIOp>(loc,linear,ow);
+                        Value x=b.create<arith::RemUIOp>(loc,linear,ow);
+                        Value sy=sub(add(mul(y,sh),mul(ky,dh)),pt);
+                        Value sx=sub(add(mul(x,sw),mul(kx,dw)),pl);
+                        Value inside=both(both(cmp(arith::CmpIPredicate::sge,sy,z),cmp(arith::CmpIPredicate::slt,sy,ih)),
+                                          both(cmp(arith::CmpIPredicate::sge,sx,z),cmp(arith::CmpIPredicate::slt,sx,iw)));
+                        condition(inside,[&] {
+                          Value index=add(mul(add(mul(add(mul(batch,ih),sy),iw),sx),ic),inChannel);
+                          request(rc,address(baseA,index),mul(depth,idx(2)));
+                          loop(depth,[&](Value q) { store(readFloat(),a,{p,q}); });
+                        },[&] { loop(depth,[&](Value q) { store(fzero,a,{p,q}); }); });
+                      });
+                      for(int64_t lane=0;lane<lanes;++lane) {
+                        condition(cmp(arith::CmpIPredicate::ult,idx(lane),columns),[&] {
+                          Value index=add(mul(add(mul(add(mul(add(outChannel,idx(lane)),kh),ky),kw),kx),ic),inChannel);
+                          request(rc,address(baseW,index),mul(depth,idx(2)));
+                          loop(depth,[&](Value q) { store(readFloat(),weights[lane],{q}); });
+                        },[&] { loop(depth,[&](Value q) { store(fzero,weights[lane],{q}); }); });
+                      }
+                    } else {
+                      // The reduction order and explicit per-lane banks match
+                      // the sequential engine; only tile transfers overlap.
+                      loop(rows,[&](Value p) { loop(depth,[&](Value q) {
+                        Value input=load(a,{p,q});
+                        for(int64_t lane=0;lane<lanes;++lane) {
+                          Value product=b.create<arith::MulFOp>(loc,input,load(weights[lane],{q}));
+                          store(b.create<arith::AddFOp>(loc,load(accum[lane],{p}),product),accum[lane],{p});
+                        }
+                      }); });
+                    }
+                  });
+                });
+              }); });
+            }
+            tile([&] {
+              if(stage==Load) {
+                request(rc,address(baseBias,outChannel),mul(columns,idx(2)));
+                loop(columns,[&](Value j) { store(readFloat(),bias,{j}); });
+              } else if(stage==Compute) {
+                loop(rows,[&](Value p) {
+                  for(int64_t lane=0;lane<lanes;++lane) {
+                    condition(cmp(arith::CmpIPredicate::ult,idx(lane),columns),[&] {
+                      Value value=b.create<arith::AddFOp>(loc,load(accum[lane],{p}),load(bias,{idx(lane)}));
+                      store(relu(value,activation),result,{p,idx(lane)});
+                    });
+                  }
+                });
+              } else {
+                loop(rows,[&](Value p) {
+                  Value output=add(mul(add(mul(batch,plane),add(start,p)),oc),outChannel);
+                  request(wc,address(baseC,output),mul(columns,idx(2)));
+                  loop(columns,[&](Value j) { writeFloat(load(result,{p,j})); });
+                });
+              }
+            });
+          });
+        });
+      });
+    });
+  }
+};
+
 class GenerateReusableOperator : public impl::GenerateReusableOperatorBase<GenerateReusableOperator> {
 public:
   using GenerateReusableOperatorBase::GenerateReusableOperatorBase;
   void runOnOperation() final {
     auto module=getOperation();
+    if(schedule!="sequential" && !(schedule=="lcs" && kind=="conv")) {
+      module.emitError("expected sequential schedule, or lcs for convolution");
+      return signalPassFailure();
+    }
     if((kind!="conv" && kind!="add") || pixels<1 || pixels>128 || lanes<1 || lanes>32 ||
        channels<1 || channels>128 || blockElements<1 || blockElements>4096 || !module.getBody()->empty()) {
       module.emitError("expected empty module, kind conv/add, and bounded positive implementation parameters");
@@ -204,6 +331,42 @@ public:
     auto ctrl=StreamType::get(module.getContext(),b.getI64Type(),8,StreamInterface::AXIS);
     auto data=StreamType::get(module.getContext(),b.getI32Type(),16,StreamInterface::AXIS);
     auto type=b.getFunctionType({ctrl,data,ctrl,data},{});
+    if(schedule=="lcs") {
+      auto top=b.create<func::FuncOp>(module.getLoc(),"conv_kernel",type);
+      b.setInsertionPointToStart(top.addEntryBlock());
+      auto dispatch=b.create<DispatchOp>(module.getLoc(),TypeRange{});
+      dispatch.getBody().push_back(new Block());
+      b.setInsertionPointToStart(&dispatch.getBody().front());
+      auto alloc=[&](ArrayRef<int64_t> dims)->Value {
+        return b.create<memref::AllocOp>(module.getLoc(),MemRefType::get(dims,b.getF32Type()));
+      };
+      Value a=alloc({pixels,channels}),bias=alloc({lanes}),result=alloc({pixels,lanes});
+      SmallVector<Value> weights;
+      for(int64_t lane=0;lane<lanes;++lane) weights.push_back(alloc({channels}));
+      auto cfgType=StreamType::get(module.getContext(),b.getI32Type(),OP_HEADER_FIELDS);
+      Value computeConfig=b.create<StreamOp>(module.getLoc(),cfgType);
+      Value storeConfig=b.create<StreamOp>(module.getLoc(),cfgType);
+      for(auto stage:{ConvPipeline::Load,ConvPipeline::Compute,ConvPipeline::Store}) {
+        auto task=b.create<TaskOp>(module.getLoc(),TypeRange{});
+        task.getBody().push_back(new Block());
+        OpBuilder::InsertionGuard guard(b);
+        b.setInsertionPointToStart(&task.getBody().front());
+        ConvPipeline generator(b,module.getLoc(),top.getArguments());
+        generator.build(stage,pixels,lanes,channels,a,weights,bias,result,computeConfig,storeConfig);
+        b.create<dataflow::YieldOp>(module.getLoc());
+      }
+      b.create<dataflow::YieldOp>(module.getLoc());
+      b.setInsertionPointAfter(dispatch);
+      b.create<func::ReturnOp>(module.getLoc());
+      OpPassManager passes("builtin.module");
+      passes.addNestedPass<func::FuncOp>(dataflow::createPingPong());
+      passes.addNestedPass<func::FuncOp>(dataflow::createTasksToNodes());
+      passes.addPass(dataflow::createNodesToFunc());
+      if(failed(runPipeline(passes,module))) return signalPassFailure();
+      module->setAttr("sodap.operator_abi",b.getI32IntegerAttr(OP_VERSION));
+      module->setAttr("sodap.operator_schedule",b.getStringAttr(schedule));
+      return;
+    }
     auto engine=b.create<func::FuncOp>(module.getLoc(),kind+"_engine",type);
     b.setInsertionPointToStart(engine.addEntryBlock());
     Generator generator(b,module.getLoc(),engine.getArguments());

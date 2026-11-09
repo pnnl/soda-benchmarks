@@ -22,13 +22,15 @@ profile=${LCS_PROFILE:-false}
 tm=${LCS_GEMM_TILE_M:-4}
 tn=${LCS_GEMM_TILE_N:-4}
 tk=${LCS_GEMM_TILE_K:-4}
+schedule=${LCS_GEMM_SCHEDULE:-sequential}
+case "$schedule" in sequential|lcs) ;; *) echo 'LCS_GEMM_SCHEDULE must be sequential or lcs' >&2; exit 1 ;; esac
 for tile in "$tm" "$tn" "$tk"; do
   [[ "$tile" =~ ^[1-9][0-9]*$ ]] && ((tile <= 128)) || {
     echo 'GEMM tile extents must be in [1,128]' >&2; exit 1;
   }
 done
 printf 'mechanism=reusable-gemm\nabi=1\ndma_word_stride=2\nprofile=%s\n' "$profile" > layout.txt
-printf 'tile_m=%s\ntile_n=%s\ntile_k=%s\n' "$tm" "$tn" "$tk" > schedule.txt
+printf 'tile_m=%s\ntile_n=%s\ntile_k=%s\nschedule=%s\n' "$tm" "$tn" "$tk" "$schedule" > schedule.txt
 
 $DOCKER_RUN mlir-opt "$input" --pass-pipeline='builtin.module(
   func.func(tosa-to-arith,tosa-to-tensor,tosa-to-linalg-named,tosa-to-linalg),
@@ -62,9 +64,10 @@ $DOCKER_RUN mlir-translate --mlir-to-llvmir cpu-llvm.mlir -o 05_cpu_baseline.ll
 # Hardware depends only on the common ABI and the selected implementation.
 printf 'module {}\n' > empty.mlir
 $DOCKER_RUN mlir-opt empty.mlir "${plugins[@]}" \
-  --pass-pipeline="builtin.module(sodap-generate-reusable-gemm{tile-m=$tm tile-n=$tn tile-k=$tk},canonicalize,cse)" \
+  --pass-pipeline="builtin.module(sodap-generate-reusable-gemm{tile-m=$tm tile-n=$tn tile-k=$tk schedule=$schedule},canonicalize,cse)" \
   -o accelerator.mlir
 $DOCKER_RUN mlir-opt accelerator.mlir "${plugins[@]}" --pass-pipeline='builtin.module(
+  func.func(promote-buffers-to-stack{max-alloc-size-in-bytes=1048576}),
   sodap-emit-bambu-architecture{top-func=forward_kernel file=architecture.xml},
   sodap-convert-dataflow-to-llvm,lower-affine,convert-scf-to-cf,
   convert-math-to-llvm,expand-strided-metadata,lower-affine,
