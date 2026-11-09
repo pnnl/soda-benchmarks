@@ -9,6 +9,13 @@ benchmark needs its own generated IP and matching ESP SoC/bitstream.
 See [the local LCS validation report](ESPLCSValidation.md) for the tested MINI
 subset, remaining failures and the distinction between component and SoC tests.
 
+An opt-in [reusable GEMM path](ESPReusableOperators.md) now separates parameter
+isolation, device binding, and shared buffer lifetimes from hardware tiling.
+Set `LCS_REUSABLE_GEMM=true LCS_DMA_WORD_STRIDE=2` to use it for supported
+matmul graphs. The `gemmreuse` validation app invokes one accelerator twice.
+See its [build and simulation instructions](../examples/esp-validation/reusable-gemm/README.md).
+The default generated backend described below retains fixed shapes and offsets.
+
 ```sh
 sb-cli init --benchmark_name gemm --dataset MINI --dtype float32 \
   --flow transformed --backend esp --stage object \

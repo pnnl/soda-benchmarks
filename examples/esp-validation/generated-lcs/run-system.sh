@@ -35,6 +35,14 @@ sqr_bambu = gemm_lib
 EOF
 
 cd "$sim"
+if [[ ${ESP_RECOMPILE_SOC_TOP:-0} == 1 ]]; then
+  # Refresh dependencies when the vendor simulation libraries were rebuilt.
+  vcom -93 -work work "$soc/../../rtl/techmap/virtex7/pads_unisim.vhd" \
+    "$soc/../../rtl/techmap/virtex7/clkgen_unisim.vhd" \
+    "$soc/../../rtl/techmap/virtex7/memory_unisim.vhd" \
+    "$soc/../../rtl/sim/models/axi_ram_sim_wrapper.vhd" \
+    "$soc/top.vhd" "$soc/testbench.vhd"
+fi
 vlib gemm_lib
 vlog -sv +define+SODAP_LCS_GENERIC -work sqr_bambu "$generated/bambu_syn/forward_kernel.v" \
   "$generated/bambu_syn/panda_libtech.v" "$example/../generated-gemm/sqr_bambu_basic_dma64.sv"
@@ -58,6 +66,15 @@ flags=(-O2 -march=rv64imafdc -mabi=lp64d -mcmodel=medany -fno-common
   -DSODAP_ESP_DEVICE_ID=0x07a '-DSODAP_ESP_DEVICE_NAME="sld,sqr_bambu"' \
   -I"$repo/examples/soda-plugins/include" \
   -c "$repo/examples/soda-plugins/lib/sodap/ExecutionEngine/EspRuntime.cpp" -o runtime.o
+extra_runtime=()
+if grep -q 'ReusableGemmRuntime.o:' "$app/Makefile"; then
+  "${prefix}g++" "${flags[@]}" -std=c++17 -fno-exceptions -fno-rtti \
+    -DSODAP_ESP_DEVICE_ID=0x07a '-DSODAP_ESP_DEVICE_NAME="sld,sqr_bambu"' \
+    -I"$repo/examples/soda-plugins/include" \
+    -c "$repo/examples/soda-plugins/lib/sodap/ExecutionEngine/ReusableGemmRuntime.cpp" \
+    -o reusable-runtime.o
+  extra_runtime+=(reusable-runtime.o)
+fi
 # Explicitly place sections that GNU ld used to insert as orphans. ESP's
 # boot ROM jumps to 0x80000000; LLD otherwise places .rodata ahead of _start.
 python3 - "$cpu/riscv-tests/benchmarks/common/test.ld" <<'LINKER'
@@ -74,7 +91,7 @@ LINKER
 # Older ESP GNU linkers cannot parse Clang 19's Zicsr/Zmmul ISA attributes.
 # LLD links the original object without stripping architecture information.
 "${LD_LLD:-ld.lld}" -m elf64lriscv -static \
-  app.o runtime.o host.o profiler.o syscalls.o crt.o startup.o \
+  app.o runtime.o "${extra_runtime[@]}" host.o profiler.o syscalls.o crt.o startup.o \
   -T test.ld \
   "$libs/probe/libprobe.a" "$libs/monitors/libmonitors.a" \
   "$libs/utils/baremetal/libutils.a" \
@@ -95,6 +112,11 @@ sha256sum "$artifact_dir/06_kernel_riscv.o" "$generated/bambu_syn/forward_kernel
   "$repo/examples/soda-plugins/include/sodap/ExecutionEngine/ESPRuntime.h" \
   "$example/../generated-gemm/sqr_bambu_basic_dma64.sv" "$app/$appname.c" \
   "$example/baremetal-startup.S" test.ld testdata.h gemm_app.exe > inputs-and-software.sha256
+if ((${#extra_runtime[@]})); then
+  sha256sum "$repo/examples/soda-plugins/lib/sodap/ExecutionEngine/ReusableGemmRuntime.cpp" \
+    "$repo/examples/soda-plugins/include/sodap/ExecutionEngine/ReusableGemmABI.h" \
+    >> inputs-and-software.sha256
+fi
 if [[ ${ESP_BUILD_ONLY:-0} == 1 ]]; then
   echo 'BUILT: baremetal application linked; simulation not run'
   exit 0
@@ -137,4 +159,7 @@ assert all('Program Completed!' in line for line in log.splitlines()
 assert re.search(r'kernel\s+\d+\s+1\s+', log), 'missing kernel profile'
 print('PASS: generated application, numerical check and kernel profiling in full-system ESP')
 PY
+if ((${#extra_runtime[@]})); then
+  python3 "$example/../reusable-gemm/check-system.py" "$generated" simulation.log
+fi
 printf 'Results: %s\n' "$sim/simulation.log"
