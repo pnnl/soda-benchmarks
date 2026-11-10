@@ -27,6 +27,8 @@
 #   LCS_DMA_WORD_STRIDE  32-bit words per element in shared memory, 1 (default) or 2
 #   LCS_PROFILE=true     instrument 05_kernel_riscv.ll and 05_cpu_baseline.ll with
 #                        matching whole-kernel regions
+#   LCS_OUTSTANDING_LOADS=false  no outstanding_load task: the load task sends each
+#                        read request and waits for its data (default true)
 #
 # Writes in <outdir>:
 #   ir_after_each_pass.mlir         the IR after each pass (also split in
@@ -64,10 +66,14 @@ TRANSFORM="${LCS_TRANSFORM:-$REPO_DIR/scripts/lcs/transform.mlir}"
 ENTRY="${LCS_ENTRY:-tasks}"
 TOP=forward_kernel
 PROFILE=${LCS_PROFILE:-false}
+OUTSTANDING_LOADS=${LCS_OUTSTANDING_LOADS:-true}
 WORD_STRIDE=${LCS_DMA_WORD_STRIDE:-1}
 case "$WORD_STRIDE" in 1|2) ;; *) echo "LCS_DMA_WORD_STRIDE must be 1 or 2" >&2; exit 1 ;; esac
 case "$PROFILE" in true|false) ;; *) echo "LCS_PROFILE must be true or false" >&2; exit 1 ;; esac
-printf 'dma_word_stride=%s\nprofile=%s\n' "$WORD_STRIDE" "$PROFILE" > layout.txt
+case "$OUTSTANDING_LOADS" in true|false) ;; *) echo "LCS_OUTSTANDING_LOADS must be true or false" >&2; exit 1 ;; esac
+printf 'dma_word_stride=%s\nprofile=%s\noutstanding_loads=%s\n' "$WORD_STRIDE" "$PROFILE" "$OUTSTANDING_LOADS" > layout.txt
+OUTSTANDING_LOAD=
+[ "$OUTSTANDING_LOADS" = true ] && OUTSTANDING_LOAD="func.func(sodap-dataflow-outstanding-load), canonicalize,"
 DUMP=ir_after_each_pass.mlir
 FRONTEND_DUMP=ir_after_each_pass_frontend.mlir
 ACC_DUMP=ir_after_each_pass_acc.mlir
@@ -156,6 +162,7 @@ step "$ACC_DUMP" mlir-opt kernel.mlir $PLUGIN --pass-pipeline="builtin.module(
 section "$ACC_DUMP" "Accelerator: to nodes and LLVM, mlir-opt"
 step "$ACC_DUMP" mlir-opt dataflow.mlir $PLUGIN --pass-pipeline="builtin.module(
     sodap-dataflow-copy-to-dma{top-func=$TOP dma-word-stride=$WORD_STRIDE},
+    $OUTSTANDING_LOAD
     func.func(
       sodap-dataflow-tasks-to-nodes
     ),

@@ -166,6 +166,58 @@ def PingPong :
   ];
 }
 
+def OutstandingLoad :
+    Pass<"sodap-dataflow-outstanding-load", "::mlir::func::FuncOp"> {
+  let summary = "Issue the read requests of the load task from a task of their own";
+  let description = [{
+    Works on the top `sodap-dataflow-copy-to-dma` leaves, whose first argument
+    is the read-request stream of the DMA. The load task (the `dataflow.task`
+    with the `load` attribute) sends a request per row and then reads the row,
+    so a request waits for the data of the previous one. A new task, with the
+    `outstanding_load` attribute, put before it, takes the requests: it is the
+    load task with only its loops and its writes of the request stream, and
+    what they compute from. The load task keeps everything else. The requests
+    run ahead of the data by the depth of the request stream.
+
+    Run `canonicalize` afterwards: it drops the loops left empty in the new
+    task and the request arithmetic left dead in the load task.
+
+    Example:
+
+    ```mlir
+    dataflow.task attributes {load} {
+      scf.for %r = %c0 to %c4 step %c1 {
+        %req = arith.ori %len, ... : i64
+        dataflow.stream_write %rq, %req : <i64, 4>, i64
+        scf.for %e = %c0 to %c4 step %c1 {
+          %w = dataflow.stream_read %rd : (!dataflow.stream<i32, 1>) -> i32
+          memref.store ...
+        }
+      }
+    }
+    // becomes, after canonicalize
+    dataflow.task attributes {outstanding_load} {
+      scf.for %r = %c0 to %c4 step %c1 {
+        %req = arith.ori %len, ... : i64
+        dataflow.stream_write %rq, %req : <i64, 4>, i64
+      }
+    }
+    dataflow.task attributes {load} {
+      scf.for %r = %c0 to %c4 step %c1 {
+        scf.for %e = %c0 to %c4 step %c1 {
+          %w = dataflow.stream_read %rd : (!dataflow.stream<i32, 1>) -> i32
+          memref.store ...
+        }
+      }
+    }
+    ```
+
+    Does nothing on a function with no load task. Fails on more than one
+    load task, or on a first argument that isn't a stream only written to.
+  }];
+  let dependentDialects = ["::mlir::sodap::dataflow::DataflowDialect"];
+}
+
 def TasksToNodes :
     Pass<"sodap-dataflow-tasks-to-nodes", "::mlir::func::FuncOp"> {
   let summary = "Lower dataflow tasks to nodes with explicit ports";

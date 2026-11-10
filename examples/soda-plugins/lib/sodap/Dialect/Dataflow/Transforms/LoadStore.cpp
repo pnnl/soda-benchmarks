@@ -120,6 +120,7 @@ struct LoadStore
     }
     if (!loads.empty()) {
       auto load = builder.create<TaskOp>(dispatch.getLoc(), TypeRange());
+      load->setAttr("load", builder.getUnitAttr());
       builder.createBlock(&load.getBody());
       for (auto [source, buffer] : loads)
         builder.create<memref::CopyOp>(source.getLoc(), source, buffer);
@@ -131,6 +132,7 @@ struct LoadStore
       Value yielded = dispatch.getYieldOp().getOperand(result);
       builder.setInsertionPoint(dispatch.getYieldOp());
       auto store = builder.create<TaskOp>(copy.getLoc(), TypeRange());
+      store->setAttr("store", builder.getUnitAttr());
       builder.createBlock(&store.getBody());
       auto whole = builder.create<memref::CopyOp>(copy.getLoc(), yielded,
                                                   copy.getTarget());

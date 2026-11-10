@@ -10,17 +10,17 @@
 // CHECK-SAME:    (%[[AL:.*]]: tensor<f32>, %[[A:.*]]: tensor<4x4xf32>, %[[B:.*]]: tensor<4x4xf32>)
 // CHECK:         %[[R:.*]] = dataflow.dispatch : tensor<4x4xf32> {
 // CHECK:           %[[E0:.*]] = bufferization.alloc_tensor() : tensor<4x4xf32>
-// CHECK:           %[[LOW:.*]] = dataflow.task : tensor<4x4xf32> {
+// CHECK:           %[[LOW:.*]] = dataflow.task attributes {compute} : tensor<4x4xf32> {
 // CHECK:             linalg.add ins(%[[A]], %[[A]] : {{.*}}) outs(%[[E0]] : {{.*}})
 // CHECK:           %[[E1:.*]] = bufferization.alloc_tensor() : tensor<4x4xf32>
-// CHECK:           %[[T:.*]] = dataflow.task : tensor<4x4xf32> {
+// CHECK:           %[[T:.*]] = dataflow.task attributes {compute} : tensor<4x4xf32> {
 // CHECK:             linalg.transpose ins(%[[LOW]] : {{.*}}) outs(%[[E1]] : {{.*}})
 // CHECK:           %[[E2:.*]] = bufferization.alloc_tensor() : tensor<4x4xf32>
-// CHECK:           %[[MM:.*]] = dataflow.task : tensor<4x4xf32> {
+// CHECK:           %[[MM:.*]] = dataflow.task attributes {compute} : tensor<4x4xf32> {
 // CHECK:             %[[F:.*]] = linalg.fill {{.*}} outs(%[[E2]] : {{.*}})
 // CHECK:             linalg.matmul ins(%[[T]], %[[B]] : {{.*}}) outs(%[[F]] : {{.*}})
 // CHECK:           %[[E3:.*]] = bufferization.alloc_tensor() : tensor<4x4xf32>
-// CHECK:           %[[O:.*]] = dataflow.task : tensor<4x4xf32> {
+// CHECK:           %[[O:.*]] = dataflow.task attributes {compute} : tensor<4x4xf32> {
 // CHECK:             linalg.generic {{.*}} ins(%[[AL]], %[[MM]] : {{.*}}) outs(%[[E3]] : {{.*}})
 // CHECK:           dataflow.yield %[[O]] : tensor<4x4xf32>
 // CHECK-NOT:     tensor.empty
@@ -63,12 +63,12 @@ module attributes {transform.with_named_sequence} {
 // CHECK-LABEL: func.func @groups
 // CHECK:         dataflow.dispatch : tensor<4x4xf32> {
 // CHECK:           %[[E1:.*]] = bufferization.alloc_tensor() : tensor<4x4xf32>
-// CHECK:           %[[T:.*]] = dataflow.task : tensor<4x4xf32> {
+// CHECK:           %[[T:.*]] = dataflow.task attributes {compute} : tensor<4x4xf32> {
 // CHECK:             %[[P0:.*]] = tensor.empty() : tensor<4x4xf32>
 // CHECK:             %[[LOW:.*]] = linalg.add {{.*}} outs(%[[P0]] : {{.*}})
 // CHECK:             linalg.transpose ins(%[[LOW]] : {{.*}}) outs(%[[E1]] : {{.*}})
 // CHECK:           %[[E3:.*]] = bufferization.alloc_tensor() : tensor<4x4xf32>
-// CHECK:           %[[O:.*]] = dataflow.task : tensor<4x4xf32> {
+// CHECK:           %[[O:.*]] = dataflow.task attributes {compute} : tensor<4x4xf32> {
 // CHECK:             %[[P2:.*]] = tensor.empty() : tensor<4x4xf32>
 // CHECK:             %[[F:.*]] = linalg.fill {{.*}} outs(%[[P2]] : {{.*}})
 // CHECK:             %[[MM:.*]] = linalg.matmul ins(%[[T]], %{{.*}} : {{.*}}) outs(%[[F]] : {{.*}})

@@ -53,6 +53,7 @@ struct RegionOpInterface
     auto oldOp = cast<OpTy>(op);
     auto newOp = rewriter.create<OpTy>(
         op->getLoc(), TypeRange(oldOp.getYieldOp()->getOperandTypes()));
+    newOp->setAttrs(op->getAttrs()); // The role: compute, load, store.
     newOp.getBody().takeBody(oldOp.getBody());
     replaceOpWithBufferizedValues(rewriter, op, newOp->getResults());
     return success();

@@ -360,6 +360,7 @@ void mlir::transform::TileAndFuseOp::getEffects(
 
       auto task = rewriter.create<df::TaskOp>(
           loc, TypeRange(ValueRange(yields[i].getArrayRef())));
+      task->setAttr("compute", rewriter.getUnitAttr());
       Block *taskBlock = rewriter.createBlock(&task.getBody());
       for (Operation *op : groups[i]) {
         rewriter.moveOpBefore(op, taskBlock, taskBlock->end());

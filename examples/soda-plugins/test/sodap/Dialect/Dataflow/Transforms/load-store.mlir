@@ -14,7 +14,7 @@ memref.global "private" constant @mask : memref<4xf32> = dense<1.0>
 // CHECK:           %[[A1:.*]] = memref.alloc() : memref<4xf32>
 // CHECK:           %[[M1:.*]] = memref.alloc() : memref<4xf32>
 // CHECK:           %[[A2:.*]] = memref.alloc() : memref<4xf32>
-// CHECK:           dataflow.task {
+// CHECK:           dataflow.task attributes {load} {
 // CHECK-NEXT:        memref.copy %[[A]], %[[A1]]
 // CHECK-NEXT:        memref.copy %[[MASK]], %[[M1]]
 // CHECK-NEXT:        memref.copy %[[A]], %[[A2]]
@@ -22,7 +22,7 @@ memref.global "private" constant @mask : memref<4xf32> = dense<1.0>
 // CHECK:             linalg.mul ins(%[[A1]], %[[M1]] : {{.*}}) outs(%[[T:.*]] : {{.*}})
 // CHECK:           dataflow.task {
 // CHECK:             linalg.add ins(%[[T]], %[[A2]] : {{.*}}) outs(%[[O:.*]] : {{.*}})
-// CHECK:           dataflow.task {
+// CHECK:           dataflow.task attributes {store} {
 // CHECK-NEXT:        memref.copy %[[O]], %[[OUT]]
 // CHECK:           dataflow.yield %[[O]]
 // CHECK-NOT:     memref.copy
@@ -95,7 +95,7 @@ func.func @compute_writes_memory(%a: memref<8xf32>, %v: f32) {
 // CHECK:           %[[O:.*]] = memref.alloc() : memref<8x8xf32>
 // CHECK-NEXT:      dataflow.task {
 // CHECK:             linalg.add
-// CHECK:           dataflow.task {
+// CHECK:           dataflow.task attributes {store} {
 // CHECK-NEXT:        %[[C0:.*]] = arith.constant 0 : index
 // CHECK-NEXT:        %[[C8:.*]] = arith.constant 8 : index
 // CHECK-NEXT:        %[[C4:.*]] = arith.constant 4 : index

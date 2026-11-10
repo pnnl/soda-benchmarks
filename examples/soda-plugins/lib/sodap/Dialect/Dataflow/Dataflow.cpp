@@ -133,6 +133,7 @@ struct SimplifyDispatchOrTaskOutputs : public OpRewritePattern<OpType> {
 
     rewriter.setInsertionPoint(op);
     auto newOp = rewriter.create<OpType>(op.getLoc(), ValueRange(usedOutputs));
+    newOp->setAttrs(op->getAttrs()); // The role: compute, load, store.
     rewriter.inlineRegionBefore(op.getBody(), newOp.getBody(),
                                 newOp.getBody().end());
     for (auto t : llvm::zip(usedResults, newOp.getResults()))
