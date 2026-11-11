@@ -218,6 +218,45 @@ def OutstandingLoad :
   let dependentDialects = ["::mlir::sodap::dataflow::DataflowDialect"];
 }
 
+def MergeTasks :
+    Pass<"sodap-dataflow-merge-tasks", "::mlir::func::FuncOp"> {
+  let summary = "Merge the tasks of a dispatch into one, run in order";
+  let description = [{
+    The sequential flow (no dataflow, no double buffering) of
+    `scripts/tosa_to_lcs.sh` with `LCS_SEQUENTIAL=true`: run after
+    `sodap-dataflow-load-store`, it puts the bodies of every task of a
+    dispatch, in order, into its last task (the store): load everything,
+    compute everything, store everything, on the whole buffers. One task is
+    one node, so Bambu runs it alone, with nothing to synchronise. The last
+    task is the target since every alloc and constant of the dispatch is
+    defined before it. The allocs of the dispatch used only in the task move
+    into it, local to its node: Bambu takes an alloca of the dataflow top for
+    a ping-pong channel between two modules. Role attributes (`load`,
+    `compute`, `store`) are dropped.
+
+    Example:
+
+    ```mlir
+    %in = memref.alloc() : memref<4xf32>
+    dataflow.task attributes {load} { memref.copy %arg0, %in ... }
+    %o = memref.alloc() : memref<4xf32>
+    dataflow.task attributes {compute} { linalg.copy ins(%in ...) outs(%o ...) }
+    dataflow.task attributes {store} { memref.copy %o, %arg1 ... }
+    // becomes
+    dataflow.task {
+      %in = memref.alloc() : memref<4xf32>
+      %o = memref.alloc() : memref<4xf32>
+      memref.copy %arg0, %in ...
+      linalg.copy ins(%in ...) outs(%o ...)
+      memref.copy %o, %arg1 ...
+    }
+    ```
+
+    Fails on a task with results.
+  }];
+  let dependentDialects = ["::mlir::sodap::dataflow::DataflowDialect"];
+}
+
 def TasksToNodes :
     Pass<"sodap-dataflow-tasks-to-nodes", "::mlir::func::FuncOp"> {
   let summary = "Lower dataflow tasks to nodes with explicit ports";

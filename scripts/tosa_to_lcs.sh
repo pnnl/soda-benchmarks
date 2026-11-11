@@ -29,6 +29,11 @@
 #                        matching whole-kernel regions
 #   LCS_OUTSTANDING_LOADS=false  no outstanding_load task: the load task sends each
 #                        read request and waits for its data (default true)
+#   LCS_SEQUENTIAL=true  the ablation with no dataflow: after the load and store
+#                        tasks, every task merged into one (sodap-dataflow-merge-tasks),
+#                        so it loads everything, computes everything, then stores
+#                        everything, on whole buffers; no schedule, ping-pong or
+#                        outstanding_load (default false)
 #
 # Writes in <outdir>:
 #   ir_after_each_pass.mlir         the IR after each pass (also split in
@@ -36,7 +41,8 @@
 #   tasks.mlir, bufferized.mlir     after the partition and tiling, after bufferization
 #   outlined.mlir, kernel.mlir      after the outlining
 #   argument_order.txt              forward_kernel's arguments, as forward's numbers
-#   dataflow.mlir                   after load/store, schedule and ping-pong
+#   dataflow.mlir                   after load/store, schedule and ping-pong (or the
+#                                   merge, with LCS_SEQUENTIAL=true)
 #   05_hw_acc.ll                    for Bambu, with architecture.xml
 #   architecture.xml
 #   05_kernel_riscv.ll              for the RISC-V core
@@ -67,13 +73,26 @@ ENTRY="${LCS_ENTRY:-tasks}"
 TOP=forward_kernel
 PROFILE=${LCS_PROFILE:-false}
 OUTSTANDING_LOADS=${LCS_OUTSTANDING_LOADS:-true}
+SEQUENTIAL=${LCS_SEQUENTIAL:-false}
 WORD_STRIDE=${LCS_DMA_WORD_STRIDE:-1}
 case "$WORD_STRIDE" in 1|2) ;; *) echo "LCS_DMA_WORD_STRIDE must be 1 or 2" >&2; exit 1 ;; esac
 case "$PROFILE" in true|false) ;; *) echo "LCS_PROFILE must be true or false" >&2; exit 1 ;; esac
 case "$OUTSTANDING_LOADS" in true|false) ;; *) echo "LCS_OUTSTANDING_LOADS must be true or false" >&2; exit 1 ;; esac
-printf 'dma_word_stride=%s\nprofile=%s\noutstanding_loads=%s\n' "$WORD_STRIDE" "$PROFILE" "$OUTSTANDING_LOADS" > layout.txt
+case "$SEQUENTIAL" in true|false) ;; *) echo "LCS_SEQUENTIAL must be true or false" >&2; exit 1 ;; esac
+[ "$SEQUENTIAL" = true ] && OUTSTANDING_LOADS=false
+printf 'dma_word_stride=%s\nprofile=%s\noutstanding_loads=%s\nsequential=%s\n' \
+  "$WORD_STRIDE" "$PROFILE" "$OUTSTANDING_LOADS" "$SEQUENTIAL" > layout.txt
 OUTSTANDING_LOAD=
 [ "$OUTSTANDING_LOADS" = true ] && OUTSTANDING_LOAD="func.func(sodap-dataflow-outstanding-load), canonicalize,"
+# Between the load and store tasks and the DMA: the dataflow schedule, or one
+# sequential task.
+if [ "$SEQUENTIAL" = true ]; then
+  STAGES="func.func(sodap-dataflow-merge-tasks)"
+else
+  STAGES="func.func(sodap-dataflow-schedule),
+    fold-memref-alias-ops,
+    func.func(sodap-dataflow-ping-pong)"
+fi
 DUMP=ir_after_each_pass.mlir
 FRONTEND_DUMP=ir_after_each_pass_frontend.mlir
 ACC_DUMP=ir_after_each_pass_acc.mlir
@@ -148,14 +167,12 @@ outline "$FRONTEND_DUMP" bufferized.mlir .
 
 # canonicalize first: the outlined body starts with a branch to a second block,
 # which it merges.
-section "$ACC_DUMP" "Accelerator: load and store tasks, schedule, ping-pong, mlir-opt"
+section "$ACC_DUMP" "Accelerator: load and store tasks, $([ "$SEQUENTIAL" = true ] && echo "merged into one" || echo "schedule, ping-pong"), mlir-opt"
 step "$ACC_DUMP" mlir-opt kernel.mlir $PLUGIN --pass-pipeline="builtin.module(
     canonicalize,
     func.func(sodap-dataflow-load-store),
     canonicalize,
-    func.func(sodap-dataflow-schedule),
-    fold-memref-alias-ops,
-    func.func(sodap-dataflow-ping-pong),
+    $STAGES,
     canonicalize
   )" -o dataflow.mlir
 

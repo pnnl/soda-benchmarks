@@ -1,6 +1,7 @@
 add_mlir_dialect_library(MLIRSODAPDataflowTransforms
         CopyToDMA.cpp
         LoadStore.cpp
+        MergeTasks.cpp
         OutstandingLoad.cpp
         PingPong.cpp
         Schedule.cpp
