@@ -68,4 +68,61 @@ def TosaHoistTransposes
   let dependentDialects = ["::mlir::tosa::TosaDialect"];
 }
 
+def TosaRaiseTransposes : Pass<"sodap-tosa-raise-transposes"> {
+  let summary = "Move tosa.transpose above elementwise ops with constant "
+                "operands, toward the arguments";
+  let description = [{
+    `transpose(op(x, c...))` becomes `op(transpose(x), transpose(c)...)` when
+    `op` is an elementwise TOSA op (`ResultsBroadcastableShape`) read only by
+    the transpose and every operand but at most one is a `tosa.const`. The
+    transposes of constants are left for `sodap-tosa-fold-constant-transposes`.
+    With tosa.transpose's canonicalization in the same set, transposes that
+    meet compose. trmm's masked matrix, `T(add(mul(A, mask), C))`, becomes
+    `add(mul(T(A), T(mask)), T(C))`: the transpose reaches the argument,
+    which `sodap-tosa-outline-kernel` leaves to the host.
+
+    Only transposes and the ops created here are rewritten or folded: a
+    function without a transpose is left as it is.
+  }];
+  let dependentDialects = ["::mlir::tosa::TosaDialect"];
+}
+
+def TosaFoldConstantTransposes : Pass<"sodap-tosa-fold-constant-transposes"> {
+  let summary = "Fold the transposes of constants into the constants";
+  let description = [{
+    Each `tosa.transpose` of a `tosa.const` (its input, not its permutation)
+    becomes a constant holding the transposed data. The transpose must be the
+    constant's only use; otherwise the pass fails, since folding would keep
+    both layouts of the data.
+  }];
+  let dependentDialects = ["::mlir::tosa::TosaDialect"];
+}
+
+def TosaOutlineKernel : Pass<"sodap-tosa-outline-kernel", "::mlir::ModuleOp"> {
+  let summary = "Move the kernel into a tile module, leave the host its "
+                "transposes and a launch";
+  let description = [{
+    The module's one public function, `@forward`, splits in two:
+
+    - the tile: `module @forward_kernel attributes {sodap.tile = 0,
+      sodap.tile_dir = "tiles/forward_kernel"}` holding `@forward_kernel`,
+      the whole computation;
+    - the host: `@forward`, with the same signature, holding the transposes
+      of its arguments and of its results, which the CPU computes, and a
+      `dataflow.launch` of the kernel.
+
+    The kernel's arguments are, for each argument of `@forward` in order, the
+    argument if the computation reads it, then each of its transposes. Its
+    results are `@forward`'s, before their transposes.
+
+    Any other transpose (one between two ops) fails the pass: the
+    accelerator must not transpose. Run `sodap-tosa-raise-transposes` and
+    `sodap-tosa-fold-constant-transposes` first.
+  }];
+  let dependentDialects = [
+    "::mlir::sodap::dataflow::DataflowDialect",
+    "::mlir::tosa::TosaDialect"
+  ];
+}
+
 #endif // SODAP_TOSA_PASSES

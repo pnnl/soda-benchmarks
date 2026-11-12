@@ -322,7 +322,7 @@ def InferTopInterface :
   }];
   let options = [
     Option<"topFunc", "top-func", "std::string", /*default=*/"",
-           "Top function of the design (required)">
+           "Top function of the design (default: the module's name)">
   ];
   let dependentDialects = [
     "::mlir::sodap::dataflow::DataflowDialect",
@@ -361,7 +361,7 @@ def CopyToDMA :
   }];
   let options = [
     Option<"topFunc", "top-func", "std::string", /*default=*/"",
-           "Top function of the design (required)">,
+           "Top function of the design (default: the module's name)">,
     Option<"wordStride", "dma-word-stride", "unsigned", /*default=*/"1",
            "32-bit words per shared-memory element; must match host lowering">
   ];
@@ -372,6 +372,19 @@ def CopyToDMA :
     "::mlir::memref::MemRefDialect",
     "::mlir::scf::SCFDialect"
   ];
+}
+
+def TilesToLLVM :
+    Pass<"sodap-tiles-to-llvm", "::mlir::ModuleOp"> {
+  let summary = "Write each tile's LLVM IR, leave its kernel declared";
+  let description = [{
+    The analogue of `gpu-module-to-binary`, once each tile module (a nested
+    module with `sodap.tile`) is in the LLVM dialect: translates it to LLVM IR
+    in `<sodap.tile_dir>/acc.ll` (`mlir-translate` would only see the outer
+    module), then empties it, but for its kernel, the function named after
+    it, left as a declaration so the host's launches still resolve. Bambu
+    runs on the files, outside.
+  }];
 }
 
 #endif // SODAP_DIALECT_DATAFLOW_TRANSFORMS_PASSES_TD

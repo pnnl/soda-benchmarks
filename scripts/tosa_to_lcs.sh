@@ -4,18 +4,25 @@
 # docs/LinalgToLCSPlan.md). The IR after each pass, whole modules, all goes to
 # one file: <outdir>/ir_after_each_pass.mlir. Run it with pixi, in the devcontainer.
 #
-#   1. Front end; compute tasks on whole tensors (transform.sodap.create_tasks),
-#      each tiled on its own (transform.sodap.tile_and_fuse); bufferization.
-#   2. soda-opt's outlining into forward_kernel, its arguments in forward's
-#      order (sodap-order-kernel-arguments) -> kernel.mlir.
-#   3. Accelerator, from kernel.mlir: load and store tasks
-#      (sodap-dataflow-load-store), every task on one loop nest built on demand
-#      (sodap-dataflow-schedule), ping-pong buffers and depth-1 tokens
-#      (sodap-dataflow-ping-pong), DMA, nodes, LLVM -> 05_hw_acc.ll.
-#   4. Host, from kernel.mlir: the ESP calls -> 05_kernel_riscv.ll.
+#   1. The kernel into a tile (SODATosaPlugin): transposes climb above
+#      elementwise ops toward the arguments (sodap-tosa-raise-transposes), the
+#      transposes of constants fold (sodap-tosa-fold-constant-transposes), then
+#      sodap-tosa-outline-kernel moves the computation into
+#      module @forward_kernel and leaves @forward, the host, the transposes of
+#      its arguments and results (run by the CPU) and a dataflow.launch. Any
+#      other transpose stops the script -> outlined.mlir.
+#   2. In the tile: front end; compute tasks on whole tensors
+#      (transform.sodap.create_tasks), each tiled on its own
+#      (transform.sodap.tile_and_fuse); bufferization.
+#   3. Accelerator, in the tile: load and store tasks (sodap-dataflow-load-store),
+#      every task on one loop nest built on demand (sodap-dataflow-schedule),
+#      ping-pong buffers and depth-1 tokens (sodap-dataflow-ping-pong), DMA,
+#      nodes, LLVM; sodap-tiles-to-llvm writes the tile's LLVM IR -> 05_hw_acc.ll.
+#   4. Host, @forward: TOSA to linalg, bufferization, the ESP calls
+#      (sodap-launches-to-esp) -> 05_kernel_riscv.ll.
 #   5. CPU baseline, a pipeline of its own from the same input: front end, no
-#      tasks and no tiling, bufferization, the same outlining -> 05_cpu_baseline.ll.
-#      Its argument order must be the accelerator's, or the script stops.
+#      tasks and no tiling, bufferization, soda-opt's outlining -> 05_cpu_baseline.ll.
+#      Its argument order must be the host's, or the script stops.
 #
 # Usage: ./scripts/tosa_to_lcs.sh <input_tosa.mlir> [<outdir>]
 # The output directory defaults to the input directory.
@@ -38,18 +45,17 @@
 # Writes in <outdir>:
 #   ir_after_each_pass.mlir         the IR after each pass (also split in
 #                                   ir_after_each_pass_{frontend,acc,host,cpu}.mlir)
+#   outlined.mlir                   the tile and the host, on TOSA
 #   tasks.mlir, bufferized.mlir     after the partition and tiling, after bufferization
-#   outlined.mlir, kernel.mlir      after the outlining
 #   argument_order.txt              forward_kernel's arguments, as forward's numbers
 #   dataflow.mlir                   after load/store, schedule and ping-pong (or the
 #                                   merge, with LCS_SEQUENTIAL=true)
-#   05_hw_acc.ll                    for Bambu, with architecture.xml
-#   architecture.xml
+#   05_hw_acc.ll                    for Bambu, with architecture.xml (copies of
+#   architecture.xml                tiles/forward_kernel/'s, with acc.ll)
+#   host.mlir                       the host with the ESP calls
 #   05_kernel_riscv.ll              for the RISC-V core
 #   05_cpu_baseline.ll              the CPU-only baseline
 #   cpu/                            the baseline's bufferized.mlir, outlined.mlir, kernel.mlir
-#   ac_channel_specializations.ll   needed to build 05_hw_acc.ll
-#   forward_kernel_testbench.c      written by soda-opt, not used here
 #   layout.txt                      the options above
 
 set -eou pipefail
@@ -68,9 +74,12 @@ cd "$OUT_DIR"
 
 MLIR_PLUGIN_PATH="${MLIR_PLUGIN_PATH:-$REPO_DIR/examples/soda-plugins/build/lib/SODAPlugin.so}"
 PLUGIN="--load-dialect-plugin=$MLIR_PLUGIN_PATH --load-pass-plugin=$MLIR_PLUGIN_PATH"
+# Never in the same call as $PLUGIN: both hold the Dataflow dialect.
+TOSA_PLUGIN="--load-pass-plugin=${SODAP_TOSA_PLUGIN:-$(dirname "$MLIR_PLUGIN_PATH")/SODATosaPlugin.so}"
 TRANSFORM="${LCS_TRANSFORM:-$REPO_DIR/scripts/lcs/transform.mlir}"
 ENTRY="${LCS_ENTRY:-tasks}"
 TOP=forward_kernel
+TILE=tiles/$TOP
 PROFILE=${LCS_PROFILE:-false}
 OUTSTANDING_LOADS=${LCS_OUTSTANDING_LOADS:-true}
 SEQUENTIAL=${LCS_SEQUENTIAL:-false}
@@ -151,68 +160,94 @@ BUFFERIZE="one-shot-bufferize{bufferize-function-boundaries function-boundary-ty
     canonicalize,
     buffer-results-to-out-params"
 
-section "$FRONTEND_DUMP" "Front end, compute tasks and tiling ($ENTRY), mlir-opt"
-step "$FRONTEND_DUMP" mlir-opt "$INPUT" $PLUGIN --pass-pipeline="builtin.module(
-    $FRONT_END,
+section "$FRONTEND_DUMP" "The kernel into a tile, the transposes to the host, mlir-opt"
+step "$FRONTEND_DUMP" mlir-opt "$INPUT" $TOSA_PLUGIN --pass-pipeline="builtin.module(
+    func.func(
+      sodap-tosa-raise-transposes,
+      sodap-tosa-fold-constant-transposes
+    ),
+    sodap-tosa-outline-kernel
+  )" -o outlined.mlir
+
+section "$FRONTEND_DUMP" "Tile: front end, compute tasks and tiling ($ENTRY), mlir-opt"
+step "$FRONTEND_DUMP" mlir-opt outlined.mlir $PLUGIN --pass-pipeline="builtin.module(
     transform-preload-library{transform-library-paths=$TRANSFORM},
-    transform-interpreter{entry-point=$ENTRY}
+    builtin.module(
+      $FRONT_END,
+      transform-interpreter{entry-point=$ENTRY}
+    )
   )" -o tasks.mlir
 
-section "$FRONTEND_DUMP" "Bufferization, mlir-opt"
+section "$FRONTEND_DUMP" "Tile: bufferization, mlir-opt"
 step "$FRONTEND_DUMP" mlir-opt tasks.mlir $PLUGIN --pass-pipeline="builtin.module(
-    $BUFFERIZE
+    builtin.module(
+      $BUFFERIZE
+    )
   )" -o bufferized.mlir
 
-outline "$FRONTEND_DUMP" bufferized.mlir .
-
-# canonicalize first: the outlined body starts with a branch to a second block,
-# which it merges.
-section "$ACC_DUMP" "Accelerator: load and store tasks, $([ "$SEQUENTIAL" = true ] && echo "merged into one" || echo "schedule, ping-pong"), mlir-opt"
-step "$ACC_DUMP" mlir-opt kernel.mlir $PLUGIN --pass-pipeline="builtin.module(
-    canonicalize,
-    func.func(sodap-dataflow-load-store),
-    canonicalize,
-    $STAGES,
-    canonicalize
+section "$ACC_DUMP" "Tile: load and store tasks, $([ "$SEQUENTIAL" = true ] && echo "merged into one" || echo "schedule, ping-pong"), mlir-opt"
+step "$ACC_DUMP" mlir-opt bufferized.mlir $PLUGIN --pass-pipeline="builtin.module(
+    builtin.module(
+      canonicalize,
+      func.func(sodap-dataflow-load-store),
+      canonicalize,
+      $STAGES,
+      canonicalize
+    )
   )" -o dataflow.mlir
 
-section "$ACC_DUMP" "Accelerator: to nodes and LLVM, mlir-opt"
+# The passes taking top-func find the kernel by the tile's name, and write
+# their files in $TILE.
+section "$ACC_DUMP" "Tile: to nodes and LLVM, mlir-opt"
 step "$ACC_DUMP" mlir-opt dataflow.mlir $PLUGIN --pass-pipeline="builtin.module(
-    sodap-dataflow-copy-to-dma{top-func=$TOP dma-word-stride=$WORD_STRIDE},
-    $OUTSTANDING_LOAD
-    func.func(
-      sodap-dataflow-tasks-to-nodes
+    builtin.module(
+      sodap-dataflow-copy-to-dma{dma-word-stride=$WORD_STRIDE},
+      $OUTSTANDING_LOAD
+      func.func(
+        sodap-dataflow-tasks-to-nodes
+      ),
+      sodap-dataflow-nodes-to-func,
+      func.func(
+        convert-linalg-to-loops
+      ),
+      sodap-dataflow-infer-top-interface,
+      sodap-emit-bambu-architecture{file=architecture.xml},
+      sodap-convert-dataflow-to-llvm,
+      func.func(
+        promote-buffers-to-stack{max-alloc-size-in-bytes=1048576}
+      ),
+      lower-affine,
+      convert-scf-to-cf,
+      convert-math-to-llvm,
+      expand-strided-metadata,
+      lower-affine,
+      finalize-memref-to-llvm,
+      convert-func-to-llvm{use-bare-ptr-memref-call-conv=true},
+      convert-index-to-llvm,
+      convert-cf-to-llvm,
+      reconcile-unrealized-casts
     ),
-    sodap-dataflow-nodes-to-func,
-    func.func(
-      convert-linalg-to-loops
-    ),
-    sodap-dataflow-infer-top-interface{top-func=$TOP},
-    sodap-emit-bambu-architecture{top-func=$TOP file=architecture.xml},
-    sodap-convert-dataflow-to-llvm,
-    func.func(
-      promote-buffers-to-stack{max-alloc-size-in-bytes=1048576}
-    ),
-    lower-affine,
-    convert-scf-to-cf,
-    convert-math-to-llvm,
-    expand-strided-metadata,
-    lower-affine,
-    finalize-memref-to-llvm,
-    convert-func-to-llvm{use-bare-ptr-memref-call-conv=true},
-    convert-index-to-llvm,
-    convert-cf-to-llvm,
-    reconcile-unrealized-casts
+    sodap-tiles-to-llvm
   )" -o acc.mlir
 
-$DOCKER_RUN mlir-translate --mlir-to-llvmir acc.mlir \
-  | $DOCKER_RUN llvm-link -S - ac_channel_specializations.ll \
-  | $DOCKER_RUN opt -passes=always-inline -S -o 05_hw_acc.ll
+$DOCKER_RUN llvm-link -S - "$TILE/ac_channel_specializations.ll" < "$TILE/acc.ll" \
+  | $DOCKER_RUN opt -passes=always-inline -S -o "$TILE/05_hw_acc.ll"
+cp "$TILE/05_hw_acc.ll" "$TILE/architecture.xml" .
 
-section "$HOST_DUMP" "Host: the ESP calls, soda-opt"
-step "$HOST_DUMP" soda-opt kernel.mlir $PLUGIN --pass-pipeline="builtin.module(
-    sodap-kernel-to-esp-accelerator{profile=$PROFILE dma-word-stride=$WORD_STRIDE}
+section "$HOST_DUMP" "Host: TOSA to linalg, bufferization, the ESP calls, mlir-opt"
+step "$HOST_DUMP" mlir-opt acc.mlir $PLUGIN --pass-pipeline="builtin.module(
+    func.func(
+      tosa-to-arith,
+      tosa-to-tensor,
+      tosa-to-linalg-named,
+      tosa-to-linalg
+    ),
+    $BUFFERIZE,
+    sodap-launches-to-esp{host=$TOP profile=$PROFILE dma-word-stride=$WORD_STRIDE}
   )" -o host.mlir
+# forward_kernel's arguments are @forward's, then its results.
+N_ARGS=$(grep -m1 -oE "func.func @$TOP\([^)]*\)" host.mlir | grep -oE '%arg[0-9]+:' | wc -l)
+seq -s ' ' 0 $((N_ARGS - 1)) > argument_order.txt
 HOST=host.mlir
 if [ "$PROFILE" = true ]; then
   step "$HOST_DUMP" soda-opt host.mlir $PLUGIN \
@@ -234,7 +269,7 @@ step "$CPU_DUMP" mlir-opt "$INPUT" $PLUGIN --pass-pipeline="builtin.module(
 outline "$CPU_DUMP" cpu/bufferized.mlir cpu
 if ! cmp -s argument_order.txt cpu/argument_order.txt; then
   echo "The CPU baseline's arguments are in another order: $(cat cpu/argument_order.txt)," \
-    "not $(cat argument_order.txt)" >&2
+    "not the host's $(cat argument_order.txt)" >&2
   exit 1
 fi
 CPU_KERNEL=cpu/kernel.mlir

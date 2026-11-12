@@ -10,6 +10,7 @@
 #define SODAP_TOSA_PASSES_H
 
 #include "mlir/Dialect/Tosa/IR/TosaOps.h"
+#include "sodap/Dialect/Dataflow/Dataflow.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/Pass/Pass.h"
 

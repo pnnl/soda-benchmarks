@@ -17,9 +17,9 @@ $(ODIR)/esp/lcs-options: lcs-options
 	@printf '%s\n' 'profile=$(LCS_PROFILE)' 'word_stride=$(LCS_DMA_WORD_STRIDE)' 'outstanding_loads=$(LCS_OUTSTANDING_LOADS)' 'sequential=$(LCS_SEQUENTIAL)' 'transform=$(LCS_TRANSFORM)' > $@.tmp
 	@cmp -s $@.tmp $@ && rm $@.tmp || mv $@.tmp $@
 
-LCS_OUTPUTS = $(addprefix $(ODIR)/esp/%/,05_hw_acc.ll 05_kernel_riscv.ll 05_cpu_baseline.ll architecture.xml argument_order.txt kernel.mlir outlined.mlir layout.txt)
+LCS_OUTPUTS = $(addprefix $(ODIR)/esp/%/,05_hw_acc.ll 05_kernel_riscv.ll 05_cpu_baseline.ll architecture.xml argument_order.txt host.mlir outlined.mlir layout.txt)
 # Multiple targets in one pattern rule share one lowering invocation.
-$(LCS_OUTPUTS): $(ODIR)/01_tosa.mlir $(SCRIPTS_DIR)/tosa_to_lcs.sh $(SCRIPTS_DIR)/lcs/argument_order.py $(LCS_TRANSFORM) $(ODIR)/esp/lcs-options $(wildcard $(MLIR_PLUGIN_PATH))
+$(LCS_OUTPUTS): $(ODIR)/01_tosa.mlir $(SCRIPTS_DIR)/tosa_to_lcs.sh $(SCRIPTS_DIR)/lcs/argument_order.py $(LCS_TRANSFORM) $(ODIR)/esp/lcs-options $(wildcard $(MLIR_PLUGIN_PATH) $(dir $(MLIR_PLUGIN_PATH))SODATosaPlugin.so)
 	LCS_PROFILE=$(LCS_PROFILE) LCS_DMA_WORD_STRIDE=$(LCS_DMA_WORD_STRIDE) LCS_OUTSTANDING_LOADS=$(LCS_OUTSTANDING_LOADS) LCS_SEQUENTIAL=$(LCS_SEQUENTIAL) LCS_TRANSFORM=$(LCS_TRANSFORM) $(SCRIPTS_DIR)/tosa_to_lcs.sh $< $(@D)
 
 $(ODIR)/esp/%/testdata.h: $(FILE_PATH) $(ODIR)/esp/%/argument_order.txt

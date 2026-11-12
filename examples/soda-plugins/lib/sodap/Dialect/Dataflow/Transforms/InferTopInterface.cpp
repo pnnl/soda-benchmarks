@@ -106,16 +106,11 @@ struct InferTopInterface
 void InferTopInterface::runOnOperation() {
   auto module = getOperation();
 
-  // Same story as EmitBambuArchitecture: a pass option cannot be required,
-  // so a missing one shows up here as empty.
-  if (topFunc.empty()) {
-    module.emitError() << "option 'top-func' is required";
-    return signalPassFailure();
-  }
+  std::string topName = dataflow::getTopName(module, topFunc);
   SymbolTable symbols(module);
-  auto top = symbols.lookup<func::FuncOp>(topFunc);
+  auto top = symbols.lookup<func::FuncOp>(topName);
   if (!top || top.isExternal()) {
-    module.emitError() << "top function '" << topFunc << "' not found";
+    module.emitError() << "top function '" << topName << "' not found";
     return signalPassFailure();
   }
 

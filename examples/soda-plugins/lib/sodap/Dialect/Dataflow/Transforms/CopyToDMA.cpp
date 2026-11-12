@@ -195,9 +195,10 @@ struct CopyToDMA : public dataflow::impl::CopyToDMABase<CopyToDMA> {
       module.emitError("dma-word-stride must be 1 or 2");
       return signalPassFailure();
     }
-    auto top = module.lookupSymbol<func::FuncOp>(topFunc);
+    std::string topName = dataflow::getTopName(module, topFunc);
+    auto top = module.lookupSymbol<func::FuncOp>(topName);
     if (!top || top.isExternal()) {
-      module.emitError() << "top function '" << topFunc << "' not found";
+      module.emitError() << "top function '" << topName << "' not found";
       return signalPassFailure();
     }
 

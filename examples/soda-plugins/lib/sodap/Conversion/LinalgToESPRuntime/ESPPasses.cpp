@@ -13,6 +13,7 @@
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/PatternMatch.h"
 
+#include "sodap/Dialect/Dataflow/Dataflow.h"
 #include "sodap/SODAPPasses.h"
 
 /// ESP runtime wrapper function names — mirror the C invocation steps.
@@ -56,6 +57,7 @@ using namespace mlir;
 
 namespace mlir::sodap {
 #define GEN_PASS_DEF_KERNELTOESPACCELERATOR
+#define GEN_PASS_DEF_LAUNCHESTOESP
 #define GEN_PASS_DEF_PROFILEKERNEL
 #define GEN_PASS_DEF_LINALGBATCHMATMULTOESP
 #define GEN_PASS_DEF_ORDERKERNELARGUMENTS
@@ -493,6 +495,109 @@ public:
   }
 };
 
+/// The host's ESP runtime calls, at the builder's insertion point. Operands
+/// lie in shared memory at word offsets; the data is copied as its bits: the
+/// accelerator reads `f32` from the DMA channel as is.
+struct EspCalls {
+  OpBuilder &builder;
+  Location loc;
+  unsigned dmaWordStride;
+  bool profile;
+
+  /// Declares what the calls below use.
+  void declare(ModuleOp module) {
+    OpBuilder::InsertionGuard guard(builder);
+    Type i32Ty = builder.getI32Type();
+    Type i64Ty = builder.getI64Type();
+    Type urMemRefF32 = UnrankedMemRefType::get(builder.getF32Type(), 0);
+    getOrInsertFunc(module, builder, kEspAllocShared, {i64Ty}, {i64Ty});
+    getOrInsertFunc(module, builder, kEspFreeShared, {}, {i64Ty});
+    SmallVector<Type> inTypes{urMemRefF32, i64Ty, i64Ty};
+    SmallVector<Type> outTypes{i64Ty, i64Ty, urMemRefF32};
+    if (dmaWordStride != 1) {
+      inTypes.push_back(i64Ty);
+      outTypes.push_back(i64Ty);
+    }
+    getOrInsertFunc(module, builder, copyInName(), {}, inTypes);
+    getOrInsertFunc(module, builder, copyOutName(), {}, outTypes);
+    getOrInsertFunc(module, builder, kEspAccelStart, {}, {});
+    getOrInsertFunc(module, builder, kEspAccelWait, {}, {});
+    if (profile) {
+      getOrInsertFunc(module, builder, kEspProfBegin, {}, {i32Ty});
+      getOrInsertFunc(module, builder, kEspProfEnd, {}, {i32Ty});
+    }
+  }
+
+  StringRef copyInName() const {
+    return dmaWordStride == 1 ? kEspCopyToSharedF32
+                              : "esp_copy_to_shared_f32_strided";
+  }
+  StringRef copyOutName() const {
+    return dmaWordStride == 1 ? kEspCopyFromSharedF32
+                              : "esp_copy_from_shared_f32_strided";
+  }
+
+  Value constant(int64_t value) {
+    return builder.create<arith::ConstantOp>(loc, builder.getI64Type(),
+                                             builder.getI64IntegerAttr(value));
+  }
+  void mark(const char *callee, uint32_t region) {
+    if (!profile)
+      return;
+    Value id = builder.create<arith::ConstantIntOp>(loc, region, 32);
+    builder.create<func::CallOp>(loc, callee, TypeRange{}, ValueRange{id});
+  }
+  Value alloc(int64_t words) {
+    mark(kEspProfBegin, kProfAlloc);
+    Value handle = builder
+                       .create<func::CallOp>(loc, kEspAllocShared,
+                                             TypeRange{builder.getI64Type()},
+                                             ValueRange{constant(words * 4)})
+                       .getResult(0);
+    mark(kEspProfEnd, kProfAlloc);
+    return handle;
+  }
+  void free(Value handle) {
+    builder.create<func::CallOp>(loc, kEspFreeShared, TypeRange{},
+                                 ValueRange{handle});
+  }
+  void copyIn(Value value, Value handle, int64_t offset) {
+    Value cast = builder.create<memref::CastOp>(
+        loc, UnrankedMemRefType::get(builder.getF32Type(), 0), value);
+    SmallVector<Value> args{cast, handle, constant(offset)};
+    if (dmaWordStride != 1)
+      args.push_back(constant(dmaWordStride));
+    builder.create<func::CallOp>(loc, copyInName(), TypeRange{}, args);
+  }
+  void copyOut(Value handle, int64_t offset, Value value) {
+    Value cast = builder.create<memref::CastOp>(
+        loc, UnrankedMemRefType::get(builder.getF32Type(), 0), value);
+    SmallVector<Value> args{handle, constant(offset), cast};
+    if (dmaWordStride != 1)
+      args.push_back(constant(dmaWordStride));
+    builder.create<func::CallOp>(loc, copyOutName(), TypeRange{}, args);
+  }
+  void run() {
+    mark(kEspProfBegin, kProfAccel);
+    builder.create<func::CallOp>(loc, kEspAccelStart, TypeRange{}, ValueRange{});
+    builder.create<func::CallOp>(loc, kEspAccelWait, TypeRange{}, ValueRange{});
+    mark(kEspProfEnd, kProfAccel);
+  }
+};
+
+/// The words of an f32 memref with a static shape and the identity layout in
+/// shared memory, or failure.
+static FailureOr<int64_t> sharedWords(Value value, Location loc,
+                                      unsigned dmaWordStride) {
+  auto type = dyn_cast<MemRefType>(value.getType());
+  if (!type || !type.getElementType().isF32() || !type.hasStaticShape() ||
+      !type.getLayout().isIdentity())
+    return emitError(loc, "expected f32 memrefs with static shapes and the "
+                          "identity layout, got ")
+           << value.getType();
+  return type.getNumElements() * dmaWordStride;
+}
+
 class KernelToESPAccelerator
     : public impl::KernelToESPAcceleratorBase<KernelToESPAccelerator> {
 public:
@@ -505,11 +610,6 @@ public:
       module.emitError("dma-word-stride must be 1 or 2");
       return signalPassFailure();
     }
-    const char *copyIn = dmaWordStride == 1 ? kEspCopyToSharedF32
-                                            : "esp_copy_to_shared_f32_strided";
-    const char *copyOut = dmaWordStride == 1
-                              ? kEspCopyFromSharedF32
-                              : "esp_copy_from_shared_f32_strided";
     auto function = module.lookupSymbol<func::FuncOp>(kernel);
     if (!function || function.isExternal()) {
       module.emitError("no function with a body named '") << kernel << "'";
@@ -520,49 +620,19 @@ public:
                          "buffer-results-to-out-params first");
       return signalPassFailure();
     }
-
-    struct Argument {
-      Value value;
-      int64_t offset;
-      bool written;
-    };
-    SmallVector<Argument> arguments;
+    SmallVector<int64_t> offsets;
     int64_t words = 0;
     for (BlockArgument arg : function.getArguments()) {
-      auto type = dyn_cast<MemRefType>(arg.getType());
-      if (!type || !type.getElementType().isF32() || !type.hasStaticShape() ||
-          !type.getLayout().isIdentity()) {
-        function.emitError("expected f32 memref arguments with static shapes "
-                           "and the identity layout, got ")
-            << arg.getType();
+      FailureOr<int64_t> size =
+          sharedWords(arg, function.getLoc(), dmaWordStride);
+      if (failed(size))
         return signalPassFailure();
-      }
-      arguments.push_back({arg, words, isWritten(arg)});
-      words += type.getNumElements() * dmaWordStride;
+      offsets.push_back(words);
+      words += *size;
     }
-
-    MLIRContext *ctx = module.getContext();
-    Location loc = function.getLoc();
-    OpBuilder builder(ctx);
-    Type i64Ty = builder.getI64Type();
-    Type urMemRefF32 = UnrankedMemRefType::get(builder.getF32Type(), 0);
-    getOrInsertFunc(module, builder, kEspAllocShared, {i64Ty}, {i64Ty});
-    getOrInsertFunc(module, builder, kEspFreeShared, {}, {i64Ty});
-    SmallVector<Type> inTypes{urMemRefF32, i64Ty, i64Ty};
-    SmallVector<Type> outTypes{i64Ty, i64Ty, urMemRefF32};
-    if (dmaWordStride != 1) {
-      inTypes.push_back(i64Ty);
-      outTypes.push_back(i64Ty);
-    }
-    getOrInsertFunc(module, builder, copyIn, {}, inTypes);
-    getOrInsertFunc(module, builder, copyOut, {}, outTypes);
-    getOrInsertFunc(module, builder, kEspAccelStart, {}, {});
-    getOrInsertFunc(module, builder, kEspAccelWait, {}, {});
-    if (profile) {
-      getOrInsertFunc(module, builder, kEspProfBegin, {},
-                      {builder.getI32Type()});
-      getOrInsertFunc(module, builder, kEspProfEnd, {}, {builder.getI32Type()});
-    }
+    SmallVector<bool> written;
+    for (BlockArgument arg : function.getArguments())
+      written.push_back(isWritten(arg));
 
     // The old body goes, and the entry block keeps its arguments. soda-opt's
     // outliner leaves a branch to a second block.
@@ -573,53 +643,128 @@ public:
       body.back().erase();
     while (!entry.empty())
       entry.back().erase();
-    builder.setInsertionPointToEnd(&entry);
+    OpBuilder builder = OpBuilder::atBlockEnd(&entry);
+    EspCalls esp{builder, function.getLoc(), dmaWordStride, profile};
+    esp.declare(module);
+    Value handle = esp.alloc(words);
+    esp.mark(kEspProfBegin, kProfPack);
+    for (BlockArgument arg : function.getArguments())
+      esp.copyIn(arg, handle, offsets[arg.getArgNumber()]);
+    esp.mark(kEspProfEnd, kProfPack);
+    esp.run();
+    esp.mark(kEspProfBegin, kProfUnpack);
+    for (BlockArgument arg : function.getArguments())
+      if (written[arg.getArgNumber()])
+        esp.copyOut(handle, offsets[arg.getArgNumber()], arg);
+    esp.mark(kEspProfEnd, kProfUnpack);
+    esp.free(handle);
+    builder.create<func::ReturnOp>(function.getLoc());
+  }
+};
 
-    auto constant = [&](int64_t value) -> Value {
-      return builder.create<arith::ConstantOp>(
-          loc, i64Ty, builder.getI64IntegerAttr(value));
-    };
-    auto mark = [&](const char *callee, uint32_t region) {
-      if (!profile)
-        return;
-      Value id = builder.create<arith::ConstantIntOp>(loc, region, 32);
-      builder.create<func::CallOp>(loc, callee, TypeRange{}, ValueRange{id});
-    };
-    mark(kEspProfBegin, kProfAlloc);
-    Value handle =
-        builder
-            .create<func::CallOp>(loc, kEspAllocShared, TypeRange{i64Ty},
-                                  ValueRange{constant(words * 4)})
-            .getResult(0);
-    mark(kEspProfEnd, kProfAlloc);
-    mark(kEspProfBegin, kProfPack);
-    for (const Argument &arg : arguments) {
-      Value cast = builder.create<memref::CastOp>(loc, urMemRefF32, arg.value);
-      SmallVector<Value> args{cast, handle, constant(arg.offset)};
-      if (dmaWordStride != 1)
-        args.push_back(constant(dmaWordStride));
-      builder.create<func::CallOp>(loc, copyIn, TypeRange{}, args);
+/// A result of a launch that the host only copies into an out-param of its
+/// function (`buffer-results-to-out-params`): the launch writes the out-param
+/// instead, and the allocation and the copy go.
+static void forwardOutParams(dataflow::LaunchOp launch) {
+  for (OpOperand &out : launch.getOutsMutable()) {
+    auto alloc = out.get().getDefiningOp<memref::AllocOp>();
+    if (!alloc || !llvm::hasNItems(alloc->getUses(), 2))
+      continue;
+    memref::CopyOp copy;
+    for (Operation *user : alloc->getUsers())
+      if (auto c = dyn_cast<memref::CopyOp>(user);
+          c && c.getSource() == alloc.getResult())
+        copy = c;
+    auto arg = copy ? dyn_cast<BlockArgument>(copy.getTarget()) : nullptr;
+    if (!arg || !arg.hasOneUse() || arg.getType() != alloc.getType() ||
+        !isa<func::FuncOp>(arg.getOwner()->getParentOp()) ||
+        copy->getBlock() != launch->getBlock() ||
+        copy->isBeforeInBlock(launch))
+      continue;
+    out.set(arg);
+    copy.erase();
+    alloc.erase();
+  }
+}
+
+class LaunchesToESP : public impl::LaunchesToESPBase<LaunchesToESP> {
+public:
+  using impl::LaunchesToESPBase<LaunchesToESP>::LaunchesToESPBase;
+
+  void runOnOperation() final {
+    ModuleOp module = getOperation();
+    if (dmaWordStride != 1 && dmaWordStride != 2) {
+      module.emitError("dma-word-stride must be 1 or 2");
+      return signalPassFailure();
     }
-    mark(kEspProfEnd, kProfPack);
-    mark(kEspProfBegin, kProfAccel);
-    builder.create<func::CallOp>(loc, kEspAccelStart, TypeRange{},
-                                 ValueRange{});
-    builder.create<func::CallOp>(loc, kEspAccelWait, TypeRange{}, ValueRange{});
-    mark(kEspProfEnd, kProfAccel);
-    mark(kEspProfBegin, kProfUnpack);
-    for (const Argument &arg : arguments) {
-      if (!arg.written)
-        continue;
-      Value cast = builder.create<memref::CastOp>(loc, urMemRefF32, arg.value);
-      SmallVector<Value> args{handle, constant(arg.offset), cast};
-      if (dmaWordStride != 1)
-        args.push_back(constant(dmaWordStride));
-      builder.create<func::CallOp>(loc, copyOut, TypeRange{}, args);
+    SmallVector<ModuleOp> tiles;
+    for (auto tile : module.getOps<ModuleOp>())
+      if (tile->hasAttr("sodap.tile"))
+        tiles.push_back(tile);
+    SmallVector<dataflow::LaunchOp> launches;
+    module.walk([&](dataflow::LaunchOp launch) { launches.push_back(launch); });
+    if (launches.empty())
+      return;
+    if (tiles.size() != 1) {
+      module.emitError("expected one tile module, got ") << tiles.size();
+      return signalPassFailure();
     }
-    mark(kEspProfEnd, kProfUnpack);
-    builder.create<func::CallOp>(loc, kEspFreeShared, TypeRange{},
-                                 ValueRange{handle});
-    builder.create<func::ReturnOp>(loc);
+    func::FuncOp host = launches.front()->getParentOfType<func::FuncOp>();
+    for (dataflow::LaunchOp launch : launches) {
+      if (launch->getParentOfType<func::FuncOp>() != host ||
+          launch->getBlock() != launches.front()->getBlock()) {
+        launch.emitOpError("expected every launch in one block");
+        return signalPassFailure();
+      }
+      if (launch.getNumResults() != 0) {
+        launch.emitOpError("expected a bufferized launch");
+        return signalPassFailure();
+      }
+      if (launch.getKernel().getRootReference() != tiles.front().getSymNameAttr()) {
+        launch.emitOpError("expected a kernel in the tile module");
+        return signalPassFailure();
+      }
+      forwardOutParams(launch);
+    }
+
+    // The operands one after the other, as copy-to-dma lays out the kernel's
+    // arguments; each launch copies all its operands in and its outs out.
+    SmallVector<int64_t> offsets;
+    int64_t words = 0;
+    for (Value operand : launches.front()->getOperands()) {
+      FailureOr<int64_t> size =
+          sharedWords(operand, launches.front().getLoc(), dmaWordStride);
+      if (failed(size))
+        return signalPassFailure();
+      offsets.push_back(words);
+      words += *size;
+    }
+
+    OpBuilder builder(module.getContext());
+    builder.setInsertionPoint(launches.front());
+    EspCalls esp{builder, launches.front().getLoc(), dmaWordStride, profile};
+    esp.declare(module);
+    Value handle = esp.alloc(words);
+    for (dataflow::LaunchOp launch : launches) {
+      unsigned numInputs = launch.getInputs().size();
+      builder.setInsertionPoint(launch);
+      esp.loc = launch.getLoc();
+      esp.mark(kEspProfBegin, kProfPack);
+      for (auto [i, operand] : llvm::enumerate(launch->getOperands()))
+        if (i < numInputs || !operand.getDefiningOp<memref::AllocOp>())
+          esp.copyIn(operand, handle, offsets[i]);
+      esp.mark(kEspProfEnd, kProfPack);
+      esp.run();
+      esp.mark(kEspProfBegin, kProfUnpack);
+      for (auto [i, out] : llvm::enumerate(launch.getOuts()))
+        esp.copyOut(handle, offsets[numInputs + i], out);
+      esp.mark(kEspProfEnd, kProfUnpack);
+    }
+    esp.free(handle);
+    for (dataflow::LaunchOp launch : launches)
+      launch.erase();
+    tiles.front().erase();
+    host.setSymName(this->host);
   }
 };
 

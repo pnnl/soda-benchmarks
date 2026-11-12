@@ -37,7 +37,7 @@ func.func @forward_kernel(%alpha: memref<f32>, %out: memref<2x3xf32>, %a: memref
 
 // -----
 
-// expected-error@+1 {{expected f32 memref arguments with static shapes and the identity layout}}
+// expected-error@+1 {{expected f32 memrefs with static shapes and the identity layout}}
 func.func @forward_kernel(%a: memref<?xf32>) {
   return
 }

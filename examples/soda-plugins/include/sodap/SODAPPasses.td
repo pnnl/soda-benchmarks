@@ -313,6 +313,42 @@ def KernelToESPAccelerator : Pass<"sodap-kernel-to-esp-accelerator", "::mlir::Mo
   ];
 }
 
+def LaunchesToESP : Pass<"sodap-launches-to-esp", "::mlir::ModuleOp"> {
+  let summary = "Run each dataflow.launch on its ESP accelerator tile";
+  let description = [{
+    The host side of the single-module flow, after the host's bufferization
+    and `sodap-tiles-to-llvm`. Each `dataflow.launch` becomes one run of its
+    tile's accelerator, as `sodap-kernel-to-esp-accelerator` emits it for a
+    kernel: `esp_alloc_shared`, `esp_copy_to_shared_f32` of every operand,
+    `esp_accel_start`, `esp_accel_wait`, `esp_copy_from_shared_f32` of each
+    `outs` operand, `esp_free_shared`. The operands lie one after the other in
+    order, in words, the layout `sodap-dataflow-copy-to-dma` compiles into the
+    accelerator from the kernel's arguments, which are the launch's operands
+    by construction. Exactly one tile module is expected.
+
+    An `outs` buffer that the host only copies into an out-param of its
+    function (what `buffer-results-to-out-params` leaves) is replaced by the
+    out-param, so one tile gives today's calls on the function's arguments.
+    The tile modules are erased, and the function holding the launches is
+    renamed `host`, the name the application calls.
+
+    Operands must be f32 memrefs with static shapes and the identity layout.
+  }];
+  let options = [
+    Option<"host", "host", "std::string", /*default=*/"\"forward_kernel\"",
+           "New name of the function holding the launches">,
+    Option<"profile", "profile", "bool", /*default=*/"false",
+           "Measure allocation, packing, execution and unpacking">,
+    Option<"dmaWordStride", "dma-word-stride", "unsigned", /*default=*/"1",
+           "32-bit words per shared-memory element (1 dense, 2 padded for DMA64)">
+  ];
+  let dependentDialects = [
+    "::mlir::arith::ArithDialect",
+    "::mlir::func::FuncDialect",
+    "::mlir::memref::MemRefDialect"
+  ];
+}
+
 def OrderKernelArguments : Pass<"sodap-order-kernel-arguments", "::mlir::ModuleOp"> {
   let summary = "Give an outlined kernel its caller's argument order";
   let description = [{

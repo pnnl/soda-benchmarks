@@ -49,7 +49,7 @@ def EmitBambuArchitecture :
     Option<"xmlFileName", "file", "std::string",
            /*default=*/"\"architecture.xml\"", "Output file name">,
     Option<"topFunc", "top-func", "std::string", /*default=*/"",
-           "Top function of the design (required)">,
+           "Top function of the design (default: the module's name)">,
     Option<"includePandaPath", "include-panda-path", "std::string",
            /*default=*/"SODAP_BAMBU_INCLUDE",
            "Directory holding ac_channel.h, named in the includes= of every "

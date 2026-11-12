@@ -102,6 +102,63 @@ struct YieldOpInterface
     return success();
   }
 };
+/// launch: the kernel reads its tensor operands, and each result is a new
+/// buffer, allocated before the launch and passed in `outs`.
+struct LaunchOpInterface
+    : public BufferizableOpInterface::ExternalModel<LaunchOpInterface,
+                                                    LaunchOp> {
+  bool bufferizesToMemoryRead(Operation *op, OpOperand &opOperand,
+                              const AnalysisState &state) const {
+    return true;
+  }
+
+  bool bufferizesToMemoryWrite(Operation *op, OpOperand &opOperand,
+                               const AnalysisState &state) const {
+    return false;
+  }
+
+  AliasingValueList getAliasingValues(Operation *op, OpOperand &opOperand,
+                                      const AnalysisState &state) const {
+    return {};
+  }
+
+  bool bufferizesToAllocation(Operation *op, Value value) const {
+    return true;
+  }
+
+  LogicalResult bufferize(Operation *op, RewriterBase &rewriter,
+                          const BufferizationOptions &options) const {
+    auto launch = cast<LaunchOp>(op);
+    SmallVector<Value> inputs, outs;
+    for (Value value : launch.getInputs()) {
+      if (!isa<TensorType>(value.getType())) {
+        inputs.push_back(value);
+        continue;
+      }
+      FailureOr<Value> buffer = getBuffer(rewriter, value, options);
+      if (failed(buffer))
+        return failure();
+      inputs.push_back(*buffer);
+    }
+    for (Value result : launch.getResults()) {
+      auto type = dyn_cast<RankedTensorType>(result.getType());
+      if (!type || !type.hasStaticShape())
+        return op->emitError("expected results of static shapes, got ")
+               << result.getType();
+      FailureOr<Value> alloc = options.createAlloc(
+          rewriter, op->getLoc(),
+          MemRefType::get(type.getShape(), type.getElementType()), {});
+      if (failed(alloc))
+        return failure();
+      outs.push_back(*alloc);
+    }
+    auto newOp = rewriter.create<LaunchOp>(op->getLoc(), TypeRange(),
+                                           launch.getKernel(), inputs, outs);
+    newOp->setDiscardableAttrs(op->getDiscardableAttrDictionary());
+    replaceOpWithBufferizedValues(rewriter, op, outs);
+    return success();
+  }
+};
 } // namespace
 
 void mlir::sodap::dataflow::registerBufferizableOpInterfaceExternalModels(
@@ -110,5 +167,6 @@ void mlir::sodap::dataflow::registerBufferizableOpInterfaceExternalModels(
     DispatchOp::attachInterface<RegionOpInterface<DispatchOp>>(*ctx);
     TaskOp::attachInterface<RegionOpInterface<TaskOp>>(*ctx);
     YieldOp::attachInterface<YieldOpInterface>(*ctx);
+    LaunchOp::attachInterface<LaunchOpInterface>(*ctx);
   });
 }

@@ -26,6 +26,8 @@
 #include "mlir/Transforms/RegionUtils.h"
 #include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/TypeSwitch.h"
+#include "llvm/Support/FileSystem.h"
+#include "llvm/Support/Path.h"
 
 using namespace mlir;
 using namespace mlir::sodap;
@@ -222,6 +224,37 @@ LogicalResult DispatchOp::verify() {
 
 YieldOp DispatchOp::getYieldOp() {
   return cast<YieldOp>(getBody().front().getTerminator());
+}
+
+//===----------------------------------------------------------------------===//
+// LaunchOp
+//===----------------------------------------------------------------------===//
+
+LogicalResult LaunchOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
+  if (!symbolTable.lookupNearestSymbolFrom(*this, getKernel()))
+    return emitOpError("kernel '") << getKernel() << "' not found";
+  return success();
+}
+
+std::string mlir::sodap::dataflow::getTopName(ModuleOp module,
+                                              StringRef topFunc) {
+  if (!topFunc.empty())
+    return topFunc.str();
+  return module.getSymName() ? module.getSymName()->str() : "";
+}
+
+std::string mlir::sodap::dataflow::getTileFilePath(Operation *op,
+                                                   StringRef file) {
+  for (; op; op = op->getParentOp()) {
+    auto dir = op->getAttrOfType<StringAttr>("sodap.tile_dir");
+    if (!dir)
+      continue;
+    llvm::sys::fs::create_directories(dir.getValue());
+    SmallString<128> path(dir.getValue());
+    llvm::sys::path::append(path, file);
+    return std::string(path);
+  }
+  return file.str();
 }
 
 //===----------------------------------------------------------------------===//

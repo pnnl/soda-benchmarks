@@ -8,6 +8,7 @@ add_mlir_dialect_library(MLIRSODAPDataflowTransforms
         InferTopInterface.cpp
         NodesToFunc.cpp
         TasksToNodes.cpp
+        TilesToLLVM.cpp
 
         ADDITIONAL_HEADER_DIRS
         ${PROJECT_SOURCE_DIR}/include/sodap/Dialect/Dataflow/Transforms

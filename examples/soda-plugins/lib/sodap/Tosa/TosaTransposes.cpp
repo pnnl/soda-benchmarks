@@ -8,6 +8,9 @@
 //
 // sodap-tosa-sink-transposes and sodap-tosa-hoist-transposes: a model from
 // PyTorch in TOSA's layouts (NHWC), with no transposes inside its blocks.
+// sodap-tosa-raise-transposes, sodap-tosa-fold-constant-transposes and
+// sodap-tosa-outline-kernel: one kernel split into a tile and a host that
+// transposes its arguments and results.
 //
 //===----------------------------------------------------------------------===//
 
@@ -15,17 +18,23 @@
 
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/Tosa/IR/TosaOps.h"
+#include "mlir/Dialect/Tosa/Transforms/Passes.h"
 #include "mlir/IR/BuiltinAttributes.h"
+#include "mlir/IR/IRMapping.h"
 #include "mlir/IR/Matchers.h"
 #include "mlir/IR/PatternMatch.h"
 #include "mlir/IR/SymbolTable.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
+#include "llvm/ADT/SetVector.h"
 
 #include <optional>
 
 namespace mlir::sodap {
 #define GEN_PASS_DEF_TOSASINKTRANSPOSES
 #define GEN_PASS_DEF_TOSAHOISTTRANSPOSES
+#define GEN_PASS_DEF_TOSARAISETRANSPOSES
+#define GEN_PASS_DEF_TOSAFOLDCONSTANTTRANSPOSES
+#define GEN_PASS_DEF_TOSAOUTLINEKERNEL
 #include "sodap/Tosa/Passes.h.inc"
 
 namespace {
@@ -236,6 +245,248 @@ struct TosaHoistTransposes
         call.erase();
       }
     }
+  }
+};
+
+/// transpose(op(x, c...)) -> op(transpose(x), transpose(c)...), `op`
+/// elementwise, read only by the transpose, with at most one operand that is
+/// not a tosa.const.
+struct RaiseTranspose : OpRewritePattern<tosa::TransposeOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(tosa::TransposeOp transpose,
+                                PatternRewriter &rewriter) const override {
+    Operation *op = transpose.getInput1().getDefiningOp();
+    if (!op || !isa<tosa::TosaDialect>(op->getDialect()) ||
+        !op->hasTrait<OpTrait::ResultsBroadcastableShape>() ||
+        op->getNumResults() != 1 || !op->hasOneUse())
+      return failure();
+    auto resultType = cast<RankedTensorType>(op->getResult(0).getType());
+    if (llvm::count_if(op->getOperands(), [](Value v) {
+          return !v.getDefiningOp<tosa::ConstOp>();
+        }) > 1)
+      return failure();
+    SmallVector<Value> operands;
+    for (Value operand : op->getOperands()) {
+      auto type = dyn_cast<RankedTensorType>(operand.getType());
+      if (!type || type.getRank() != resultType.getRank())
+        return failure();
+      operands.push_back(operand);
+    }
+    std::optional<SmallVector<int64_t>> perms = permsOf(transpose);
+    if (!perms)
+      return failure();
+
+    for (Value &operand : operands)
+      operand = rewriter.create<tosa::TransposeOp>(
+          transpose.getLoc(),
+          permuted(cast<RankedTensorType>(operand.getType()), *perms), operand,
+          transpose.getPerms());
+    Operation *raised = rewriter.clone(*op);
+    raised->setOperands(operands);
+    raised->getResult(0).setType(transpose.getType());
+    rewriter.replaceOp(transpose, raised->getResults());
+    rewriter.eraseOp(op);
+    return success();
+  }
+};
+
+/// The transposes in `root`, in order.
+SmallVector<Operation *> transposesIn(Operation *root) {
+  SmallVector<Operation *> transposes;
+  root->walk([&](tosa::TransposeOp t) { transposes.push_back(t); });
+  return transposes;
+}
+
+struct TosaRaiseTransposes
+    : impl::TosaRaiseTransposesBase<TosaRaiseTransposes> {
+  void runOnOperation() final {
+    SmallVector<Operation *> transposes = transposesIn(getOperation());
+    if (transposes.empty())
+      return;
+    RewritePatternSet patterns(&getContext());
+    patterns.add<RaiseTranspose>(&getContext());
+    tosa::TransposeOp::getCanonicalizationPatterns(patterns, &getContext());
+    // Only the transposes and what the patterns create: the rest of the
+    // function keeps its form.
+    GreedyRewriteConfig config;
+    config.strictMode = GreedyRewriteStrictness::ExistingAndNewOps;
+    if (failed(applyOpPatternsAndFold(transposes, std::move(patterns), config)))
+      signalPassFailure();
+  }
+};
+
+struct TosaFoldConstantTransposes
+    : impl::TosaFoldConstantTransposesBase<TosaFoldConstantTransposes> {
+  void runOnOperation() final {
+    SmallVector<Operation *> transposes;
+    SmallVector<Operation *> constants;
+    WalkResult walk = getOperation()->walk([&](tosa::TransposeOp t) {
+      auto constant = t.getInput1().getDefiningOp<tosa::ConstOp>();
+      if (!constant)
+        return WalkResult::advance();
+      if (!constant->hasOneUse()) {
+        t.emitError("transpose of a constant that has other uses: folding "
+                    "it would keep the data in both layouts");
+        return WalkResult::interrupt();
+      }
+      transposes.push_back(t);
+      constants.push_back(constant);
+      return WalkResult::advance();
+    });
+    if (walk.wasInterrupted())
+      return signalPassFailure();
+    if (transposes.empty())
+      return;
+    RewritePatternSet patterns(&getContext());
+    tosa::populateTosaFoldConstantTransposePatterns(&getContext(), patterns);
+    GreedyRewriteConfig config;
+    config.strictMode = GreedyRewriteStrictness::ExistingOps;
+    bool allErased = false;
+    if (failed(applyOpPatternsAndFold(transposes, std::move(patterns), config,
+                                      /*changed=*/nullptr, &allErased)) ||
+        !allErased) {
+      getOperation()->emitError("could not fold every transpose of a constant");
+      return signalPassFailure();
+    }
+    for (Operation *constant : constants)
+      if (constant->use_empty())
+        constant->erase();
+  }
+};
+
+struct TosaOutlineKernel : impl::TosaOutlineKernelBase<TosaOutlineKernel> {
+  void runOnOperation() final {
+    ModuleOp module = getOperation();
+    MLIRContext *ctx = module.getContext();
+    SmallVector<func::FuncOp> publics;
+    for (auto f : module.getOps<func::FuncOp>())
+      if (f.isPublic() && !f.isExternal())
+        publics.push_back(f);
+    if (publics.size() != 1) {
+      module.emitError("expected one public function with a body, got ")
+          << publics.size();
+      return signalPassFailure();
+    }
+    func::FuncOp kernel = publics.front();
+    if (!kernel.getBody().hasOneBlock()) {
+      kernel.emitError("expected a function with one block");
+      return signalPassFailure();
+    }
+    Block &body = kernel.front();
+    auto ret = cast<func::ReturnOp>(body.getTerminator());
+
+    // The host's transposes: of an argument, or of a returned value.
+    DenseMap<BlockArgument, SmallVector<tosa::TransposeOp>> inputs;
+    SmallVector<tosa::TransposeOp> outputs;
+    for (Operation *op : transposesIn(kernel)) {
+      auto t = cast<tosa::TransposeOp>(op);
+      auto arg = dyn_cast<BlockArgument>(t.getInput1());
+      if (arg && arg.getOwner() == &body) {
+        inputs[arg].push_back(t);
+        continue;
+      }
+      if (t->hasOneUse() && *t->user_begin() == ret.getOperation() &&
+          t->getBlock() == &body) {
+        outputs.push_back(t);
+        continue;
+      }
+      t.emitError("transpose between two ops: the accelerator must not "
+                  "transpose, only the host transposes the arguments and "
+                  "results of @")
+          << kernel.getSymName();
+      return signalPassFailure();
+    }
+
+    // The kernel's arguments: each argument if the computation reads it,
+    // then its transposes.
+    SmallVector<Value> tileInputs;
+    for (BlockArgument arg : body.getArguments()) {
+      auto it = inputs.find(arg);
+      size_t transposed = it == inputs.end() ? 0 : it->second.size();
+      if (std::distance(arg.use_begin(), arg.use_end()) > (long)transposed)
+        tileInputs.push_back(arg);
+      if (transposed)
+        for (tosa::TransposeOp t : it->second)
+          tileInputs.push_back(t);
+    }
+
+    // The host: the transposes of its arguments, the launch, the transposes
+    // of its results.
+    OpBuilder builder(ctx);
+    builder.setInsertionPointAfter(kernel);
+    std::string name = "forward_kernel";
+    auto host = builder.create<func::FuncOp>(kernel.getLoc(),
+                                             kernel.getSymName(),
+                                             kernel.getFunctionType());
+    Block *hostBody = host.addEntryBlock();
+    builder.setInsertionPointToStart(hostBody);
+    IRMapping map;
+    map.map(body.getArguments(), hostBody->getArguments());
+    auto copy = [&](tosa::TransposeOp t, Value input) {
+      Operation *perms = t.getPerms().getDefiningOp();
+      Value p = perms ? builder.clone(*perms)->getResult(0) : Value(t.getPerms());
+      return builder.create<tosa::TransposeOp>(t.getLoc(), t.getType(), input,
+                                               p);
+    };
+    SmallVector<Value> launchInputs;
+    for (Value v : tileInputs) {
+      if (auto t = v.getDefiningOp<tosa::TransposeOp>())
+        launchInputs.push_back(copy(t, map.lookup(t.getInput1())));
+      else
+        launchInputs.push_back(map.lookup(v));
+    }
+    SmallVector<Value> tileResults;
+    for (Value v : ret.getOperands()) {
+      auto t = v.getDefiningOp<tosa::TransposeOp>();
+      tileResults.push_back(t && llvm::is_contained(outputs, t) ? t.getInput1()
+                                                                : v);
+    }
+    auto kernelRef = SymbolRefAttr::get(ctx, name,
+                                        {FlatSymbolRefAttr::get(ctx, name)});
+    auto launch = builder.create<dataflow::LaunchOp>(
+        kernel.getLoc(), ValueRange(tileResults).getTypes(), kernelRef,
+        launchInputs, ValueRange());
+    SmallVector<Value> hostResults;
+    for (auto [v, r] : llvm::zip_equal(ret.getOperands(), launch.getResults())) {
+      auto t = v.getDefiningOp<tosa::TransposeOp>();
+      hostResults.push_back(t && llvm::is_contained(outputs, t) ? Value(copy(t, r))
+                                                                : r);
+    }
+    builder.create<func::ReturnOp>(kernel.getLoc(), hostResults);
+
+    // The tile: the kernel without the host's transposes.
+    ret->setOperands(tileResults);
+    SetVector<Operation *> perms;
+    for (tosa::TransposeOp t : outputs) {
+      if (Operation *p = t.getPerms().getDefiningOp())
+        perms.insert(p);
+      t.erase();
+    }
+    auto *tileBody = new Block();
+    for (Value v : tileInputs)
+      v.replaceAllUsesWith(tileBody->addArgument(v.getType(), v.getLoc()));
+    for (auto &[arg, ts] : inputs)
+      for (tosa::TransposeOp t : ts) {
+        if (Operation *p = t.getPerms().getDefiningOp())
+          perms.insert(p);
+        t.erase();
+      }
+    tileBody->getOperations().splice(tileBody->end(), body.getOperations());
+    kernel.getBody().push_back(tileBody);
+    body.erase();
+    for (Operation *p : perms)
+      if (p->use_empty())
+        p->erase();
+    kernel.setSymName(name);
+    kernel.setType(FunctionType::get(ctx, tileBody->getArgumentTypes(),
+                                     ret.getOperandTypes()));
+
+    builder.setInsertionPoint(kernel);
+    auto tile = builder.create<ModuleOp>(kernel.getLoc(), name);
+    tile->setAttr("sodap.tile", builder.getI64IntegerAttr(0));
+    tile->setAttr("sodap.tile_dir", builder.getStringAttr("tiles/" + name));
+    kernel->moveBefore(tile.getBody(), tile.getBody()->end());
   }
 };
 } // namespace

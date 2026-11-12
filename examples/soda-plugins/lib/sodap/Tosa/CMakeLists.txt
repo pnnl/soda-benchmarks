@@ -12,5 +12,7 @@ add_mlir_library(MLIRSODAPTosa
         MLIRPass
         MLIRFuncDialect
         MLIRTosaDialect
+        MLIRTosaTransforms
+        MLIRSODAPDataflow
         MLIRTransformUtils
         )

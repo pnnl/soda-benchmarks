@@ -165,6 +165,8 @@ private:
 
   /// includePandaPath + "/ac_channel.h", built once in runOnOperation.
   std::string channelInclude;
+  /// top-func, or the module's name (getTopName).
+  std::string topName;
 };
 
 std::string EmitBambuArchitecture::getBundleMode(BlockArgument arg) {
@@ -175,7 +177,7 @@ std::string EmitBambuArchitecture::getBundleMode(BlockArgument arg) {
     // channel and keeps a FIFO bundle with the stream's depth: that is the
     // combination Bambu builds the dataflow wrapper from.
     auto func = cast<func::FuncOp>(arg.getOwner()->getParentOp());
-    bool isTop = func.getName() == topFunc;
+    bool isTop = func.getName() == topName;
     return streamType.isAxis() && isTop ? "axis" : "fifo";
   }
   return isa<MemRefType>(type) ? "array" : "default";
@@ -291,7 +293,7 @@ EmitBambuArchitecture::describeParams(func::FuncOp func) {
     // otherwise; see ParamInfo::bundle for the name a module uses.
     info.index = index;
     info.port = ("P" + Twine(index)).str();
-    info.bundle = func.getName() == topFunc
+    info.bundle = func.getName() == topName
                       ? info.port
                       : (func.getName() + "_B" + Twine(index)).str();
     info.bundleMode = getBundleMode(arg);
@@ -353,15 +355,7 @@ void EmitBambuArchitecture::emitFunction(llvm::raw_ostream &os,
 void EmitBambuArchitecture::runOnOperation() {
   auto module = getOperation();
 
-  // top-func is the one option with no default, and a pass option cannot be
-  // marked required: MLIR configures a pass by feeding the option string to
-  // cl::ProvidePositionalOption, which never runs cl's own required check, so
-  // llvm::cl::Required on one is inert and a missing option arrives here
-  // empty.
-  if (topFunc.empty()) {
-    module.emitError() << "option 'top-func' is required";
-    return signalPassFailure();
-  }
+  topName = dataflow::getTopName(module, topFunc);
   if (includePandaPath.empty()) {
     module.emitError() << "option 'include-panda-path' cannot be empty";
     return signalPassFailure();
@@ -370,9 +364,9 @@ void EmitBambuArchitecture::runOnOperation() {
   llvm::sys::path::append(header, "ac_channel.h");
   channelInclude = header.str().str();
 
-  auto top = module.lookupSymbol<func::FuncOp>(topFunc);
+  auto top = module.lookupSymbol<func::FuncOp>(topName);
   if (!top) {
-    module.emitError() << "top function '" << topFunc << "' not found";
+    module.emitError() << "top function '" << topName << "' not found";
     return signalPassFailure();
   }
 
@@ -380,7 +374,8 @@ void EmitBambuArchitecture::runOnOperation() {
   std::unique_ptr<llvm::raw_fd_ostream> file;
   if (!writeToTerminal) {
     std::error_code error;
-    file = std::make_unique<llvm::raw_fd_ostream>(xmlFileName, error);
+    file = std::make_unique<llvm::raw_fd_ostream>(
+        dataflow::getTileFilePath(module, xmlFileName), error);
     if (error) {
       module.emitError() << "cannot open '" << xmlFileName << "'";
       return signalPassFailure();
@@ -393,7 +388,7 @@ void EmitBambuArchitecture::runOnOperation() {
     if (func.isExternal())
       continue;
 
-    bool isTop = func.getName() == topFunc;
+    bool isTop = func.getName() == topName;
     emitFunction(os, func, isTop, describeParams(func));
   }
   os << "</module>\n";
