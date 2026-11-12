@@ -141,6 +141,13 @@ def PingPong :
     carrying the slot. In a task, the tile's level is the innermost block
     holding all the task's accesses to the buffer, run once per tile:
 
+    A scalar implementation can mark a zero-result scf.execute_region with
+    `sodap.dataflow_tile`. All accesses to a shared buffer in a task must then
+    occur in that same region. The token brackets the entire region, including
+    dynamic tail loops, rather than individual scalar loads/stores. The caller
+    must generate matching writer/reader traversals for runtime trip counts.
+    Run this pass before canonicalization inlines these explicit tile scopes.
+
     - The writer keeps a slot variable. It writes the tile in the slot, then,
       after its last access of the level, writes the slot to every reader's
       stream and switches to the other slot. A writer that also reads the

@@ -45,9 +45,34 @@ struct Side {
   bool writes = false, reads = false;
 };
 
-Side sideOf(TaskOp task, ArrayRef<Access> accesses) {
+FailureOr<Side> sideOf(TaskOp task, ArrayRef<Access> accesses) {
   Side side{task, SmallVector<Access>(accesses),
             accesses.front().op->getBlock(), nullptr, nullptr};
+  // Runtime-sized tiles may be expressed by scalar loops instead of a single
+  // linalg/copy operation. Their explicit scope denotes one tile transaction:
+  // retain its token until every scalar access has finished. Without this,
+  // a lone memref.load/store would incorrectly get a token per element.
+  auto tileScope = [&](Operation *access) -> Operation * {
+    for (Operation *op = access->getParentOp(); op != task;
+         op = op->getParentOp())
+      if (isa<scf::ExecuteRegionOp>(op) &&
+          op->hasAttr("sodap.dataflow_tile"))
+        return op;
+    return nullptr;
+  };
+  Operation *scope = nullptr;
+  for (const Access &access : accesses)
+    if ((scope = tileScope(access.op)))
+      break;
+  if (scope && !llvm::all_of(accesses, [&](const Access &access) {
+        return tileScope(access.op) == scope;
+      })) {
+    task.emitOpError("all accesses to a shared buffer must belong to one "
+                     "explicit tile scope");
+    return failure();
+  }
+  if (scope)
+    side.level = scope->getBlock();
   for (const Access &access : accesses) {
     while (!side.level->findAncestorOpInBlock(*access.op))
       side.level = side.level->getParentOp()->getBlock();
@@ -116,7 +141,10 @@ LogicalResult pingPong(DispatchOp dispatch) {
     SmallVector<Side> readers;
     MemRefType tile;
     for (auto &[task, list] : *accesses) {
-      Side side = sideOf(task, list);
+      auto inferredSide = sideOf(task, list);
+      if (failed(inferredSide))
+        return failure();
+      Side side = *inferredSide;
       for (const Access &access : list) {
         auto type = cast<MemRefType>(access.view.getType());
         if (!tile)

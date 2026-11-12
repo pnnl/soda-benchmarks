@@ -1,5 +1,7 @@
 # ESP validation convenience entry point
 
+For synthesis followed by ESP full-system simulation on emilia, start with the [step-by-step tutorial](../../docs/ESPSynthesisSimulation.md).
+
 The regression tests live in `examples/soda-plugins/test/sodap/ESP/` and run
 through lit, including the `mlir-cpu-runner` ABI test and native profiler test.
 The convenience entry point does not maintain a second set of test commands or

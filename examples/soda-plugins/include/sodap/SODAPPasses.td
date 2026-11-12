@@ -276,6 +276,45 @@ def ProfileKernel : Pass<"sodap-profile-kernel", "::mlir::ModuleOp"> {
   let dependentDialects = ["::mlir::arith::ArithDialect", "::mlir::func::FuncDialect"];
 }
 
+def GenerateReusableGemm : Pass<"sodap-generate-reusable-gemm", "::mlir::ModuleOp"> {
+  let summary = "Generate a tiled float32 GEMM with runtime dimensions and DMA addresses";
+  let options = [
+    Option<"topName", "top-name", "std::string", "\"forward_kernel\"", "Hardware entry point">,
+    Option<"tileM", "tile-m", "int64_t", "4", "Local output row tile extent">,
+    Option<"tileN", "tile-n", "int64_t", "4", "Local output column tile extent">,
+    Option<"tileK", "tile-k", "int64_t", "4", "Local reduction tile extent">,
+    Option<"schedule", "schedule", "std::string", "\"sequential\"", "sequential or lcs; independent of the runtime ABI">
+  ];
+  let dependentDialects = ["::mlir::arith::ArithDialect", "::mlir::func::FuncDialect",
+      "::mlir::memref::MemRefDialect", "::mlir::scf::SCFDialect",
+      "::mlir::sodap::dataflow::DataflowDialect"];
+}
+
+def GenerateReusableOperator : Pass<"sodap-generate-reusable-operator", "::mlir::ModuleOp"> {
+  let summary = "Generate a reusable convolution or elementwise addition engine";
+  let options = [
+    Option<"kind", "kind", "std::string", "\"conv\"", "conv or add">,
+    Option<"pixels", "tile-pixels", "int64_t", "4", "Local output spatial tile">,
+    Option<"lanes", "output-lanes", "int64_t", "8", "Parallel convolution output channels">,
+    Option<"channels", "tile-channels", "int64_t", "16", "Local input channel tile">,
+    Option<"blockElements", "block-elements", "int64_t", "128", "Addition block size">,
+    Option<"schedule", "schedule", "std::string", "\"sequential\"", "sequential or lcs (convolution)">
+  ];
+  let dependentDialects = ["::mlir::arith::ArithDialect", "::mlir::func::FuncDialect",
+      "::mlir::memref::MemRefDialect", "::mlir::scf::SCFDialect",
+      "::mlir::sodap::dataflow::DataflowDialect"];
+}
+
+def ReusableGemmToESP : Pass<"sodap-reusable-gemm-to-esp", "::mlir::ModuleOp"> {
+  let summary = "Bind a straight-line GEMM graph to one reusable ESP device";
+  let options = [
+    Option<"kernel", "kernel", "std::string", "\"forward_kernel\"", "Host function">,
+    Option<"instance", "instance", "int64_t", "0", "Physical instance index">
+  ];
+  let dependentDialects = ["::mlir::arith::ArithDialect", "::mlir::func::FuncDialect",
+      "::mlir::memref::MemRefDialect"];
+}
+
 def KernelToESPAccelerator : Pass<"sodap-kernel-to-esp-accelerator", "::mlir::ModuleOp"> {
   let summary = "Replace a kernel's body with one run of its ESP accelerator";
   let description = [{

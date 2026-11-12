@@ -127,6 +127,42 @@ inline bool copyMemRefF32(int64_t rank, void *descriptor, void *shared,
       return false;
   }
   auto *bytes = static_cast<unsigned char *>(shared);
+
+  // Most generated host arguments are contiguous, even when the shared
+  // layout leaves a padding word between elements. Check the descriptor once
+  // instead of reconstructing every element's indices with division/remainder.
+  // Singleton dimensions do not constrain the physical layout.
+  bool contiguous = true;
+  int64_t expectedStride = 1;
+  for (int64_t d = rank; d-- > 0;) {
+    if (sizes[d] > 1 && strides[d] != expectedStride) {
+      contiguous = false;
+      break;
+    }
+    expectedStride *= sizes[d]; // The validated element count bounds this.
+  }
+  auto *host = head->aligned + head->offset;
+  auto *slots = bytes + offset * sizeof(float);
+  if (contiguous &&
+      ((reinterpret_cast<uintptr_t>(host) |
+        reinterpret_cast<uintptr_t>(slots)) % alignof(float)) == 0) {
+    // memcpy preserves object representations without aliasing float storage
+    // through an integer pointer. Alignment enables word loads/stores on
+    // RISC-V instead of four separate byte transfers per float.
+    host = static_cast<float *>(__builtin_assume_aligned(host, alignof(float)));
+    slots = static_cast<unsigned char *>(
+        __builtin_assume_aligned(slots, alignof(float)));
+    const uint64_t step = static_cast<uint64_t>(sharedStride) * sizeof(float);
+    if (toShared) {
+      for (int64_t i = 0; i < count; ++i)
+        std::memcpy(slots + i * step, host + i, sizeof(float));
+    } else {
+      for (int64_t i = 0; i < count; ++i)
+        std::memcpy(host + i, slots + i * step, sizeof(float));
+    }
+    return true;
+  }
+
   for (int64_t linear = 0; linear < count; ++linear) {
     int64_t index = head->offset, remainder = linear;
     for (int64_t d = rank; d-- > 0;) {

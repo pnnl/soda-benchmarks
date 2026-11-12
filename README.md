@@ -1,5 +1,7 @@
 # SODA-BENCHMARKS
 
+For the emilia ESP workflow, start with [Synthesis and full-system simulation](docs/ESPSynthesisSimulation.md). It covers fresh Bambu generation, RV64 software, ModelSim, and reusable operators.
+
 This project contains scripts and code to benchmark SODA tools in different scenarios.
 
 
