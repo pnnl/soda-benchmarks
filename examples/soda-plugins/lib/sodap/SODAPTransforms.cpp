@@ -514,6 +514,10 @@ static ::mlir::SmallVector<int64_t> searchTileSizes(const TileModel &m,
     if (failed(nest))
       return emitDefiniteFailure() << "failed to tile and fuse";
 
+    if (nest->loops.empty())
+      return emitSilenceableError()
+             << "expected at least one tiled parallel dimension";
+
     SmallVector<Operation *> replaced{last};
     llvm::append_range(replaced, nest->fusedProducers);
     for (Operation *op : replaced) {

@@ -59,3 +59,17 @@ func.func @main(%a: memref<?xf32>, %out: memref<4xf32>) {
 module @k attributes {sodap.tile = 0 : i64} {
   llvm.func @k(!llvm.ptr)
 }
+
+// -----
+
+// Both calls target the same static hardware kernel. The second call does
+// not match its buffer sizes and must be rejected until a dynamic ABI exists.
+module @k attributes {sodap.tile = 0 : i64} {
+  llvm.func @k(!llvm.ptr)
+}
+func.func @main(%a: memref<4xf32>, %b: memref<8xf32>, %out: memref<2xf32>) {
+  dataflow.launch @k::@k(%a) outs(%out : memref<2xf32>) : (memref<4xf32>) -> ()
+  // expected-error@+1 {{expected identical kernel and static buffer ABI}}
+  dataflow.launch @k::@k(%b) outs(%out : memref<2xf32>) : (memref<8xf32>) -> ()
+  return
+}

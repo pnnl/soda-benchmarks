@@ -724,6 +724,18 @@ public:
         launch.emitOpError("expected a kernel in the tile module");
         return signalPassFailure();
       }
+      auto first = launches.front();
+      if (launch.getKernel() != first.getKernel() ||
+          launch.getInputs().size() != first.getInputs().size() ||
+          launch.getOuts().size() != first.getOuts().size() ||
+          launch->getOperandTypes() != first->getOperandTypes()) {
+        launch.emitOpError("expected identical kernel and static buffer ABI "
+                           "for every launch of one hardware tile");
+        return signalPassFailure();
+      }
+      for (Value operand : launch->getOperands())
+        if (failed(sharedWords(operand, launch.getLoc(), dmaWordStride)))
+          return signalPassFailure();
       forwardOutParams(launch);
     }
 
