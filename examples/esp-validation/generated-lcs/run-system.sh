@@ -5,6 +5,7 @@ set -euo pipefail
 example=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 repo=$(cd "$example/../../.." && pwd)
 generated=$(realpath "${1:?Usage: run-system.sh output/esp/<flow> ESP-root compiled-SoC [run-root]}")
+wrapper=$(python3 "$repo/scripts/lcs/native_dma_contract.py" select "$generated" --wrapper "${LCS_WRAPPER:-thin}")
 esp=$(realpath "${2:?ESP checkout required}")
 soc=$(realpath "${3:?Compiled ESP SoC directory required}")
 run=${4:-$(mktemp -d /tmp/esp-generated-gemm.XXXXXX)}
@@ -45,7 +46,7 @@ if [[ ${ESP_RECOMPILE_SOC_TOP:-0} == 1 ]]; then
 fi
 vlib gemm_lib
 vlog -sv +define+SODAP_LCS_GENERIC -work sqr_bambu "$generated/bambu_syn/forward_kernel.v" \
-  "$generated/bambu_syn/panda_libtech.v" "$example/../generated-gemm/sqr_bambu_basic_dma64.sv"
+  "$generated/bambu_syn/panda_libtech.v" "$wrapper"
 prefix=${RISCV_PREFIX:-riscv64-unknown-elf-}
 cp "$artifact_dir/06_kernel_riscv.o" host.o
 drivers=$esp/soft/common/drivers
@@ -59,6 +60,7 @@ flags=(-O2 -march=rv64imafdc -mabi=lp64d -mcmodel=medany -fno-common
   -I"$cpu/bootrom" -I"$cpu/riscv-pk/machine" -I"$soc/socgen/esp")
 "${prefix}gcc" "${flags[@]}" -std=gnu99 -c "$app/$appname.c" -o app.o
 "${prefix}gcc" "${flags[@]}" -std=gnu99 -c "$repo/examples/soda-plugins/lib/sodap/ExecutionEngine/esp_prof.c" -o profiler.o
+"${prefix}gcc" "${flags[@]}" -std=gnu99 -c "$repo/scripts/lib/memref_copy.c" -o memref_copy.o
 "${prefix}gcc" "${flags[@]}" -std=gnu99 -c "$cpu/common/syscalls.c" -o syscalls.o
 "${prefix}gcc" "${flags[@]}" -D_init=esp_init_bss -c "$cpu/riscv-tests/benchmarks/common/crt.S" -o crt.o
 "${prefix}gcc" "${flags[@]}" -c "$example/baremetal-startup.S" -o startup.o
@@ -91,7 +93,7 @@ LINKER
 # Older ESP GNU linkers cannot parse Clang 19's Zicsr/Zmmul ISA attributes.
 # LLD links the original object without stripping architecture information.
 "${LD_LLD:-ld.lld}" -m elf64lriscv -static \
-  app.o runtime.o "${extra_runtime[@]}" host.o profiler.o syscalls.o crt.o startup.o \
+  app.o runtime.o "${extra_runtime[@]}" host.o profiler.o memref_copy.o syscalls.o crt.o startup.o \
   -T test.ld \
   "$libs/probe/libprobe.a" "$libs/monitors/libmonitors.a" \
   "$libs/utils/baremetal/libutils.a" \
@@ -110,7 +112,7 @@ sha256sum "$artifact_dir/06_kernel_riscv.o" "$generated/bambu_syn/forward_kernel
   "$generated/bambu_syn/panda_libtech.v" "$generated/layout.txt" \
   "$repo/examples/soda-plugins/lib/sodap/ExecutionEngine/EspRuntime.cpp" \
   "$repo/examples/soda-plugins/include/sodap/ExecutionEngine/ESPRuntime.h" \
-  "$example/../generated-gemm/sqr_bambu_basic_dma64.sv" "$app/$appname.c" \
+  "$wrapper" "$app/$appname.c" \
   "$example/baremetal-startup.S" test.ld testdata.h gemm_app.exe > inputs-and-software.sha256
 if ((${#extra_runtime[@]})); then
   sha256sum "$repo/examples/soda-plugins/lib/sodap/ExecutionEngine/ReusableGemmRuntime.cpp" \

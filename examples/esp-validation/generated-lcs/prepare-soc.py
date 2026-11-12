@@ -5,6 +5,7 @@ import argparse
 import hashlib
 import json
 import shutil
+import subprocess
 from pathlib import Path
 
 p = argparse.ArgumentParser()
@@ -12,6 +13,7 @@ p.add_argument("generated", type=Path)
 p.add_argument("esp_source", type=Path)
 p.add_argument("compiled_soc", type=Path)
 p.add_argument("destination", type=Path)
+p.add_argument("--wrapper", choices=["thin", "buffered"], default="thin")
 a = p.parse_args()
 generated, source, template, root = (
     x.resolve() for x in (a.generated, a.esp_source, a.compiled_soc, a.destination)
@@ -19,6 +21,9 @@ generated, source, template, root = (
 if root.exists():
     raise SystemExit(f"Use a fresh isolated destination: {root}")
 here = Path(__file__).resolve().parent
+wrapper = Path(subprocess.check_output([
+    "python3", str(here.parents[2]/"scripts/lcs/native_dma_contract.py"),
+    "select", str(generated), "--wrapper", a.wrapper], text=True).strip())
 root.mkdir(parents=True)
 
 
@@ -62,7 +67,7 @@ for mem in (generated / "bambu_syn").glob("*.mem"):
     copy(mem, acc / mem.name)
 copy(template_root / "tech/virtex7/acc/sqr_bambu/sqr_bambu.xml",
      acc / "sqr_bambu.xml")
-copy(here.parent / "generated-gemm/sqr_bambu_basic_dma64.sv",
+copy(wrapper,
      acc / "sqr_bambu_basic_dma64/sqr_bambu_basic_dma64.sv")
 soc = root / "socs/vc707"
 soc.mkdir(parents=True)
@@ -81,6 +86,7 @@ manifest = {
     "generated": str(generated), "esp_source": str(source),
     "simulation_soc_template": str(template), "soc": str(soc),
     "device_id": "0x07a", "compatible": "sld,sqr_bambu",
+    "wrapper": a.wrapper,
     "rtl_sha256": {
         str(file.relative_to(root)): hashlib.sha256(file.read_bytes()).hexdigest()
         for file in acc.rglob("*") if file.is_file()
