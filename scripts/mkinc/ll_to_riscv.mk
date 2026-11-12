@@ -15,8 +15,8 @@ LCS_GEMM_TILE_K ?= 4
 # tosa_to_lcs.sh's default: a rebuilt plugin makes the outputs stale.
 MLIR_PLUGIN_PATH ?= $(SCRIPTS_DIR)/../examples/soda-plugins/build/lib/SODAPlugin.so
 LCS_TRANSFORM ?= $(SCRIPTS_DIR)/lcs/transform.mlir
-# Tile sizes, see scripts/tosa_to_lcs.sh. All empty: the cost model's, with
-# the defaults in scripts/lcs/transform.mlir.
+# Tile sizes, see scripts/tosa_to_lcs.sh. Empty sizes use bounded proposal
+# selection scored after scheduling; both ablations share that policy.
 LCS_TILE_SIZES ?=
 LCS_PLM_BYTES ?= 327680
 LCS_DMA_REQUEST_CYCLES ?=
@@ -32,7 +32,7 @@ $(ODIR)/esp/lcs-options: lcs-options
 
 LCS_OUTPUTS = $(addprefix $(ODIR)/esp/%/,05_hw_acc.ll 05_kernel_riscv.ll 05_cpu_baseline.ll architecture.xml argument_order.txt host.mlir outlined.mlir layout.txt)
 # Multiple targets in one pattern rule share one lowering invocation.
-$(LCS_OUTPUTS): $(ODIR)/01_tosa.mlir $(SCRIPTS_DIR)/tosa_to_lcs.sh $(SCRIPTS_DIR)/tosa_to_reusable_gemm.sh $(SCRIPTS_DIR)/lcs/argument_order.py $(SCRIPTS_DIR)/lcs/select_tiles.py $(LCS_TRANSFORM) $(ODIR)/esp/lcs-options $(wildcard $(MLIR_PLUGIN_PATH) $(dir $(MLIR_PLUGIN_PATH))SODATosaPlugin.so)
+$(LCS_OUTPUTS): $(ODIR)/01_tosa.mlir $(SCRIPTS_DIR)/tosa_to_lcs.sh $(SCRIPTS_DIR)/tosa_to_reusable_gemm.sh $(SCRIPTS_DIR)/lcs/argument_order.py $(SCRIPTS_DIR)/lcs/select_tiles.py $(SCRIPTS_DIR)/lcs/native_dma_contract.py $(LCS_TRANSFORM) $(ODIR)/esp/lcs-options $(wildcard $(MLIR_PLUGIN_PATH) $(dir $(MLIR_PLUGIN_PATH))SODATosaPlugin.so)
 	LCS_PROFILE=$(LCS_PROFILE) LCS_DMA_WORD_STRIDE=$(LCS_DMA_WORD_STRIDE) LCS_OUTSTANDING_LOADS=$(LCS_OUTSTANDING_LOADS) LCS_SEQUENTIAL=$(LCS_SEQUENTIAL) LCS_OVERLAP=$(LCS_OVERLAP) LCS_REUSE_BUFFER_BUDGET=$(LCS_REUSE_BUFFER_BUDGET) LCS_TRANSFORM=$(LCS_TRANSFORM) LCS_TILE_SIZES='$(LCS_TILE_SIZES)' LCS_PLM_BYTES=$(LCS_PLM_BYTES) LCS_DMA_REQUEST_CYCLES=$(LCS_DMA_REQUEST_CYCLES) LCS_DMA_WORD_CYCLES=$(LCS_DMA_WORD_CYCLES) LCS_REUSABLE_GEMM=$(LCS_REUSABLE_GEMM) LCS_GEMM_SCHEDULE=$(LCS_GEMM_SCHEDULE) LCS_GEMM_TILE_M=$(LCS_GEMM_TILE_M) LCS_GEMM_TILE_N=$(LCS_GEMM_TILE_N) LCS_GEMM_TILE_K=$(LCS_GEMM_TILE_K) $(SCRIPTS_DIR)/tosa_to_lcs.sh $< $(@D)
 
 $(ODIR)/esp/%/testdata.h: $(FILE_PATH) $(ODIR)/esp/%/argument_order.txt

@@ -88,7 +88,7 @@ s += f'\nASSERT(_end + 1048576 < {0x80000000+dram//2}, "CPU image overlaps DMA a
 libm = Path(subprocess.check_output([prefix + 'gcc', '-march=rv64imafdc', '-mabi=lp64d', '-print-file-name=libm.a'], text=True).strip())
 libgcc = Path(subprocess.check_output([prefix + 'gcc', '-march=rv64imafdc', '-mabi=lp64d', '-print-file-name=libgcc.a'], text=True).strip())
 archives = [libs / 'probe/libprobe.a', libs / 'monitors/libmonitors.a', libs / 'utils/baremetal/libutils.a', libm, libgcc]
-run(['ld.lld-16', '-m', 'elf64lriscv', '-static', '-T', 'test.ld',
+run([os.environ.get('LD_LLD', 'ld.lld-16'), '-m', 'elf64lriscv', '-static', '-T', 'test.ld',
      *[obj for _, obj, _ in sources], 'runtime.o', host, *archives, '-o', 'app.exe'])
 assert '0x80000000' in subprocess.check_output([prefix + 'readelf', '-h', out / 'app.exe'], text=True)
 assert not subprocess.check_output([prefix + 'nm', '--undefined-only', out / 'app.exe']).strip()

@@ -2,6 +2,11 @@
 
 For the emilia ESP workflow, start with [Synthesis and full-system simulation](docs/ESPSynthesisSimulation.md). It covers fresh Bambu generation, RV64 software, ModelSim, and reusable operators.
 
+The [12 November integration review](docs/ESPFinalIntegration.md) combines the
+updated compiler flow, bounded intermediate reuse and thin native-DMA adapter.
+It includes the separate Tommaso checkout and MINI replay instructions; existing
+experiment-1 FPGA measurements remain tied to their original revision.
+
 This project contains scripts and code to benchmark SODA tools in different scenarios.
 
 

@@ -70,9 +70,11 @@ Grouped Conv1D and unsupported padding modes are rejected explicitly.
 
 ## Reproduce on emilia
 
-The isolated checkout/container is `soda-eels-reuse-local-20261110`, based on the
-four-commit review branch. Nothing here has been pushed or installed in Tommaso's
-checkout. The older local FFN experiments are separate and preserved.
+The original isolated checkout/container was `soda-eels-reuse-local-20261110`,
+based on the four-commit review branch. These additions are now included in the
+[12 November integration candidate](../../../docs/ESPFinalIntegration.md).
+The commands below describe the original reference-data environment; the new
+guide covers the shared review checkout. The older FFN experiments remain separate.
 
 Container mounts: this checkout at `/workspace`, the existing Python dependency
 environment at `/venv`, and the read-only reference
