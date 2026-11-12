@@ -61,28 +61,42 @@ def TileAndFuseOp : Op<Transform_Dialect, "sodap.tile_and_fuse",
       some by the tile, as `transform.structured.tile_using_for` does, so
       the accumulator stays across the reduction loop.
 
-    The tile is the largest divisor of the GCD of the loop ranges of every
-    linalg op in the task's function that is at most `max_tile_size`: every
-    loop tiles evenly, so every tile is static, and every task of the
-    function gets the same tile. Loop ranges 60, 70, 80 and
-    `max_tile_size = 10` give 10; 8, 12, 16 give 4.
+    The tile sizes are given by exactly one of:
 
-    The tile sizes come from the iterator types of each op, so one script fits
-    every shape: `[4, 0]` then `[0, 4]` for parallel-reduction, `[4, 4, 0]` then
-    `[0, 0, 4]` for parallel-parallel-reduction, `[4, 4]` alone for
-    parallel-parallel.
+    - `max_tile_size`, automatic: one tile T for every loop, the largest
+      divisor of the GCD of the loop ranges of every linalg op in the task's
+      function that is at most `max_tile_size`: every loop tiles evenly, so
+      every tile is static, and every task of the function gets the same
+      tile. Loop ranges 60, 70, 80 and `max_tile_size = 10` give 10; 8, 12,
+      16 give 4.
+    - `tile_sizes`, explicit: one list per yielded op, in the order of the
+      targets and then of their yields, each with one size per loop of that
+      op in its iteration order, parallel and reduction alike; 0 leaves the
+      loop untiled. Every other size must divide its loop range, so every
+      tile is static. gemm's fill + matmul, then its epilogue:
+      `[[10, 10, 10], [10, 10]]`. Any other op with reductions in a nest
+      (a fused producer) is an error: its sizes have no place in the list.
+
+    The parallel sizes tile the nest, the reduction sizes the reduction:
+    `[4, 4, 4]` on parallel-parallel-reduction tiles by `[4, 4, 0]` then
+    `[0, 0, 4]`. Both forms report the sizes used as a remark,
+    `tile_sizes = [...]`, which given back as `tile_sizes` tiles the same.
 
     #### Return modes
 
     Returns nothing, and only reads the handle. Fails silenceably, without
-    changing the IR, if a target is not a `dataflow.task` in a `func.func`,
-    a yielded value is not produced by a linalg op with a parallel dim, or a
-    loop range in the function is dynamic. Fails definitely if tiling fails.
+    changing the IR, if not exactly one of `max_tile_size` and `tile_sizes` is
+    set, a target is not a `dataflow.task` in a `func.func`, a yielded value
+    is not produced by a linalg op with a parallel dim, a loop range in the
+    function is dynamic, or `tile_sizes` doesn't fit the yielded ops. Fails
+    definitely if tiling fails, or if `tile_sizes` is given and a fused op
+    has reductions.
   }];
 
   let arguments = (ins
     TransformHandleTypeInterface:$target,
-    ConfinedAttr<I64Attr, [IntPositive]>:$max_tile_size);
+    OptionalAttr<ConfinedAttr<I64Attr, [IntPositive]>>:$max_tile_size,
+    OptionalAttr<ArrayAttr>:$tile_sizes);
 
   let results = (outs);
 

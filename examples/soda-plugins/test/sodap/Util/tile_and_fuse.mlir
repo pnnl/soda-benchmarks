@@ -50,6 +50,7 @@ func.func @epilogue(%A: tensor<8x12xf32>, %B: tensor<12x16xf32>, %C: tensor<8x16
 module attributes {transform.with_named_sequence} {
   transform.named_sequence @__transform_main(%root: !transform.any_op {transform.readonly}) {
     %tasks = transform.structured.match ops{["dataflow.task"]} in %root : (!transform.any_op) -> !transform.any_op
+    // expected-remark @below {{tile_sizes = [[4, 4]]}}
     transform.sodap.tile_and_fuse %tasks {max_tile_size = 4 : i64} : !transform.any_op
     transform.yield
   }
@@ -103,6 +104,7 @@ func.func @two_tasks(%A: tensor<8x8xf32>, %B: tensor<8x8xf32>) -> tensor<8x8xf32
 module attributes {transform.with_named_sequence} {
   transform.named_sequence @__transform_main(%root: !transform.any_op {transform.readonly}) {
     %tasks = transform.structured.match ops{["dataflow.task"]} in %root : (!transform.any_op) -> !transform.any_op
+    // expected-remark @below {{tile_sizes = [[4, 4], [4, 4, 4]]}}
     transform.sodap.tile_and_fuse %tasks {max_tile_size = 4 : i64} : !transform.any_op
     transform.yield
   }
@@ -159,6 +161,7 @@ func.func @two_results(%A: tensor<8x12xf32>, %x: tensor<12xf32>, %y: tensor<12xf
 module attributes {transform.with_named_sequence} {
   transform.named_sequence @__transform_main(%root: !transform.any_op {transform.readonly}) {
     %tasks = transform.structured.match ops{["dataflow.task"]} in %root : (!transform.any_op) -> !transform.any_op
+    // expected-remark @below {{tile_sizes = [[4, 4], [4, 4]]}}
     transform.sodap.tile_and_fuse %tasks {max_tile_size = 4 : i64} : !transform.any_op
     transform.yield
   }
@@ -202,6 +205,7 @@ func.func @gcd(%A: tensor<60x80xf32>, %B: tensor<80x70xf32>) -> tensor<60x70xf32
 module attributes {transform.with_named_sequence} {
   transform.named_sequence @__transform_main(%root: !transform.any_op {transform.readonly}) {
     %tasks = transform.structured.match ops{["dataflow.task"]} in %root : (!transform.any_op) -> !transform.any_op
+    // expected-remark @below {{tile_sizes = [[10, 10, 10]]}}
     transform.sodap.tile_and_fuse %tasks {max_tile_size = 16 : i64} : !transform.any_op
     transform.yield
   }
@@ -269,6 +273,351 @@ module attributes {transform.with_named_sequence} {
     %func = transform.structured.match ops{["func.func"]} in %root : (!transform.any_op) -> !transform.any_op
     // expected-error @below {{expected a dataflow.task in a func.func}}
     transform.sodap.tile_and_fuse %func {max_tile_size = 4 : i64} : !transform.any_op
+    transform.yield
+  }
+}
+
+// -----
+
+// The sizes @gcd's remark reports, given back: the same nest.
+// CHECK-LABEL: func.func @explicit_gcd
+// CHECK: %[[C10:.*]] = arith.constant 10 : index
+// CHECK: scf.for %{{.*}} step %[[C10]]
+// CHECK:   scf.for %{{.*}} step %[[C10]]
+// CHECK:     linalg.fill
+// CHECK:     scf.for %{{.*}} step %[[C10]]
+// CHECK:       linalg.generic {{.*}}"parallel", "parallel", "reduction"
+#a = affine_map<(d0, d1, d2) -> (d0, d2)>
+#b = affine_map<(d0, d1, d2) -> (d2, d1)>
+#c = affine_map<(d0, d1, d2) -> (d0, d1)>
+func.func @explicit_gcd(%A: tensor<60x80xf32>, %B: tensor<80x70xf32>) -> tensor<60x70xf32> {
+  %zero = arith.constant 0.0 : f32
+  %r = dataflow.dispatch : tensor<60x70xf32> {
+    %edge = bufferization.alloc_tensor() : tensor<60x70xf32>
+    %t = dataflow.task : tensor<60x70xf32> {
+      %fill = linalg.fill ins(%zero : f32) outs(%edge : tensor<60x70xf32>) -> tensor<60x70xf32>
+      %mm = linalg.generic {indexing_maps = [#a, #b, #c], iterator_types = ["parallel", "parallel", "reduction"]}
+          ins(%A, %B : tensor<60x80xf32>, tensor<80x70xf32>) outs(%fill : tensor<60x70xf32>) {
+      ^bb0(%x: f32, %y: f32, %acc: f32):
+        %0 = arith.mulf %x, %y : f32
+        %1 = arith.addf %acc, %0 : f32
+        linalg.yield %1 : f32
+      } -> tensor<60x70xf32>
+      dataflow.yield %mm : tensor<60x70xf32>
+    }
+    dataflow.yield %t : tensor<60x70xf32>
+  }
+  return %r : tensor<60x70xf32>
+}
+
+module attributes {transform.with_named_sequence} {
+  transform.named_sequence @__transform_main(%root: !transform.any_op {transform.readonly}) {
+    %tasks = transform.structured.match ops{["dataflow.task"]} in %root : (!transform.any_op) -> !transform.any_op
+    // expected-remark @below {{tile_sizes = [[10, 10, 10]]}}
+    transform.sodap.tile_and_fuse %tasks {tile_sizes = [[10, 10, 10]]} : !transform.any_op
+    transform.yield
+  }
+}
+
+// -----
+
+// A size per loop: i by 2, j by 4, k by 3.
+// CHECK-LABEL: func.func @per_dim
+// CHECK: scf.for
+// CHECK:   scf.for
+// CHECK:     linalg.fill ins(%{{.*}} : f32) outs(%{{.*}} : tensor<2x4xf32>)
+// CHECK:     scf.for
+// CHECK:       linalg.generic {{.*}} ins(%{{.*}}, %{{.*}} : tensor<2x3xf32>, tensor<3x4xf32>)
+#a = affine_map<(d0, d1, d2) -> (d0, d2)>
+#b = affine_map<(d0, d1, d2) -> (d2, d1)>
+#c = affine_map<(d0, d1, d2) -> (d0, d1)>
+func.func @per_dim(%A: tensor<8x12xf32>, %B: tensor<12x16xf32>) -> tensor<8x16xf32> {
+  %zero = arith.constant 0.0 : f32
+  %r = dataflow.dispatch : tensor<8x16xf32> {
+    %edge = bufferization.alloc_tensor() : tensor<8x16xf32>
+    %t = dataflow.task : tensor<8x16xf32> {
+      %fill = linalg.fill ins(%zero : f32) outs(%edge : tensor<8x16xf32>) -> tensor<8x16xf32>
+      %mm = linalg.generic {indexing_maps = [#a, #b, #c], iterator_types = ["parallel", "parallel", "reduction"]}
+          ins(%A, %B : tensor<8x12xf32>, tensor<12x16xf32>) outs(%fill : tensor<8x16xf32>) {
+      ^bb0(%x: f32, %y: f32, %acc: f32):
+        %0 = arith.mulf %x, %y : f32
+        %1 = arith.addf %acc, %0 : f32
+        linalg.yield %1 : f32
+      } -> tensor<8x16xf32>
+      dataflow.yield %mm : tensor<8x16xf32>
+    }
+    dataflow.yield %t : tensor<8x16xf32>
+  }
+  return %r : tensor<8x16xf32>
+}
+
+module attributes {transform.with_named_sequence} {
+  transform.named_sequence @__transform_main(%root: !transform.any_op {transform.readonly}) {
+    %tasks = transform.structured.match ops{["dataflow.task"]} in %root : (!transform.any_op) -> !transform.any_op
+    // expected-remark @below {{tile_sizes = [[2, 4, 3]]}}
+    transform.sodap.tile_and_fuse %tasks {tile_sizes = [[2, 4, 3]]} : !transform.any_op
+    transform.yield
+  }
+}
+
+// -----
+
+// 0 leaves a loop untiled: no j loop, no k loop.
+// CHECK-LABEL: func.func @untiled
+// CHECK: scf.for
+// CHECK-NOT: scf.for
+// CHECK:   linalg.generic {{.*}} ins(%{{.*}}, %{{.*}} : tensor<2x12xf32>, tensor<12x16xf32>)
+#a = affine_map<(d0, d1, d2) -> (d0, d2)>
+#b = affine_map<(d0, d1, d2) -> (d2, d1)>
+#c = affine_map<(d0, d1, d2) -> (d0, d1)>
+func.func @untiled(%A: tensor<8x12xf32>, %B: tensor<12x16xf32>) -> tensor<8x16xf32> {
+  %zero = arith.constant 0.0 : f32
+  %r = dataflow.dispatch : tensor<8x16xf32> {
+    %edge = bufferization.alloc_tensor() : tensor<8x16xf32>
+    %t = dataflow.task : tensor<8x16xf32> {
+      %fill = linalg.fill ins(%zero : f32) outs(%edge : tensor<8x16xf32>) -> tensor<8x16xf32>
+      %mm = linalg.generic {indexing_maps = [#a, #b, #c], iterator_types = ["parallel", "parallel", "reduction"]}
+          ins(%A, %B : tensor<8x12xf32>, tensor<12x16xf32>) outs(%fill : tensor<8x16xf32>) {
+      ^bb0(%x: f32, %y: f32, %acc: f32):
+        %0 = arith.mulf %x, %y : f32
+        %1 = arith.addf %acc, %0 : f32
+        linalg.yield %1 : f32
+      } -> tensor<8x16xf32>
+      dataflow.yield %mm : tensor<8x16xf32>
+    }
+    dataflow.yield %t : tensor<8x16xf32>
+  }
+  return %r : tensor<8x16xf32>
+}
+
+module attributes {transform.with_named_sequence} {
+  transform.named_sequence @__transform_main(%root: !transform.any_op {transform.readonly}) {
+    %tasks = transform.structured.match ops{["dataflow.task"]} in %root : (!transform.any_op) -> !transform.any_op
+    // expected-remark @below {{tile_sizes = [[2, 0, 0]]}}
+    transform.sodap.tile_and_fuse %tasks {tile_sizes = [[2, 0, 0]]} : !transform.any_op
+    transform.yield
+  }
+}
+
+// -----
+
+// Both forms at once.
+#a = affine_map<(d0, d1, d2) -> (d0, d2)>
+#b = affine_map<(d0, d1, d2) -> (d2, d1)>
+#c = affine_map<(d0, d1, d2) -> (d0, d1)>
+func.func @both(%A: tensor<8x12xf32>, %B: tensor<12x16xf32>) -> tensor<8x16xf32> {
+  %zero = arith.constant 0.0 : f32
+  %r = dataflow.dispatch : tensor<8x16xf32> {
+    %edge = bufferization.alloc_tensor() : tensor<8x16xf32>
+    %t = dataflow.task : tensor<8x16xf32> {
+      %fill = linalg.fill ins(%zero : f32) outs(%edge : tensor<8x16xf32>) -> tensor<8x16xf32>
+      %mm = linalg.generic {indexing_maps = [#a, #b, #c], iterator_types = ["parallel", "parallel", "reduction"]}
+          ins(%A, %B : tensor<8x12xf32>, tensor<12x16xf32>) outs(%fill : tensor<8x16xf32>) {
+      ^bb0(%x: f32, %y: f32, %acc: f32):
+        %0 = arith.mulf %x, %y : f32
+        %1 = arith.addf %acc, %0 : f32
+        linalg.yield %1 : f32
+      } -> tensor<8x16xf32>
+      dataflow.yield %mm : tensor<8x16xf32>
+    }
+    dataflow.yield %t : tensor<8x16xf32>
+  }
+  return %r : tensor<8x16xf32>
+}
+
+module attributes {transform.with_named_sequence} {
+  transform.named_sequence @__transform_main(%root: !transform.any_op {transform.readonly}) {
+    %tasks = transform.structured.match ops{["dataflow.task"]} in %root : (!transform.any_op) -> !transform.any_op
+    // expected-error @below {{expected exactly one of max_tile_size and tile_sizes}}
+    transform.sodap.tile_and_fuse %tasks {max_tile_size = 4 : i64, tile_sizes = [[2, 4, 3]]} : !transform.any_op
+    transform.yield
+  }
+}
+
+// -----
+
+// Neither.
+#a = affine_map<(d0, d1, d2) -> (d0, d2)>
+#b = affine_map<(d0, d1, d2) -> (d2, d1)>
+#c = affine_map<(d0, d1, d2) -> (d0, d1)>
+func.func @neither(%A: tensor<8x12xf32>, %B: tensor<12x16xf32>) -> tensor<8x16xf32> {
+  %zero = arith.constant 0.0 : f32
+  %r = dataflow.dispatch : tensor<8x16xf32> {
+    %edge = bufferization.alloc_tensor() : tensor<8x16xf32>
+    %t = dataflow.task : tensor<8x16xf32> {
+      %fill = linalg.fill ins(%zero : f32) outs(%edge : tensor<8x16xf32>) -> tensor<8x16xf32>
+      %mm = linalg.generic {indexing_maps = [#a, #b, #c], iterator_types = ["parallel", "parallel", "reduction"]}
+          ins(%A, %B : tensor<8x12xf32>, tensor<12x16xf32>) outs(%fill : tensor<8x16xf32>) {
+      ^bb0(%x: f32, %y: f32, %acc: f32):
+        %0 = arith.mulf %x, %y : f32
+        %1 = arith.addf %acc, %0 : f32
+        linalg.yield %1 : f32
+      } -> tensor<8x16xf32>
+      dataflow.yield %mm : tensor<8x16xf32>
+    }
+    dataflow.yield %t : tensor<8x16xf32>
+  }
+  return %r : tensor<8x16xf32>
+}
+
+module attributes {transform.with_named_sequence} {
+  transform.named_sequence @__transform_main(%root: !transform.any_op {transform.readonly}) {
+    %tasks = transform.structured.match ops{["dataflow.task"]} in %root : (!transform.any_op) -> !transform.any_op
+    // expected-error @below {{expected exactly one of max_tile_size and tile_sizes}}
+    transform.sodap.tile_and_fuse %tasks : !transform.any_op
+    transform.yield
+  }
+}
+
+// -----
+
+// A list per yielded op: one here.
+#a = affine_map<(d0, d1, d2) -> (d0, d2)>
+#b = affine_map<(d0, d1, d2) -> (d2, d1)>
+#c = affine_map<(d0, d1, d2) -> (d0, d1)>
+func.func @count(%A: tensor<8x12xf32>, %B: tensor<12x16xf32>) -> tensor<8x16xf32> {
+  %zero = arith.constant 0.0 : f32
+  %r = dataflow.dispatch : tensor<8x16xf32> {
+    %edge = bufferization.alloc_tensor() : tensor<8x16xf32>
+    %t = dataflow.task : tensor<8x16xf32> {
+      %fill = linalg.fill ins(%zero : f32) outs(%edge : tensor<8x16xf32>) -> tensor<8x16xf32>
+      %mm = linalg.generic {indexing_maps = [#a, #b, #c], iterator_types = ["parallel", "parallel", "reduction"]}
+          ins(%A, %B : tensor<8x12xf32>, tensor<12x16xf32>) outs(%fill : tensor<8x16xf32>) {
+      ^bb0(%x: f32, %y: f32, %acc: f32):
+        %0 = arith.mulf %x, %y : f32
+        %1 = arith.addf %acc, %0 : f32
+        linalg.yield %1 : f32
+      } -> tensor<8x16xf32>
+      dataflow.yield %mm : tensor<8x16xf32>
+    }
+    dataflow.yield %t : tensor<8x16xf32>
+  }
+  return %r : tensor<8x16xf32>
+}
+
+module attributes {transform.with_named_sequence} {
+  transform.named_sequence @__transform_main(%root: !transform.any_op {transform.readonly}) {
+    %tasks = transform.structured.match ops{["dataflow.task"]} in %root : (!transform.any_op) -> !transform.any_op
+    // expected-error @below {{expected 1 lists in tile_sizes, one per yielded op, got 2}}
+    transform.sodap.tile_and_fuse %tasks {tile_sizes = [[2, 4, 3], [2, 4, 3]]} : !transform.any_op
+    transform.yield
+  }
+}
+
+// -----
+
+// A size per loop: three here.
+#a = affine_map<(d0, d1, d2) -> (d0, d2)>
+#b = affine_map<(d0, d1, d2) -> (d2, d1)>
+#c = affine_map<(d0, d1, d2) -> (d0, d1)>
+func.func @length(%A: tensor<8x12xf32>, %B: tensor<12x16xf32>) -> tensor<8x16xf32> {
+  %zero = arith.constant 0.0 : f32
+  %r = dataflow.dispatch : tensor<8x16xf32> {
+    %edge = bufferization.alloc_tensor() : tensor<8x16xf32>
+    %t = dataflow.task : tensor<8x16xf32> {
+      %fill = linalg.fill ins(%zero : f32) outs(%edge : tensor<8x16xf32>) -> tensor<8x16xf32>
+      // expected-note @below {{op}}
+      %mm = linalg.generic {indexing_maps = [#a, #b, #c], iterator_types = ["parallel", "parallel", "reduction"]}
+          ins(%A, %B : tensor<8x12xf32>, tensor<12x16xf32>) outs(%fill : tensor<8x16xf32>) {
+      ^bb0(%x: f32, %y: f32, %acc: f32):
+        %0 = arith.mulf %x, %y : f32
+        %1 = arith.addf %acc, %0 : f32
+        linalg.yield %1 : f32
+      } -> tensor<8x16xf32>
+      dataflow.yield %mm : tensor<8x16xf32>
+    }
+    dataflow.yield %t : tensor<8x16xf32>
+  }
+  return %r : tensor<8x16xf32>
+}
+
+module attributes {transform.with_named_sequence} {
+  transform.named_sequence @__transform_main(%root: !transform.any_op {transform.readonly}) {
+    %tasks = transform.structured.match ops{["dataflow.task"]} in %root : (!transform.any_op) -> !transform.any_op
+    // expected-error @below {{expected a list of 3 sizes, one per loop of the op}}
+    transform.sodap.tile_and_fuse %tasks {tile_sizes = [[2, 4]]} : !transform.any_op
+    transform.yield
+  }
+}
+
+// -----
+
+// A size that doesn't divide its loop range would make a partial tile.
+#a = affine_map<(d0, d1, d2) -> (d0, d2)>
+#b = affine_map<(d0, d1, d2) -> (d2, d1)>
+#c = affine_map<(d0, d1, d2) -> (d0, d1)>
+func.func @divisor(%A: tensor<8x12xf32>, %B: tensor<12x16xf32>) -> tensor<8x16xf32> {
+  %zero = arith.constant 0.0 : f32
+  %r = dataflow.dispatch : tensor<8x16xf32> {
+    %edge = bufferization.alloc_tensor() : tensor<8x16xf32>
+    %t = dataflow.task : tensor<8x16xf32> {
+      %fill = linalg.fill ins(%zero : f32) outs(%edge : tensor<8x16xf32>) -> tensor<8x16xf32>
+      // expected-note @below {{op}}
+      %mm = linalg.generic {indexing_maps = [#a, #b, #c], iterator_types = ["parallel", "parallel", "reduction"]}
+          ins(%A, %B : tensor<8x12xf32>, tensor<12x16xf32>) outs(%fill : tensor<8x16xf32>) {
+      ^bb0(%x: f32, %y: f32, %acc: f32):
+        %0 = arith.mulf %x, %y : f32
+        %1 = arith.addf %acc, %0 : f32
+        linalg.yield %1 : f32
+      } -> tensor<8x16xf32>
+      dataflow.yield %mm : tensor<8x16xf32>
+    }
+    dataflow.yield %t : tensor<8x16xf32>
+  }
+  return %r : tensor<8x16xf32>
+}
+
+module attributes {transform.with_named_sequence} {
+  transform.named_sequence @__transform_main(%root: !transform.any_op {transform.readonly}) {
+    %tasks = transform.structured.match ops{["dataflow.task"]} in %root : (!transform.any_op) -> !transform.any_op
+    // expected-error @below {{expected size #0 to be 0 or a divisor of 8}}
+    transform.sodap.tile_and_fuse %tasks {tile_sizes = [[3, 4, 3]]} : !transform.any_op
+    transform.yield
+  }
+}
+
+// -----
+
+#id = affine_map<(d0, d1) -> (d0, d1)>
+#a = affine_map<(d0, d1, d2) -> (d0, d2)>
+#b = affine_map<(d0, d1, d2) -> (d2, d1)>
+#c = affine_map<(d0, d1, d2) -> (d0, d1)>
+
+// @epilogue with tile_sizes: the contraction fused into the epilogue's nest
+// has reductions, and tile_sizes has no place for them: an error.
+func.func @fused_reduction(%A: tensor<8x12xf32>, %B: tensor<12x16xf32>, %C: tensor<8x16xf32>) -> tensor<8x16xf32> {
+  %zero = arith.constant 0.0 : f32
+  %r = dataflow.dispatch : tensor<8x16xf32> {
+    %edge = bufferization.alloc_tensor() : tensor<8x16xf32>
+    %t = dataflow.task : tensor<8x16xf32> {
+      %empty = tensor.empty() : tensor<8x16xf32>
+      %fill = linalg.fill ins(%zero : f32) outs(%empty : tensor<8x16xf32>) -> tensor<8x16xf32>
+      %mm = linalg.generic {indexing_maps = [#a, #b, #c], iterator_types = ["parallel", "parallel", "reduction"]}
+          ins(%A, %B : tensor<8x12xf32>, tensor<12x16xf32>) outs(%fill : tensor<8x16xf32>) {
+      ^bb0(%x: f32, %y: f32, %acc: f32):
+        %0 = arith.mulf %x, %y : f32
+        %1 = arith.addf %acc, %0 : f32
+        linalg.yield %1 : f32
+      } -> tensor<8x16xf32>
+      %out = linalg.generic {indexing_maps = [#id, #id, #id], iterator_types = ["parallel", "parallel"]}
+          ins(%mm, %C : tensor<8x16xf32>, tensor<8x16xf32>) outs(%edge : tensor<8x16xf32>) {
+      ^bb0(%x: f32, %y: f32, %o: f32):
+        %0 = arith.addf %x, %y : f32
+        linalg.yield %0 : f32
+      } -> tensor<8x16xf32>
+      dataflow.yield %out : tensor<8x16xf32>
+    }
+    dataflow.yield %t : tensor<8x16xf32>
+  }
+  return %r : tensor<8x16xf32>
+}
+
+module attributes {transform.with_named_sequence} {
+  transform.named_sequence @__transform_main(%root: !transform.any_op {transform.readonly}) {
+    %tasks = transform.structured.match ops{["dataflow.task"]} in %root : (!transform.any_op) -> !transform.any_op
+    // expected-remark @below {{tile_sizes = [[4, 4]]}}
+    // expected-error @below {{expected the reductions in the yielded op with tile_sizes}}
+    transform.sodap.tile_and_fuse %tasks {tile_sizes = [[4, 4]]} : !transform.any_op
     transform.yield
   }
 }

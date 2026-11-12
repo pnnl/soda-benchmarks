@@ -85,26 +85,34 @@ void mlir::transform::TagOpsOp::getEffects(
   modifiesPayload(effects);
 }
 
-/// Tile sizes of `op`: `size` for its parallel dims (or for the others, if
-/// `parallel` is false), 0 for the rest.
+/// Tile sizes of `op`: `sizes` (one per loop) for its parallel dims (or for
+/// the others, if `parallel` is false), 0 for the rest.
 static ::mlir::SmallVector<::mlir::OpFoldResult>
-tileSizes(::mlir::OpBuilder &builder, ::mlir::linalg::LinalgOp op, int64_t size,
-          bool parallel) {
+tileSizes(::mlir::OpBuilder &builder, ::mlir::linalg::LinalgOp op,
+          ::llvm::ArrayRef<int64_t> sizes, bool parallel) {
   using namespace ::mlir;
-  SmallVector<OpFoldResult> sizes;
-  for (utils::IteratorType iterator : op.getIteratorTypesArray())
-    sizes.push_back(builder.getIndexAttr(
+  SmallVector<OpFoldResult> result;
+  for (auto [iterator, size] :
+       llvm::zip_equal(op.getIteratorTypesArray(), sizes))
+    result.push_back(builder.getIndexAttr(
         (iterator == utils::IteratorType::parallel) == parallel ? size : 0));
-  return sizes;
+  return result;
 }
 
 ::mlir::DiagnosedSilenceableFailure mlir::transform::TileAndFuseOp::apply(
     ::mlir::transform::TransformRewriter &rewriter,
     ::mlir::transform::TransformResults &results,
     ::mlir::transform::TransformState &state) {
-  // The op producing each yielded value, before anything changes, with the
-  // tile of its function.
-  llvm::MapVector<Operation *, int64_t> lasts;
+  std::optional<int64_t> maxTileSize = getMaxTileSize();
+  ArrayAttr explicitSizes = getTileSizesAttr();
+  if (maxTileSize.has_value() == static_cast<bool>(explicitSizes))
+    return emitSilenceableError()
+           << "expected exactly one of max_tile_size and tile_sizes";
+
+  // The op producing each yielded value, before anything changes, with its
+  // tile sizes, one per loop: the tile of its function in every loop, or
+  // tile_sizes below.
+  llvm::MapVector<Operation *, SmallVector<int64_t>> lasts;
   for (Operation *target : state.getPayloadOps(getTarget())) {
     auto task = dyn_cast<sodap::dataflow::TaskOp>(target);
     auto func = task ? task->getParentOfType<func::FuncOp>() : nullptr;
@@ -130,9 +138,12 @@ tileSizes(::mlir::OpBuilder &builder, ::mlir::linalg::LinalgOp op, int64_t size,
       diag.attachNote(dynamic->getLoc()) << "op";
       return diag;
     }
-    int64_t size = std::min<int64_t>(getMaxTileSize(), std::max<int64_t>(gcd, 1));
-    while (gcd % size != 0)
-      --size;
+    int64_t size = 0;
+    if (maxTileSize) {
+      size = std::min<int64_t>(*maxTileSize, std::max<int64_t>(gcd, 1));
+      while (gcd % size != 0)
+        --size;
+    }
 
     Value invalid;
     for (Value result : task.getYieldOp().getOperands()) {
@@ -140,7 +151,7 @@ tileSizes(::mlir::OpBuilder &builder, ::mlir::linalg::LinalgOp op, int64_t size,
       if (!last || last.getNumParallelLoops() == 0)
         invalid = result;
       else
-        lasts.insert({last, size});
+        lasts.insert({last, SmallVector<int64_t>(last.getNumLoops(), size)});
     }
     if (invalid) {
       DiagnosedSilenceableFailure diag =
@@ -151,10 +162,56 @@ tileSizes(::mlir::OpBuilder &builder, ::mlir::linalg::LinalgOp op, int64_t size,
     }
   }
 
-  for (auto [last, size] : lasts) {
+  if (explicitSizes) {
+    if (explicitSizes.size() != lasts.size())
+      return emitSilenceableError()
+             << "expected " << lasts.size()
+             << " lists in tile_sizes, one per yielded op, got "
+             << explicitSizes.size();
+    for (auto [entry, attr] : llvm::zip_equal(lasts, explicitSizes)) {
+      auto &[last, sizes] = entry;
+      SmallVector<int64_t> ranges =
+          cast<linalg::LinalgOp>(last).getStaticLoopRanges();
+      auto list = dyn_cast<ArrayAttr>(attr);
+      if (!list || list.size() != ranges.size()) {
+        DiagnosedSilenceableFailure diag =
+            emitSilenceableError() << "expected a list of " << ranges.size()
+                                   << " sizes, one per loop of the op";
+        diag.attachNote(last->getLoc()) << "op";
+        return diag;
+      }
+      for (auto [d, element] : llvm::enumerate(list)) {
+        auto value = dyn_cast<IntegerAttr>(element);
+        int64_t tile = value ? value.getInt() : -1;
+        if (tile < 0 || (tile && ranges[d] % tile)) {
+          DiagnosedSilenceableFailure diag = emitSilenceableError()
+                                             << "expected size #" << d
+                                             << " to be 0 or a divisor of "
+                                             << ranges[d];
+          diag.attachNote(last->getLoc()) << "op";
+          return diag;
+        }
+        sizes[d] = tile;
+      }
+    }
+  }
+
+  // The sizes used, as tile_sizes would give them.
+  {
+    InFlightDiagnostic remark = emitRemark() << "tile_sizes = [";
+    llvm::interleaveComma(lasts, remark, [&](const auto &entry) {
+      remark << "[";
+      llvm::interleaveComma(entry.second, remark);
+      remark << "]";
+    });
+    remark << "]";
+  }
+
+  for (auto &[last, sizes] : lasts) {
+    OperationName lastName = last->getName();
     scf::SCFTilingOptions parallelTiling;
     parallelTiling.setTileSizes(
-        tileSizes(rewriter, cast<linalg::LinalgOp>(last), size, true));
+        tileSizes(rewriter, cast<linalg::LinalgOp>(last), sizes, true));
     scf::SCFTileAndFuseOptions options;
     options.setTilingOptions(parallelTiling);
     // Fuse only the tileable producers in the task. LLVM 19 clones a producer
@@ -185,14 +242,35 @@ tileSizes(::mlir::OpBuilder &builder, ::mlir::linalg::LinalgOp op, int64_t size,
         rewriter.eraseOp(op);
     }
 
+    // The tiled `last` comes first, before the fused producers.
+    Operation *tiledLast = nest->tiledAndFusedOps.front();
+    assert(tiledLast->getName() == lastName && "expected the tiled consumer");
+    (void)lastName;
     SmallVector<linalg::LinalgOp> reductions;
     nest->loops.front().getOperation()->walk([&](linalg::LinalgOp op) {
       if (op.getNumReductionLoops() > 0)
         reductions.push_back(op);
     });
     for (linalg::LinalgOp op : reductions) {
+      // A fused producer: the tile of the function in every loop, as `last`
+      // got. tile_sizes has no place for its reductions.
+      // ponytail: fused reductions (e.g. @tasks_trmm) need max_tile_size;
+      // append their reduction sizes to the op's list if a partition needs it.
+      bool isLast = op.getOperation() == tiledLast;
+      if (!isLast && explicitSizes)
+        return emitDefiniteFailure()
+               << "expected the reductions in the yielded op with tile_sizes";
+      SmallVector<int64_t> opSizes =
+          isLast ? sizes : SmallVector<int64_t>(op.getNumLoops(), sizes[0]);
+      if (llvm::all_of(llvm::zip_equal(op.getIteratorTypesArray(), opSizes),
+                       [](auto pair) {
+                         return std::get<0>(pair) ==
+                                    utils::IteratorType::parallel ||
+                                std::get<1>(pair) == 0;
+                       }))
+        continue;
       scf::SCFTilingOptions reductionTiling;
-      reductionTiling.setTileSizes(tileSizes(rewriter, op, size, false));
+      reductionTiling.setTileSizes(tileSizes(rewriter, op, opSizes, false));
       rewriter.setInsertionPoint(op);
       FailureOr<scf::SCFTilingResult> tiled = scf::tileUsingSCF(
           rewriter, cast<TilingInterface>(op.getOperation()), reductionTiling);

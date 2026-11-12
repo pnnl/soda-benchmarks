@@ -61,7 +61,8 @@ module attributes {transform.with_named_sequence} {
     transform.yield
   }
 
-  // Each task gets its own nest (the tile as in @tile).
+  // Each task gets its own nest (the tile as in @tile). LCS_TILE_SIZES in
+  // tosa_to_lcs.sh replaces max_tile_size here with tile_sizes.
   // fold_tensor_empty shrinks the private tensor.empty to tiles; its pattern
   // driver also removes the untiled ops left dead by the fusion.
   transform.named_sequence @tile_tasks(%func: !transform.any_op {transform.readonly}) {

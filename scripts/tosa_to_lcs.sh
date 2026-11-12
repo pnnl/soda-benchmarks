@@ -41,6 +41,10 @@
 #                        so it loads everything, computes everything, then stores
 #                        everything, on whole buffers; no schedule, ping-pong or
 #                        outstanding_load (default false)
+#   LCS_TILE_SIZES       tile sizes instead of the automatic ones: one list per
+#                        task result, one size per loop of the op producing it
+#                        (0 = untiled), e.g. '[[10, 10, 10], [10, 10]]' on gemm
+#                        SMALL. tile_sizes.txt has the sizes of a run, in this form.
 #
 # Writes in <outdir>:
 #   ir_after_each_pass.mlir         the IR after each pass (also split in
@@ -57,6 +61,8 @@
 #   05_cpu_baseline.ll              the CPU-only baseline
 #   cpu/                            the baseline's bufferized.mlir, outlined.mlir, kernel.mlir
 #   layout.txt                      the options above
+#   tile_sizes.txt                  the tile sizes used, as LCS_TILE_SIZES takes them
+#   transform_tile_sizes.mlir       with LCS_TILE_SIZES: the schedules, with those sizes
 
 set -eou pipefail
 
@@ -91,6 +97,18 @@ case "$SEQUENTIAL" in true|false) ;; *) echo "LCS_SEQUENTIAL must be true or fal
 [ "$SEQUENTIAL" = true ] && OUTSTANDING_LOADS=false
 printf 'dma_word_stride=%s\nprofile=%s\noutstanding_loads=%s\nsequential=%s\n' \
   "$WORD_STRIDE" "$PROFILE" "$OUTSTANDING_LOADS" "$SEQUENTIAL" > layout.txt
+# LCS_TILE_SIZES replaces the automatic sizes of @tile_tasks, the only
+# tile_and_fuse on %tasks.
+if [ -n "${LCS_TILE_SIZES:-}" ]; then
+  TILE_PATTERN='tile_and_fuse %tasks {max_tile_size = [0-9]* : i64}'
+  if ! grep -q "$TILE_PATTERN" "$TRANSFORM"; then
+    echo "LCS_TILE_SIZES: no '$TILE_PATTERN' in $TRANSFORM" >&2
+    exit 1
+  fi
+  sed "s|$TILE_PATTERN|tile_and_fuse %tasks {tile_sizes = $LCS_TILE_SIZES}|" \
+    "$TRANSFORM" > transform_tile_sizes.mlir
+  TRANSFORM=$PWD/transform_tile_sizes.mlir
+fi
 OUTSTANDING_LOAD=
 [ "$OUTSTANDING_LOADS" = true ] && OUTSTANDING_LOAD="func.func(sodap-dataflow-outstanding-load), canonicalize,"
 # Between the load and store tasks and the DMA: the dataflow schedule, or one
@@ -177,6 +195,9 @@ step "$FRONTEND_DUMP" mlir-opt outlined.mlir $PLUGIN --pass-pipeline="builtin.mo
       transform-interpreter{entry-point=$ENTRY}
     )
   )" -o tasks.mlir
+# tile_and_fuse's remark: the sizes it used.
+{ grep -o 'remark: tile_sizes = .*' "$FRONTEND_DUMP" || true; } \
+  | sed 's/^remark: tile_sizes = //' > tile_sizes.txt
 
 section "$FRONTEND_DUMP" "Tile: bufferization, mlir-opt"
 step "$FRONTEND_DUMP" mlir-opt tasks.mlir $PLUGIN --pass-pipeline="builtin.module(
