@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 import hashlib
 import json
 import math
+import struct
 from pathlib import Path
 
 import numpy as np
@@ -43,8 +44,35 @@ def ordered(root):
         for parent in node.inputs:
             visit(parent)
         result.append(node)
-    visit(root)
+    for output in roots(root):
+        visit(output)
     return result
+
+
+def roots(root):
+    return root if isinstance(root, (list, tuple)) else [root]
+
+
+def reshape(x, target):
+    target = tuple(target)
+    if x.elements != math.prod(target):
+        raise ValueError("Reshape changes the number of elements")
+    if x.shape == target:
+        return x
+    if x.kind == "const":
+        return Node("const", target, data=x.data.reshape(target))
+    if x.kind == "reshape":
+        return reshape(x.inputs[0], target)
+    if x.kind == "pad":
+        old = [i for i,d in enumerate(x.shape) if d != 1]
+        new = [i for i,d in enumerate(target) if d != 1]
+        if [x.shape[i] for i in old] == [target[i] for i in new]:
+            pads = [(0,0)] * len(target)
+            for a,b in zip(old,new):
+                pads[b] = x.attrs["pads"][a]
+            unpadded = tuple(d-l-r for d,(l,r) in zip(target,pads))
+            return Node("pad",target,(reshape(x.inputs[0],unpadded),),{"pads":tuple(pads)})
+    return Node("reshape", target, (x,))
 
 
 def transpose(x, permutation):
@@ -58,6 +86,9 @@ def transpose(x, permutation):
     if x.kind == "const":
         data = np.transpose(x.data, p)
         return Node("const", data.shape, data=data)
+    if x.kind == "pad":
+        return Node("pad", tuple(x.shape[i] for i in p), (transpose(x.inputs[0],p),),
+                    {"pads":tuple(x.attrs["pads"][i] for i in p)})
     return Node("transpose", tuple(x.shape[i] for i in p), (x,), {"perm": p})
 
 
@@ -70,6 +101,37 @@ def pointwise(kind, parents, attrs):
     if any(x.shape != parents[0].shape for x in parents):
         raise ValueError("Reusable pointwise operations currently require equal shapes")
     return Node(kind, parents[0].shape, parents, attrs)
+
+
+def unary_activation(kind, x, attrs):
+    if x.kind == "transpose":
+        return transpose(unary_activation(kind,x.inputs[0],attrs), x.attrs["perm"])
+    if x.kind == "reshape":
+        return reshape(unary_activation(kind,x.inputs[0],attrs), x.shape)
+    return Node(kind,x.shape,(x,),attrs)
+
+
+def scalar(node):
+    if node.kind == "const" and node.elements == 1:
+        return float(node.data.reshape(-1)[0])
+    return None
+
+
+def leaky_pattern(a,b):
+    # Torch-MLIR: max(x,0) + min(x,0)*alpha. Never treat arbitrary mul/add as an activation.
+    for maximum, product in ((a,b),(b,a)):
+        if maximum.kind != "maximum" or product.kind != "mul":
+            continue
+        for x,zero in (maximum.inputs,maximum.inputs[::-1]):
+            if scalar(zero) != 0:
+                continue
+            for minimum,coefficient in (product.inputs,product.inputs[::-1]):
+                alpha = scalar(coefficient)
+                if minimum.kind != "minimum" or alpha is None or not math.isfinite(alpha) or not 0 <= alpha <= 1:
+                    continue
+                if any(y is x and scalar(z) == 0 for y,z in (minimum.inputs,minimum.inputs[::-1])):
+                    return unary_activation("leaky_relu",x,{"alpha":alpha})
+    return None
 
 
 def parse_graph(text):
@@ -94,9 +156,10 @@ def parse_graph(text):
     for op in block.operations:
         name = op.operation.name
         if name == "func.return":
-            if len(op.operands) != 1:
-                raise ValueError("Expected one output tensor")
-            root = values[op.operands[0]]
+            if not op.operands:
+                raise ValueError("Expected at least one output tensor")
+            outputs = [values[v] for v in op.operands]
+            root = outputs[0] if len(outputs) == 1 else outputs
             continue
         if name == "tosa.const":
             data = np.array(ir.DenseElementsAttr(op.attributes["value"]), copy=True)
@@ -113,21 +176,37 @@ def parse_graph(text):
                 raise ValueError("Transpose permutation must be constant")
             node = transpose(parents[0], parents[1].data.tolist())
         elif name == "tosa.reshape":
-            if parents[0].elements != math.prod(target):
-                raise ValueError("Reshape changes the number of elements")
-            if parents[0].kind == "const":
-                node = Node("const", target, data=parents[0].data.reshape(target))
-            else:
-                node = Node("reshape", target, parents)
+            node = reshape(parents[0],target)
+        elif name == "tosa.pad":
+            if len(parents) != 3 or parents[1].kind != "const" or scalar(parents[2]) != 0:
+                raise ValueError("Only constant zero padding can be folded into convolution")
+            pads = tuple(tuple(map(int,row)) for row in parents[1].data)
+            if len(pads) != len(target) or any(len(p)!=2 or min(p)<0 for p in pads):
+                raise ValueError("Invalid zero padding")
+            expected = tuple(d+l+r for d,(l,r) in zip(parents[0].shape,pads))
+            node = Node("pad",expected,(parents[0],),{"pads":pads})
         elif name == "tosa.clamp":
             lo = ir.FloatAttr(op.attributes["min_fp"]).value
             hi = ir.FloatAttr(op.attributes["max_fp"]).value
             if lo != 0 or hi != float(np.finfo(np.float32).max):
                 raise ValueError("Only the float32 ReLU clamp is supported")
-            node = pointwise("relu", parents, {})
+            node = unary_activation("relu",parents[0],{})
+        elif name in ("tosa.maximum", "tosa.minimum", "tosa.mul"):
+            if name == "tosa.mul" and int(ir.IntegerAttr(op.attributes["shift"]).value) != 0:
+                raise ValueError("LeakyReLU requires unshifted multiplication")
+            node = Node(name.removeprefix("tosa."),target,parents)
         elif name == "tosa.add":
-            node = pointwise("add", parents, {})
+            node = leaky_pattern(*parents)
+            if node is None:
+                node = pointwise("add", parents, {})
         elif name in ("tosa.conv2d", "tosa.matmul", "tosa.max_pool2d", "tosa.avg_pool2d"):
+            if name == "tosa.conv2d" and parents[0].kind == "pad":
+                padded = parents[0]
+                pads = padded.attrs["pads"]
+                if len(pads) != 4 or pads[0] != (0,0) or pads[3] != (0,0):
+                    raise ValueError("Convolution can only absorb spatial zero padding")
+                attrs["pad"] = tuple(a+b for a,b in zip(attrs["pad"],(*pads[1],*pads[2])))
+                parents = (padded.inputs[0],*parents[1:])
             node = Node(name.removeprefix("tosa."), target, parents, attrs)
         else:
             raise ValueError(f"Unsupported operation: {name}")
@@ -141,18 +220,24 @@ def parse_graph(text):
 
 def fuse_relu(root):
     users = Counter(x for n in ordered(root) for x in n.inputs)
+    users.update(roots(root))
     replacements = {}
     fused = 0
     for node in ordered(root):
         node.inputs = tuple(replacements.get(x, x) for x in node.inputs)
-        if node.kind == "relu":
+        if node.kind in ("relu", "leaky_relu"):
             source = node.inputs[0]
-            if source.kind not in ("conv2d", "add") or users[source] != 1:
-                raise ValueError("ReLU requires a single-use convolution/add producer")
-            source.attrs["relu"] = 1
+            supported = ("conv2d",) if node.kind == "leaky_relu" else ("conv2d", "add")
+            if source.kind not in supported or users[source] != 1 or "activation" in source.attrs or "relu" in source.attrs:
+                raise ValueError("Activation requires a single-use supported convolution/add producer")
+            if node.kind == "leaky_relu":
+                source.attrs.update(activation="leaky_relu",alpha=node.attrs["alpha"])
+            else:
+                source.attrs["relu"] = 1
             replacements[node] = source
-            fused += 1
-    return replacements.get(root, root), fused
+            fused += int(node.kind == "relu")
+    result = [replacements.get(x,x) for x in roots(root)]
+    return (result if isinstance(root,(list,tuple)) else result[0]), fused
 
 
 def storage(node):
@@ -184,7 +269,8 @@ def plan_memory(input_node, root, directory):
     for i, node in enumerate(calls):
         for parent in node.inputs:
             last[storage(parent)] = i
-    last[storage(root)] = len(calls)
+    for output in roots(root):
+        last[storage(output)] = len(calls)
     free = []
     def release(offset, size):
         free.append((offset, size))
@@ -234,8 +320,12 @@ def invocation(node):
                     (iw + pl + pr - (kw - 1) * dw - 1) // sw + 1)
         if (n, ic, oc, (oh, ow), bias.shape) != (on, wic, ooc, expected, (oc,)):
             raise ValueError("Incompatible convolution shapes")
-        return "conv", [x.offset, w.offset, bias.offset, node.offset, n, ih, iw, ic,
-                        oc, kh, kw, oh, ow, sh, sw, pt, pl, dh, dw, node.attrs.get("relu", 0)]
+        arguments = [x.offset,w.offset,bias.offset,node.offset,n,ih,iw,ic,oc,kh,kw,oh,ow,sh,sw,pt,pl,dh,dw]
+        if node.attrs.get("activation") == "leaky_relu":
+            arguments += [2,struct.unpack("<I",struct.pack("<f",node.attrs["alpha"]))[0]]
+        else:
+            arguments += [node.attrs.get("relu",0)]
+        return "conv", arguments
     if node.kind == "add":
         return "add", [x.offset, node.inputs[1].offset, node.offset, node.elements,
                        node.attrs.get("relu", 0)]
@@ -271,6 +361,7 @@ def invocation(node):
 
 def emit_host(input_node, root, calls, parameter_elements, arena_bytes, directory):
     constants, body, declarations, records = {}, [], {}, []
+    output_elements = sum(x.elements for x in roots(root))
     def constant(n):
         if n not in constants:
             constants[n] = f"%c{len(constants)}"
@@ -288,15 +379,29 @@ def emit_host(input_node, root, calls, parameter_elements, arena_bytes, director
     for index, node in enumerate(calls):
         kind, arguments = invocation(node)
         target = "accelerator" if kind in ("conv", "add", "gemm") else "cpu"
-        attrs = (f' {{sodap.operator = "{kind}_f32_v1", sodap.instance = 0 : i64, '
+        version = 2 if kind == "conv" and node.attrs.get("activation") == "leaky_relu" else 1
+        attrs = (f' {{sodap.operator = "{kind}_f32_v{version}", sodap.instance = 0 : i64, '
                  f'sodap.invocation = {index} : i64, sodap.execution = "{target}"}}')
-        call(f"esp_op_{kind}", ["%ctx", *[constant(x) for x in arguments]], attrs)
+        function = "esp_op_conv_activation" if kind == "conv" and node.attrs.get("activation") == "leaky_relu" else f"esp_op_{kind}"
+        call(function, ["%ctx", *[constant(x) for x in arguments]], attrs)
         records.append({"index": index, "operator": kind, "instance": 0,
                         "execution": target, "shape": node.shape, "arguments": arguments,
                         "inputs": [storage(x).name for x in node.inputs], "output": node.name,
-                        "relu": bool(node.attrs.get("relu", 0))})
-    body.append(f"    %output_view = memref.cast %output : memref<{root.elements}xf32> to memref<*xf32>")
-    body.append(f"    call @esp_op_copy_out(%ctx, {constant(root.offset)}, %output_view) : (i64, i64, memref<*xf32>) -> ()")
+                        "relu": bool(node.attrs.get("relu", 0)),
+                        "activation":node.attrs.get("activation","relu" if node.attrs.get("relu") else "none"),
+                        "alpha":node.attrs.get("alpha")})
+        if kind == "conv":
+            names = ["a_bytes","w_bytes","bias_bytes","c_bytes","n","ih","iw","ic","oc","kh","kw",
+                     "oh","ow","stride_h","stride_w","pad_top","pad_left","dilation_h","dilation_w","activation_mode","alpha_f32_bits"]
+            records[-1]["configuration"] = dict(zip(names,arguments))
+            records[-1]["descriptor_version"] = 2 if len(arguments)==21 else 1
+    output_offset = 0
+    for i,output in enumerate(roots(root)):
+        view_type = f"memref<{output.elements}xf32, strided<[1], offset: {output_offset}>>"
+        body.append(f"    %out{i} = memref.subview %output[{output_offset}] [{output.elements}] [1] : memref<{output_elements}xf32> to {view_type}")
+        body.append(f"    %output_view{i} = memref.cast %out{i} : {view_type} to memref<*xf32>")
+        body.append(f"    call @esp_op_copy_out(%ctx, {constant(output.offset)}, %output_view{i}) : (i64, i64, memref<*xf32>) -> ()")
+        output_offset += output.elements
     call("esp_op_close", ["%ctx"])
     body.append("    return")
     declarations = [f"  func.func private @{name}({', '.join(['i64'] * count)})"
@@ -306,7 +411,7 @@ def emit_host(input_node, root, calls, parameter_elements, arena_bytes, director
                      "  func.func private @esp_op_copy_out(i64, i64, memref<*xf32>)"]
     host = ("module {\n" + "\n".join(declarations) + "\n"
             f"  func.func @forward_kernel(%input: memref<{input_node.elements}xf32>, "
-            f"%parameters: memref<{parameter_elements}xf32>, %output: memref<{root.elements}xf32>) {{\n"
+            f"%parameters: memref<{parameter_elements}xf32>, %output: memref<{output_elements}xf32>) {{\n"
             + "\n".join(body) + "\n  }\n}\n")
     checked = ir.Module.parse(host)
     checked.operation.verify()
@@ -321,9 +426,14 @@ def compile_network(source, directory):
         root, relus = fuse_relu(root)
         nodes, calls, parameter_elements, arena_bytes = plan_memory(inputs, root, directory)
         records = emit_host(inputs, root, calls, parameter_elements, arena_bytes, directory)
-    plan = {"abi": 1, "input_shape": inputs.shape, "output_shape": root.shape,
+    outputs = roots(root)
+    plan = {"abi": 1, "input_shape": inputs.shape,
+            "output_shape":outputs[0].shape if len(outputs)==1 else (sum(x.elements for x in outputs),),
+            "outputs":[{"shape":x.shape,"offset_elements":sum(y.elements for y in outputs[:i]),
+                        "arena_offset_bytes":x.offset} for i,x in enumerate(outputs)],
             "arena_data_bytes": arena_bytes, "parameter_elements": parameter_elements,
             "fused_relus": relus, "operator_counts": dict(Counter(x["operator"] for x in records)),
+            "fused_leaky_relus":sum(x.attrs.get("activation")=="leaky_relu" for x in nodes),
             "bindings": {kind: {"instance": 0, "socket": 0, "module": f"{kind}_kernel"}
                          for kind in ("conv", "add", "gemm")},
             "parameters_sha256": hashlib.sha256((directory / "parameters.bin").read_bytes()).hexdigest(),

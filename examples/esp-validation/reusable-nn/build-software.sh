@@ -25,6 +25,7 @@ flags=(-O2 -march=rv64imafdc -mabi=lp64d -mcmodel=medany -fno-common
   -I"$drivers/baremetal/include" -I"$drivers/common/include"
   -I"$cpu/riscv-tests/env" -I"$cpu/riscv-tests/benchmarks/common"
   -I"$cpu/bootrom" -I"$cpu/riscv-pk/machine" -I"$soc/socgen/esp")
+if [[ ${NN_TRACE:-0} == 1 ]]; then flags+=(-DSODAP_OP_TRACE); fi
 if [[ "$execution" == CPU_ONLY ]]; then
   arena=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["arena_data_bytes"]+256+4096)' "$app/plan.json")
   flags+=(-DSODAP_OP_CPU_ONLY "-DSODAP_OP_CPU_ARENA_BYTES=$arena")

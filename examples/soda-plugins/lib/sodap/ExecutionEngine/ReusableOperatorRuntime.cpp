@@ -153,6 +153,11 @@ bool launch(Context &ctx, const char *kind, int64_t outputOffset, uint64_t outpu
   ctx.running = true;
   ctx.outputOffset = outputOffset;
   ctx.outputElements = outputElements;
+#ifdef SODAP_OP_TRACE
+  std::printf("OP_CONFIG call=%u",ctx.invocations);
+  for(unsigned i=0;i<24;++i) std::printf(" %x",ctx.arena[2*i]);
+  std::printf("\n");
+#endif
   std::printf("%s launch=%u kind=%s instance=0 socket=%u\n",
               executionPrefix, ctx.invocations, kind, ctx.instance);
 #ifndef __riscv
@@ -197,6 +202,12 @@ void complete(Context &ctx) {
   release(expected);
   std::printf("REUSABLE_OP RTL_CHECK elements=%lu max_error=%g\n",
               (unsigned long)ctx.outputElements,double(maxError));
+#endif
+#ifdef SODAP_OP_TRACE
+  std::printf("OP_OUTPUT call=%u",ctx.invocations);
+  for(uint64_t i=0;i<std::min(ctx.outputElements,uint64_t(16));++i)
+    std::printf(" %x",ctx.arena[address(ctx.outputOffset)+2*i]);
+  std::printf("\n");
 #endif
   ctx.running = false;
   std::printf("%s complete=%u socket=%u\n", executionPrefix, ++ctx.invocations, ctx.instance);
@@ -279,18 +290,33 @@ extern "C" void esp_op_conv(int64_t handle, int64_t a, int64_t w, int64_t bias, 
     int64_t n, int64_t ih, int64_t iw, int64_t ic, int64_t oc, int64_t kh, int64_t kw,
     int64_t oh, int64_t ow, int64_t sh, int64_t sw, int64_t pt, int64_t pl,
     int64_t dh, int64_t dw, int64_t relu) {
+  flag(relu);
+  esp_op_conv_activation(handle,a,w,bias,c,n,ih,iw,ic,oc,kh,kw,oh,ow,sh,sw,pt,pl,dh,dw,relu,0);
+}
+extern "C" void esp_op_conv_activation(int64_t handle, int64_t a, int64_t w, int64_t bias, int64_t c,
+    int64_t n, int64_t ih, int64_t iw, int64_t ic, int64_t oc, int64_t kh, int64_t kw,
+    int64_t oh, int64_t ow, int64_t sh, int64_t sw, int64_t pt, int64_t pl,
+    int64_t dh, int64_t dw, int64_t mode, int64_t alpha_bits) {
+  if (mode < OP_ACT_NONE || mode > OP_ACT_LEAKY_RELU || alpha_bits < 0 || alpha_bits > UINT32_MAX)
+    fail("invalid convolution activation");
+  uint32_t bits=uint32_t(alpha_bits);
+  float alpha;
+  std::memcpy(&alpha,&bits,4);
+  if (!std::isfinite(alpha) || alpha < 0 || alpha > 1) fail("invalid LeakyReLU slope");
   Context &ctx = lookup(handle);
   auto ae = check(ctx,a,product({n,ih,iw,ic}));
   auto we = check(ctx,w,product({oc,kh,kw,ic}));
   auto be = check(ctx,bias,product({oc}));
   auto ce = check(ctx,c,product({n,oh,ow,oc}));
   disjoint(a,ae,c,ce); disjoint(w,we,c,ce); disjoint(bias,be,c,ce);
-  spatial({sh,sw,dh,dw}); spatial({pt,pl},true); flag(relu);
+  spatial({sh,sw,dh,dw}); spatial({pt,pl},true);
   header(ctx,OP_CONV_MAGIC);
-  const int64_t dims[] = {n,ih,iw,ic,oc,kh,kw,oh,ow,sh,sw,pt,pl,dh,dw,relu};
+  if (mode == OP_ACT_LEAKY_RELU) field(ctx,1,CONV_VERSION);
+  const int64_t dims[] = {n,ih,iw,ic,oc,kh,kw,oh,ow,sh,sw,pt,pl,dh,dw,mode};
   for (unsigned i=0;i<16;++i) field(ctx,CONV_N+i,dims[i]);
   field(ctx,CONV_A,address(a)); field(ctx,CONV_W,address(w));
   field(ctx,CONV_BIAS,address(bias)); field(ctx,CONV_C,address(c));
+  field(ctx,CONV_ALPHA,bits);
   if (!launch(ctx,"conv",c,(ce-c)/8)) {
     for (int64_t batch=0;batch<n;++batch)
       for (int64_t y=0;y<oh;++y)
@@ -307,8 +333,11 @@ extern "C" void esp_op_conv(int64_t handle, int64_t a, int64_t w, int64_t bias, 
                 for (int64_t q=0;q<ic;++q) sum=sum+read(ctx,a,ai+q)*read(ctx,w,wi+q);
               }
             }
-            write(ctx,c,((batch*oh+y)*ow+x)*oc+channel,
-                  activation(sum+read(ctx,bias,channel),relu));
+            float value=sum+read(ctx,bias,channel);
+            if (mode == OP_ACT_LEAKY_RELU)
+              value=(value < 0 ? 0.0f : value) + (value < 0 ? value : 0.0f)*alpha;
+            else value=activation(value,mode);
+            write(ctx,c,((batch*oh+y)*ow+x)*oc+channel,value);
           }
   }
   complete(ctx);

@@ -4,7 +4,7 @@ import tempfile
 from pathlib import Path
 import unittest
 import numpy as np
-from lower import Node, transpose, pointwise, fuse_relu, plan_memory, invocation
+from lower import Node, transpose, reshape, pointwise, unary_activation, leaky_pattern, fuse_relu, plan_memory, invocation
 
 
 class LoweringTests(unittest.TestCase):
@@ -66,6 +66,48 @@ class LoweringTests(unittest.TestCase):
     def test_unsupported_broadcast(self):
         with self.assertRaisesRegex(ValueError,"equal shapes"):
             pointwise("add",(Node("input",(1,5)),Node("const",(5,))),{})
+
+    def test_leaky_pattern_and_view_fusion(self):
+        conv=Node("conv2d",(1,1,7,3),(Node("input",(1,1,7,2)),))
+        x=reshape(transpose(conv,(0,3,1,2)),(1,3,7))
+        zero=Node("const",(1,1,1),data=np.zeros((1,1,1),np.float32))
+        slope=Node("const",(1,1,1),data=np.full((1,1,1),0.3,np.float32))
+        maximum=Node("maximum",x.shape,(x,zero))
+        minimum=Node("minimum",x.shape,(x,zero))
+        product=Node("mul",x.shape,(minimum,slope))
+        fused,count=fuse_relu(leaky_pattern(maximum,product))
+        self.assertEqual(conv.attrs["activation"],"leaky_relu")
+        self.assertAlmostEqual(conv.attrs["alpha"],0.3)
+        self.assertEqual(count,0)
+        self.assertEqual(fused.shape,x.shape)
+        # A different minimum input must never be mistaken for LeakyReLU.
+        minimum.inputs=(Node("input",x.shape),zero)
+        self.assertIsNone(leaky_pattern(maximum,product))
+
+    def test_returned_unactivated_value_prevents_fusion(self):
+        conv=Node("conv2d",(1,1,7,3),(Node("input",(1,1,7,2)),))
+        with self.assertRaisesRegex(ValueError,"single-use"):
+            fuse_relu([conv,unary_activation("leaky_relu",conv,{"alpha":0.3})])
+
+    def test_multiple_output_lifetimes(self):
+        x=Node("input",(16,))
+        w=Node("const",(16,),data=np.ones(16,np.float32))
+        a=Node("add",(16,),(x,w))
+        b=Node("add",(16,),(x,w))
+        c=Node("add",(16,),(b,w))
+        with tempfile.TemporaryDirectory() as directory:
+            plan_memory(x,[a,c],Path(directory))
+        self.assertNotEqual(a.offset,b.offset)
+        self.assertNotEqual(a.offset,c.offset)
+
+    def test_spatial_padding_through_unit_reshape(self):
+        x=Node("input",(1,3,8))
+        padded=Node("pad",(1,3,13),(x,),{"pads":((0,0),(0,0),(2,3))})
+        y=transpose(reshape(padded,(1,3,1,13)),(0,2,3,1))
+        self.assertEqual(y.kind,"pad")
+        self.assertEqual(y.shape,(1,1,13,3))
+        self.assertEqual(y.inputs[0].shape,(1,1,8,3))
+        self.assertEqual(y.attrs["pads"],((0,0),(0,0),(2,3),(0,0)))
 
 
 if __name__=="__main__":

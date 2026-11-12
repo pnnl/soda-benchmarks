@@ -20,6 +20,7 @@ class Simulator {
   uint32_t *memory=nullptr;
   uint64_t beats=0, readAt=0, writeAt=0, readLeft=0, writeLeft=0;
   uint64_t outputBegin=0,outputEnd=0,cycles=0,reads=0,writes=0;
+  uint64_t readyAt=0,latency=0;
   unsigned invocation=0,stallMask=0;
   uint64_t maxCycles=2000000000ull;
   void tick() {
@@ -29,9 +30,9 @@ class Simulator {
     simulationTime=double(cycles)*2;
     dut.dma_read_ctrl_ready=idle && available;
     dut.dma_write_ctrl_ready=0;
-    dut.dma_read_chnl_valid=readLeft && available;
+    dut.dma_read_chnl_valid=readLeft && available && cycles>=readyAt;
     dut.dma_read_chnl_data=readLeft ? uint64_t(memory[readAt*2]) | (uint64_t(memory[readAt*2+1])<<32) : 0;
-    dut.dma_write_chnl_ready=writeLeft && available;
+    dut.dma_write_chnl_ready=writeLeft && available && cycles>=readyAt;
     dut.eval();
     dut.dma_write_ctrl_ready=idle && available && !dut.dma_read_ctrl_valid;
     dut.eval();
@@ -54,14 +55,15 @@ class Simulator {
       memory[writeAt*2]=uint32_t(data); memory[writeAt*2+1]=uint32_t(data>>32);
       ++writeAt; --writeLeft; ++writes;
     }
-    if(rc) { readAt=ra; readLeft=rn; }
-    if(wc) { writeAt=wa; writeLeft=wn; }
+    if(rc) { readAt=ra; readLeft=rn; readyAt=cycles+latency; }
+    if(wc) { writeAt=wa; writeLeft=wn; readyAt=cycles+latency; }
     ++cycles;
     if(Verilated::gotFinish()) fail("RTL simulation terminated unexpectedly");
   }
 public:
   Simulator() {
     if(auto *value=std::getenv("SODAP_RTL_STALL_MASK")) stallMask=std::strtoul(value,nullptr,0);
+    if(auto *value=std::getenv("SODAP_RTL_DMA_LATENCY")) latency=std::strtoull(value,nullptr,0);
     if(auto *value=std::getenv("SODAP_RTL_MAX_CYCLES")) maxCycles=std::strtoull(value,nullptr,0);
     dut.rst=0; dut.conf_done=0;
     for(unsigned i=0;i<8;++i) tick();

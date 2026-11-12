@@ -14,6 +14,8 @@ parser.add_argument("directory", type=Path)
 parser.add_argument("--library", default="native.so")
 parser.add_argument("--backend", default="native-operator-oracle")
 parser.add_argument("--runtime", type=Path, help="Load a separate RTL runtime before the host-only library")
+parser.add_argument("--atol", type=float, default=1e-3)
+parser.add_argument("--rtol", type=float, default=1e-4)
 args = parser.parse_args()
 args.directory = args.directory.resolve()
 plan = json.loads((args.directory / "compiled/plan.json").read_text())
@@ -37,11 +39,13 @@ kernel(*(x.ctypes.data_as(pointer) for x in (data, parameters, output)))
 elapsed = time.monotonic() - start
 np.save(args.directory / f"{args.backend}-output.npy", output)
 reference = reference.reshape(output.shape)
-np.testing.assert_allclose(output, reference, atol=1e-3, rtol=1e-4)
+assert np.isfinite(output).all() and np.isfinite(reference).all()
+np.testing.assert_allclose(output, reference, atol=args.atol, rtol=args.rtol)
 summary = {"status": "PASS", "backend": args.backend, "outputs": output.size,
-           "max_abs_error": float(np.max(np.abs(output-reference))), "atol": 1e-3, "rtol": 1e-4,
+           "max_abs_error": float(np.max(np.abs(output-reference))), "atol": args.atol, "rtol": args.rtol,
            "wall_seconds": elapsed, "top5": np.argsort(output.reshape(-1))[-5:][::-1].tolist(),
            "reference_top5": np.argsort(reference.reshape(-1))[-5:][::-1].tolist(),
-           "operator_counts": plan["operator_counts"], "fused_relus": plan["fused_relus"]}
+           "operator_counts": plan["operator_counts"], "fused_relus": plan["fused_relus"],
+           "fused_leaky_relus":plan.get("fused_leaky_relus",0), "output_slices":plan.get("outputs",[])}
 (args.directory / f"{args.backend}-validation.json").write_text(json.dumps(summary, indent=2) + "\n")
 print(json.dumps(summary, indent=2))

@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 """Match the compiled invocation plan to CPU and physical accelerator logs."""
 import json
+import math
 from pathlib import Path
 import re
 import sys
@@ -25,6 +26,7 @@ for marker in ('START','RESULT'):
     assert re.findall(rf'GEMM_BOUNDARY {marker} invocation=(\d+)',log) == [str(i) for i in range(1,count+1)]
 result = re.findall(r'NN_RESULT outputs=(\d+) errors=(\d+) max_error_e9=(\d+) top1=(\d+) reference_top1=(\d+) cycles=(\d+)', log)
 assert len(result)==1 and result[0][1]=='0', result
+assert int(result[0][0]) == math.prod(plan['output_shape']), 'Incomplete network output validation'
 report={'status':'PASS','execution':'full-system RTL','operators':expected,
         'hardware_invocations':count,'outputs':int(result[0][0]),'max_error_e9':int(result[0][2]),
         'cpu_cycles':int(result[0][5])}

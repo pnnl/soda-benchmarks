@@ -19,11 +19,16 @@ verilator --cc --top-module sqr_bambu_basic_dma64 --prefix Voperator \
 make -C "$out" -f Voperator.mk -j"${NN_BUILD_JOBS:-8}" > "$out/build.log" 2>&1
 # Keep the simulator independent of a particular compiled host/model.
 verilator_include=${VERILATOR_INCLUDE:-/usr/share/verilator/include}
+verilator_support=("$verilator_include/verilated.cpp")
+if [[ -f "$verilator_include/verilated_threads.cpp" ]]; then
+  verilator_support+=("$verilator_include/verilated_threads.cpp")
+fi
 c++ -std=c++17 -O3 -fPIC -shared -pthread \
+  -Wl,--no-undefined \
   -DSODAP_OP_EXTERNAL_EXECUTOR -DSODAP_OP_VERIFY_RTL -ffp-contract=off \
   -I"$repo/examples/soda-plugins/include" -I"$out" -I"$verilator_include" -I"$verilator_include/vltstd" \
   "$repo/examples/soda-plugins/lib/sodap/ExecutionEngine/ReusableOperatorRuntime.cpp" \
   "$here/rtl_executor.cpp" "$out/Voperator__ALL.a" \
-  "$verilator_include/verilated.cpp" \
+  "${verilator_support[@]}" \
   -o "$out/rtl-runtime.so" > "$out/link.log" 2>&1
 echo "RTL runtime: $out/rtl-runtime.so"

@@ -72,14 +72,23 @@ struct Generator {
   }
   Value address(Value base,Value element) { return add(base,mul(element,idx(2))); }
   Value field(unsigned f) { return b.create<arith::IndexCastUIOp>(loc,b.getIndexType(),cfg[f]); }
+  Value validConfig(uint32_t magic) {
+    Value version1=cmp(arith::CmpIPredicate::eq,cfg[1],b.create<arith::ConstantIntOp>(loc,OP_VERSION,32));
+    Value version=version1;
+    if(magic==OP_CONV_MAGIC) {
+      Value version2=cmp(arith::CmpIPredicate::eq,cfg[1],b.create<arith::ConstantIntOp>(loc,CONV_VERSION,32));
+      Value oldMode=cmp(arith::CmpIPredicate::ule,field(CONV_ACTIVATION),idx(OP_ACT_RELU));
+      Value newMode=cmp(arith::CmpIPredicate::ule,field(CONV_ACTIVATION),idx(OP_ACT_LEAKY_RELU));
+      version=b.create<arith::OrIOp>(loc,both(version1,oldMode),both(version2,newMode));
+    }
+    return both(cmp(arith::CmpIPredicate::eq,cfg[0],b.create<arith::ConstantIntOp>(loc,magic,32)),version);
+  }
   Value readConfig(uint32_t magic) {
     Value config=alloc({OP_HEADER_FIELDS},b.getI32Type());
     request(rc,z,idx(OP_HEADER_FIELDS*2));
     loop(idx(OP_HEADER_FIELDS),[&](Value i){store(readWord(),config,{i});});
     for(unsigned i=0;i<OP_HEADER_FIELDS;++i) cfg.push_back(load(config,{idx(i)}));
-    Value m=b.create<arith::ConstantIntOp>(loc,magic,32);
-    Value v=b.create<arith::ConstantIntOp>(loc,OP_VERSION,32);
-    return both(cmp(arith::CmpIPredicate::eq,cfg[0],m),cmp(arith::CmpIPredicate::eq,cfg[1],v));
+    return validConfig(magic);
   }
   Value relu(Value value,Value enabled) {
     Value lo=b.create<arith::CmpFOp>(loc,arith::CmpFPredicate::OLT,value,fzero);
@@ -88,6 +97,16 @@ struct Generator {
     Value clipped=b.create<arith::SelectOp>(loc,lo,fzero,value);
     clipped=b.create<arith::SelectOp>(loc,hi,upper,clipped);
     return b.create<arith::SelectOp>(loc,enabled,clipped,value);
+  }
+  Value convActivation(Value value) {
+    Value negative=b.create<arith::CmpFOp>(loc,arith::CmpFPredicate::OLT,value,fzero);
+    Value positive=b.create<arith::SelectOp>(loc,negative,fzero,value);
+    Value lower=b.create<arith::SelectOp>(loc,negative,value,fzero);
+    Value alpha=b.create<arith::BitcastOp>(loc,b.getF32Type(),cfg[CONV_ALPHA]);
+    Value leaky=b.create<arith::AddFOp>(loc,positive,b.create<arith::MulFOp>(loc,lower,alpha));
+    Value clipped=relu(value,cmp(arith::CmpIPredicate::eq,field(CONV_ACTIVATION),idx(OP_ACT_RELU)));
+    return b.create<arith::SelectOp>(loc,
+        cmp(arith::CmpIPredicate::eq,field(CONV_ACTIVATION),idx(OP_ACT_LEAKY_RELU)),leaky,clipped);
   }
 
   void addition(int64_t block) {
@@ -126,7 +145,6 @@ struct Generator {
       Value oh=field(CONV_OH),ow=field(CONV_OW),sh=field(CONV_SH),sw=field(CONV_SW);
       Value pt=field(CONV_PT),pl=field(CONV_PL),dh=field(CONV_DH),dw=field(CONV_DW);
       Value baseA=field(CONV_A),baseW=field(CONV_W),baseBias=field(CONV_BIAS),baseC=field(CONV_C);
-      Value activation=cmp(arith::CmpIPredicate::ne,field(CONV_RELU),z);
       Value plane=mul(oh,ow);
       loop(n,[&](Value batch){
         loop(z,plane,idx(pixels),[&](Value start){
@@ -181,7 +199,7 @@ struct Generator {
               request(wc,address(baseC,output),mul(columns,idx(2)));
               loop(columns,[&](Value j){
                 Value value=b.create<arith::AddFOp>(loc,load(result,{p,j}),load(bias,{j}));
-                writeFloat(relu(value,activation));
+                writeFloat(convActivation(value));
               });
             });
           });
@@ -215,8 +233,7 @@ struct ConvPipeline : Generator {
       }
     });
     for(unsigned i=0;i<OP_HEADER_FIELDS;++i) cfg.push_back(load(config,{idx(i)}));
-    return both(cmp(arith::CmpIPredicate::eq,cfg[0],b.create<arith::ConstantIntOp>(loc,OP_CONV_MAGIC,32)),
-                cmp(arith::CmpIPredicate::eq,cfg[1],b.create<arith::ConstantIntOp>(loc,OP_VERSION,32)));
+    return validConfig(OP_CONV_MAGIC);
   }
   void build(Stage stage,int64_t pixels,int64_t lanes,int64_t channels,
              Value a,ArrayRef<Value> weights,Value bias,Value result,
@@ -231,7 +248,6 @@ struct ConvPipeline : Generator {
       Value oh=field(CONV_OH),ow=field(CONV_OW),sh=field(CONV_SH),sw=field(CONV_SW);
       Value pt=field(CONV_PT),pl=field(CONV_PL),dh=field(CONV_DH),dw=field(CONV_DW);
       Value baseA=field(CONV_A),baseW=field(CONV_W),baseBias=field(CONV_BIAS),baseC=field(CONV_C);
-      Value activation=cmp(arith::CmpIPredicate::ne,field(CONV_RELU),z);
       Value plane=mul(oh,ow);
       loop(n,[&](Value batch) {
         loop(z,plane,idx(pixels),[&](Value start) {
@@ -293,7 +309,7 @@ struct ConvPipeline : Generator {
                   for(int64_t lane=0;lane<lanes;++lane) {
                     condition(cmp(arith::CmpIPredicate::ult,idx(lane),columns),[&] {
                       Value value=b.create<arith::AddFOp>(loc,load(accum[lane],{p}),load(bias,{idx(lane)}));
-                      store(relu(value,activation),result,{p,idx(lane)});
+                      store(convActivation(value),result,{p,idx(lane)});
                     });
                   }
                 });
@@ -363,7 +379,7 @@ public:
       passes.addNestedPass<func::FuncOp>(dataflow::createTasksToNodes());
       passes.addPass(dataflow::createNodesToFunc());
       if(failed(runPipeline(passes,module))) return signalPassFailure();
-      module->setAttr("sodap.operator_abi",b.getI32IntegerAttr(OP_VERSION));
+      module->setAttr("sodap.operator_abi",b.getI32IntegerAttr(CONV_VERSION));
       module->setAttr("sodap.operator_schedule",b.getStringAttr(schedule));
       return;
     }
@@ -378,7 +394,7 @@ public:
     b.setInsertionPointToStart(top.addEntryBlock());
     b.create<func::CallOp>(module.getLoc(),engine,top.getArguments());
     b.create<func::ReturnOp>(module.getLoc());
-    module->setAttr("sodap.operator_abi",b.getI32IntegerAttr(OP_VERSION));
+    module->setAttr("sodap.operator_abi",b.getI32IntegerAttr(kind=="conv" ? CONV_VERSION : OP_VERSION));
   }
 };
 } // namespace

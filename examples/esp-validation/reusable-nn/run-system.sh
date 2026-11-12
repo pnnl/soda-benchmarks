@@ -12,6 +12,11 @@ grep -Eq 'CFG_L2_ENABLE[[:space:]]*: integer := 0;' "$soc/socgen/esp/esp_global.
 grep -Eq 'CFG_LLC_ENABLE[[:space:]]*: integer := 0;' "$soc/socgen/esp/esp_global.vhd"
 mkdir -p "$run/full-system" "$run/soft-build/ariane"
 sim=$run/full-system
+ram_kbytes=${ESP_SIM_RAM_KBYTES:-16384}
+python3 - "$app/memory.json" "$ram_kbytes" <<'PY'
+import json,sys
+assert json.load(open(sys.argv[1]))['dram_bytes']==int(sys.argv[2])*1024, 'Software/simulator DRAM mismatch'
+PY
 cp -a "${ESP_MODELSIM_WORK:-$soc/modelsim/work}" "$sim/work"
 cp "$soc/soft-build/ariane/prom.srec" "$app/ram.srec" "$sim/"
 cp "$app/nn_app.bin" "$run/soft-build/ariane/systest.bin"
@@ -32,6 +37,25 @@ work = work
 sqr_bambu = operator_lib
 EOF
 cd "$sim"
+# The preserved Ariane tile assumes a 1 GiB board with a 512 MiB cacheable half.
+# A compact simulation allocates DMA buffers above half its *actual* RAM size.
+# Align the CPU PMA with that allocator, otherwise CPU layout operations retain
+# stale cache lines when a later accelerator reuses the same arena storage.
+# Change only a private simulation copy; never edit the shared ESP checkout.
+python3 - "$soc/../../rtl/tiles/tile_cpu.vhd" "$ram_kbytes" <<'PY'
+from pathlib import Path
+import json,re,sys
+source=Path(sys.argv[1]).read_text()
+size=int(sys.argv[2])*1024
+assert size >= 16*1024**2 and size & (size-1)==0
+source,count=re.subn(r'(constant ariane_cacheable_len\s*: integer :=)[^;]+;',
+                     rf'\g<1> {size//2};',source)
+assert count==1, 'Cannot identify Ariane cacheable range'
+Path('tile_cpu_sim.vhd').write_text(source)
+Path('pma.json').write_text(json.dumps({'dram_bytes':size,'cpu_cacheable_bytes':size//2,
+    'dma_base':hex(0x80000000+size//2),'source':sys.argv[1]},indent=2)+'\n')
+PY
+vcom -93 -work work tile_cpu_sim.vhd
 if [[ ${ESP_RECOMPILE_SOC_TOP:-0} == 1 ]]; then
   vcom -93 -work work "$soc/../../rtl/techmap/virtex7/pads_unisim.vhd" \
     "$soc/../../rtl/techmap/virtex7/clkgen_unisim.vhd" \
@@ -46,11 +70,6 @@ sim_time_ms=${ESP_SIM_TIME_MS:-100}
 [[ "$sim_time_ms" =~ ^[1-9][0-9]*$ ]] || exit 1
 timeout_cycles=${NN_TIMEOUT_CYCLES:-2000000}
 [[ "$timeout_cycles" =~ ^[1-9][0-9]*$ ]] && ((timeout_cycles < 100000000)) || exit 1
-ram_kbytes=${ESP_SIM_RAM_KBYTES:-16384}
-python3 - "$app/memory.json" "$ram_kbytes" <<'PY'
-import json,sys
-assert json.load(open(sys.argv[1]))['dram_bytes']==int(sys.argv[2])*1024, 'Software/simulator DRAM mismatch'
-PY
 ln -s /dev/null trace_hart_0.log
 ln -s /dev/null trace_hart_0_commit.log
 cat > run.tcl <<EOF
@@ -70,5 +89,6 @@ python3 "$here/check-system.py" "$app/plan.json" simulation.log
 sha256sum "$app/nn_app.exe" "$app/plan.json" \
   "$hardware/combined/operator_engines.v" "$hardware/combined/forward_kernel.sv" \
   "$hardware/combined/operator_abi.svh" "$here/../generated-gemm/sqr_bambu_basic_dma64.sv" \
+  tile_cpu_sim.vhd pma.json \
   > validation-inputs.sha256
 printf 'Results: %s\n' "$sim/validation.json"
