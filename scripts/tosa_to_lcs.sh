@@ -31,25 +31,29 @@
 #   LCS_TRANSFORM        schedules, default scripts/lcs/transform.mlir
 #   LCS_ENTRY            the partition to run, default tasks (ops chained through
 #                        their inits share a task); tasks_trmm is trmm's from the plan
-#   LCS_DMA_WORD_STRIDE  32-bit words per element in shared memory, 1 (default) or 2
+#   LCS_DMA_WORD_STRIDE  32-bit words per element in shared memory, 2 (default) or 1.
+#                        The thin 64-bit native-DMA wrapper requires 2.
 #   LCS_PROFILE=true     instrument 05_kernel_riscv.ll and 05_cpu_baseline.ll with
 #                        matching whole-kernel regions
 #   LCS_OUTSTANDING_LOADS=false  no outstanding_load task: the load task sends each
 #                        read request and waits for its data (default true)
-#   LCS_SEQUENTIAL=true  the ablation with no dataflow: after the load and store
-#                        tasks, every task merged into one (sodap-dataflow-merge-tasks),
-#                        so it loads everything, computes everything, then stores
-#                        everything, on whole buffers; no schedule, ping-pong or
-#                        outstanding_load (default false)
+#   LCS_OVERLAP=false    the ablation: serialize the same demand-driven tiled
+#                        schedule in one task; one physical copy of each buffer,
+#                        without ping-pong or an outstanding-load task.
+#   LCS_SEQUENTIAL=true  alias for LCS_OVERLAP=false (default false)
 #   LCS_TILE_SIZES       tile sizes instead of the cost model's: one list per
 #                        task result, one size per loop of the op producing it
 #                        (0 = untiled), e.g. '[[10, 10, 10], [10, 10]]' on gemm
 #                        SMALL. tile_sizes.txt has the sizes of a run, in this form.
-#   LCS_PLM_BYTES        the cost model (transform.sodap.tile_and_fuse): the tile
-#   LCS_DMA_REQUEST_CYCLES  sizes with the fewest DMA cycles whose buffers fit in
-#   LCS_DMA_WORD_CYCLES  LCS_PLM_BYTES (default 65536), with a request per tile
-#                        row costing LCS_DMA_REQUEST_CYCLES (64) and a word
-#                        LCS_DMA_WORD_CYCLES (1)
+#   LCS_PLM_BYTES        cap on final scheduled logical storage (default 327680).
+#   LCS_REUSE_BUFFER_BUDGET  conservative reuse admission budget (default 262144),
+#                        within the final total cap, not additional to it.
+#   LCS_DMA_REQUEST_CYCLES  cost per DMA row request (default 64).
+#   LCS_DMA_WORD_CYCLES  cost per 32-bit DMA word (default 1).
+#                        A bounded search ranks the scheduled cost of proposals
+#                        from Tommaso's divisor model and a generic max-size-10
+#                        proposal. Both ablations use the overlap selection policy.
+#                        This is a heuristic, not a measured latency predictor.
 #
 # Writes in <outdir>:
 #   ir_after_each_pass.mlir         the IR after each pass (also split in
@@ -58,7 +62,7 @@
 #   tasks.mlir, bufferized.mlir     after the partition and tiling, after bufferization
 #   argument_order.txt              forward_kernel's arguments, as forward's numbers
 #   dataflow.mlir                   after load/store, schedule and ping-pong (or the
-#                                   merge, with LCS_SEQUENTIAL=true)
+#                                   serialized schedule, with LCS_OVERLAP=false)
 #   05_hw_acc.ll                    for Bambu, with architecture.xml (copies of
 #   architecture.xml                tiles/forward_kernel/'s, with acc.ll)
 #   host.mlir                       the host with the ESP calls
@@ -67,7 +71,9 @@
 #   cpu/                            the baseline's bufferized.mlir, outlined.mlir, kernel.mlir
 #   layout.txt                      the options above
 #   tile_sizes.txt                  the tile sizes used, as LCS_TILE_SIZES takes them
-#   tile_cost.txt                   the cost model's DMA cycles and buffer bytes for them
+#   tile_cost.txt, schedule_cost.json  scheduled DMA work and logical local storage
+#   proposal_tile_cost.txt          original pre-schedule estimate (proposal only)
+#   tile_search.json                candidate scores, rejections and chosen sizes
 #   transform_tile_sizes.mlir       with any LCS_TILE_SIZES or model variable: the
 #                                   schedules, with those sizes or that model
 
@@ -102,7 +108,14 @@ TILE=tiles/$TOP
 PROFILE=${LCS_PROFILE:-false}
 OUTSTANDING_LOADS=${LCS_OUTSTANDING_LOADS:-true}
 SEQUENTIAL=${LCS_SEQUENTIAL:-false}
-WORD_STRIDE=${LCS_DMA_WORD_STRIDE:-1}
+OVERLAP=${LCS_OVERLAP:-true}
+REUSE_BUFFER_BUDGET=${LCS_REUSE_BUFFER_BUDGET:-262144}
+TOTAL_PLM_BYTES=${LCS_PLM_BYTES:-327680}
+case "$REUSE_BUFFER_BUDGET:$TOTAL_PLM_BYTES" in *[!0-9:]*) echo 'Memory budgets must be nonnegative integer bytes' >&2; exit 1 ;; esac
+case "$OVERLAP" in true|false) ;; *) echo 'LCS_OVERLAP must be true or false' >&2; exit 1 ;; esac
+[ "$SEQUENTIAL" = true ] && OVERLAP=false
+[ "$OVERLAP" = false ] && SEQUENTIAL=true
+WORD_STRIDE=${LCS_DMA_WORD_STRIDE:-2}
 case "$WORD_STRIDE" in 1|2) ;; *) echo "LCS_DMA_WORD_STRIDE must be 1 or 2" >&2; exit 1 ;; esac
 case "$PROFILE" in true|false) ;; *) echo "LCS_PROFILE must be true or false" >&2; exit 1 ;; esac
 case "$OUTSTANDING_LOADS" in true|false) ;; *) echo "LCS_OUTSTANDING_LOADS must be true or false" >&2; exit 1 ;; esac
@@ -110,13 +123,22 @@ case "$SEQUENTIAL" in true|false) ;; *) echo "LCS_SEQUENTIAL must be true or fal
 [ "$SEQUENTIAL" = true ] && OUTSTANDING_LOADS=false
 printf 'dma_word_stride=%s\nprofile=%s\noutstanding_loads=%s\nsequential=%s\n' \
   "$WORD_STRIDE" "$PROFILE" "$OUTSTANDING_LOADS" "$SEQUENTIAL" > layout.txt
+printf 'reuse_buffer_budget=%s\nplm_budget=%s\noverlap=%s\n' "$REUSE_BUFFER_BUDGET" "$TOTAL_PLM_BYTES" "$OVERLAP" >> layout.txt
+# Rank proposals using the actual scheduled IR, with the same overlap/reuse
+# policy for both ablation variants. Explicit tile sizes remain reproducible.
+if [ -z "${LCS_TILE_SIZES:-}" ] && [ "${_LCS_INTERNAL_CANDIDATE:-false}" = false ]; then
+  python3 "$REPO_DIR/scripts/lcs/select_tiles.py" "$INPUT" "$PWD" "$REPO_DIR/scripts/tosa_to_lcs.sh"
+  export LCS_TILE_SIZES="$(cat selected_tile_sizes.txt)"
+fi
 # LCS_TILE_SIZES or the model's variables replace the attributes of
 # @tile_tasks's tile_and_fuse, the only one on %tasks.
 TILE_ATTRS=
 if [ -n "${LCS_TILE_SIZES:-}" ]; then
   TILE_ATTRS="tile_sizes = $LCS_TILE_SIZES"
-elif [ -n "${LCS_PLM_BYTES:-}${LCS_DMA_REQUEST_CYCLES:-}${LCS_DMA_WORD_CYCLES:-}" ]; then
-  TILE_ATTRS="plm_bytes = ${LCS_PLM_BYTES:-65536} : i64, dma_request_cycles = ${LCS_DMA_REQUEST_CYCLES:-64} : i64, dma_word_cycles = ${LCS_DMA_WORD_CYCLES:-1} : i64"
+elif [ -n "${_LCS_PROPOSAL_MAX_TILE:-}" ]; then
+  TILE_ATTRS="max_tile_size = $_LCS_PROPOSAL_MAX_TILE : i64"
+else
+  TILE_ATTRS="plm_bytes = ${_LCS_PROPOSAL_PLM_BYTES:-65536} : i64, dma_request_cycles = ${LCS_DMA_REQUEST_CYCLES:-64} : i64, dma_word_cycles = ${LCS_DMA_WORD_CYCLES:-1} : i64"
 fi
 if [ -n "$TILE_ATTRS" ]; then
   TILE_PATTERN='tile_and_fuse %tasks {[^}]*}'
@@ -133,9 +155,9 @@ OUTSTANDING_LOAD=
 # Between the load and store tasks and the DMA: the dataflow schedule, or one
 # sequential task.
 if [ "$SEQUENTIAL" = true ]; then
-  STAGES="func.func(sodap-dataflow-merge-tasks)"
+  STAGES="func.func(sodap-dataflow-schedule{reuse-buffer-budget=$REUSE_BUFFER_BUDGET serial=true}), fold-memref-alias-ops"
 else
-  STAGES="func.func(sodap-dataflow-schedule),
+  STAGES="func.func(sodap-dataflow-schedule{reuse-buffer-budget=$REUSE_BUFFER_BUDGET}),
     fold-memref-alias-ops,
     func.func(sodap-dataflow-ping-pong)"
 fi
@@ -218,7 +240,7 @@ step "$FRONTEND_DUMP" mlir-opt outlined.mlir $PLUGIN --pass-pipeline="builtin.mo
 { grep -o 'remark: tile_sizes = .*' "$FRONTEND_DUMP" || true; } \
   | sed 's/^remark: tile_sizes = //' > tile_sizes.txt
 { grep -o 'remark: dma_cycles = .*' "$FRONTEND_DUMP" || true; } \
-  | sed 's/^remark: //' > tile_cost.txt
+  | sed 's/^remark: //' > proposal_tile_cost.txt
 
 section "$FRONTEND_DUMP" "Tile: bufferization, mlir-opt"
 step "$FRONTEND_DUMP" mlir-opt tasks.mlir $PLUGIN --pass-pipeline="builtin.module(
@@ -237,6 +259,14 @@ step "$ACC_DUMP" mlir-opt bufferized.mlir $PLUGIN --pass-pipeline="builtin.modul
       canonicalize
     )
   )" -o dataflow.mlir
+
+{ grep 'remark: reuse_buffer ' "$ACC_DUMP" || true; } | sed 's/^.*remark: / /' > reuse_decisions.txt
+section "$ACC_DUMP" "Scheduled DMA work and total logical storage"
+step "$ACC_DUMP" mlir-opt dataflow.mlir $PLUGIN --pass-pipeline="builtin.module(
+  sodap-dataflow-report-cost{file=schedule_cost.json request-cycles=${LCS_DMA_REQUEST_CYCLES:-64} word-cycles=${LCS_DMA_WORD_CYCLES:-1} dma-word-stride=$WORD_STRIDE plm-bytes=$TOTAL_PLM_BYTES}
+)" -o /dev/null
+python3 -c 'import json; c=json.load(open("schedule_cost.json")); print("dma_cycles = %d, plm_bytes = %d" % (c["dma_cycles"], c["plm_bytes"]))' > tile_cost.txt
+[ "${_LCS_INTERNAL_CANDIDATE:-false}" = true ] && exit 0
 
 # The passes taking top-func find the kernel by the tile's name, and write
 # their files in $TILE.
@@ -325,4 +355,5 @@ step "$CPU_DUMP" soda-opt "$CPU_KERNEL" --lower-all-to-llvm="use-bare-ptr-memref
   --convert-func-to-llvm --reconcile-unrealized-casts -o cpu/kernel_llvm.mlir
 $DOCKER_RUN mlir-translate --mlir-to-llvmir -o 05_cpu_baseline.ll cpu/kernel_llvm.mlir
 
+python3 "$REPO_DIR/scripts/lcs/native_dma_contract.py" record "$PWD"
 echo "IR after each pass: $(pwd)/$DUMP"

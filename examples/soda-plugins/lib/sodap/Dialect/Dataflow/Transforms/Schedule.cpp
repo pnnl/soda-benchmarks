@@ -1,3 +1,4 @@
+#include <limits>
 //===- Schedule.cpp - One loop nest for the tasks of a dispatch -----------===//
 //
 // This file is licensed under the Apache License v2.0 with LLVM Exceptions.
@@ -392,7 +393,7 @@ LogicalResult scheduleDispatch(DispatchOp dispatch, DominanceInfo &dom,
   uint64_t remaining = reuseBudget;
   for (auto alloc : body.getOps<memref::AllocOp>()) {
     Value buffer = alloc.getResult();
-    if (!remaining || !writers.count(buffer) || sources.count(buffer))
+    if (!reuseBudget || !writers.count(buffer) || sources.count(buffer))
       continue;
     auto accesses = accessesOf(buffer, dispatch);
     if (failed(accesses) || accesses->size() != 2)
@@ -467,12 +468,17 @@ LogicalResult scheduleDispatch(DispatchOp dispatch, DominanceInfo &dom,
     // Two shared slots plus a conservative allowance for a private accumulator.
     uint64_t bytes = 3 * ((element.getIntOrFloatBitWidth() + 7) / 8);
     for (int64_t size : footprint) {
-      if (size <= 0 || uint64_t(size) > remaining / bytes) {
+      if (size <= 0 || uint64_t(size) > std::numeric_limits<uint64_t>::max() / bytes) {
         bytes = 0;
         break;
       }
       bytes *= size;
     }
+    auto decision = alloc.emitRemark("reuse_buffer ");
+    decision << (bytes && bytes <= remaining ? "retained" : "over_budget")
+             << " footprint=[";
+    llvm::interleaveComma(footprint, decision);
+    decision << "] required_bytes=" << bytes << " remaining_bytes=" << remaining;
     if (!bytes || bytes > remaining)
       continue;
     remaining -= bytes;

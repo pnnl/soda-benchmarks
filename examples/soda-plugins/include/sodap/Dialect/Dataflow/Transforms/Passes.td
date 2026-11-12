@@ -419,4 +419,15 @@ def TilesToLLVM :
   }];
 }
 
+def ReportLCSCost : Pass<"sodap-dataflow-report-cost", "::mlir::ModuleOp"> {
+  let summary = "Report static DMA work and allocated storage after LCS scheduling";
+  let options = [
+    Option<"file", "file", "std::string", "\"schedule_cost.json\"", "JSON output" >,
+    Option<"requestCycles", "request-cycles", "int64_t", "64", "Cost per row request">,
+    Option<"wordCycles", "word-cycles", "int64_t", "1", "Cost per transferred 32-bit word">,
+    Option<"wordStride", "dma-word-stride", "int64_t", "1", "Shared-memory words per element">,
+    Option<"budget", "plm-bytes", "int64_t", "0", "Total logical storage cap, zero reports only">
+  ];
+}
+
 #endif // SODAP_DIALECT_DATAFLOW_TRANSFORMS_PASSES_TD

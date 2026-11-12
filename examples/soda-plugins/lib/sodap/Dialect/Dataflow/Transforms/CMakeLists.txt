@@ -5,6 +5,7 @@ add_mlir_dialect_library(MLIRSODAPDataflowTransforms
         OutstandingLoad.cpp
         PingPong.cpp
         Schedule.cpp
+        ReportLCSCost.cpp
         InferTopInterface.cpp
         NodesToFunc.cpp
         TasksToNodes.cpp

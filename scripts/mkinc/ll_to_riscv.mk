@@ -2,9 +2,11 @@
 ESP_APP_NAME ?= $(notdir $(patsubst %/,%,$(CURDIR)))
 ESP_FLOW ?= baseline
 LCS_PROFILE ?= false
-LCS_DMA_WORD_STRIDE ?= 1
+LCS_DMA_WORD_STRIDE ?= 2
 LCS_OUTSTANDING_LOADS ?= true
 LCS_SEQUENTIAL ?= false
+LCS_OVERLAP ?= true
+LCS_REUSE_BUFFER_BUDGET ?= 262144
 LCS_REUSABLE_GEMM ?= false
 LCS_GEMM_SCHEDULE ?= sequential
 LCS_GEMM_TILE_M ?= 4
@@ -16,7 +18,7 @@ LCS_TRANSFORM ?= $(SCRIPTS_DIR)/lcs/transform.mlir
 # Tile sizes, see scripts/tosa_to_lcs.sh. All empty: the cost model's, with
 # the defaults in scripts/lcs/transform.mlir.
 LCS_TILE_SIZES ?=
-LCS_PLM_BYTES ?=
+LCS_PLM_BYTES ?= 327680
 LCS_DMA_REQUEST_CYCLES ?=
 LCS_DMA_WORD_CYCLES ?=
 .PHONY: lcs-options cpu-baseline-object
@@ -25,13 +27,13 @@ lcs-options:
 # Stable timestamps unless common layout/profiling options change.
 $(ODIR)/esp/lcs-options: lcs-options
 	mkdir -p $(dir $@)
-	@printf '%s\n' 'profile=$(LCS_PROFILE)' 'word_stride=$(LCS_DMA_WORD_STRIDE)' 'outstanding_loads=$(LCS_OUTSTANDING_LOADS)' 'sequential=$(LCS_SEQUENTIAL)' 'transform=$(LCS_TRANSFORM)' 'tile_sizes=$(LCS_TILE_SIZES)' 'plm_bytes=$(LCS_PLM_BYTES)' 'dma_request_cycles=$(LCS_DMA_REQUEST_CYCLES)' 'dma_word_cycles=$(LCS_DMA_WORD_CYCLES)' 'reusable=$(LCS_REUSABLE_GEMM)' 'gemm_schedule=$(LCS_GEMM_SCHEDULE)' 'gemm_tiles=$(LCS_GEMM_TILE_M),$(LCS_GEMM_TILE_N),$(LCS_GEMM_TILE_K)' > $@.tmp
+	@printf '%s\n' 'profile=$(LCS_PROFILE)' 'word_stride=$(LCS_DMA_WORD_STRIDE)' 'outstanding_loads=$(LCS_OUTSTANDING_LOADS)' 'sequential=$(LCS_SEQUENTIAL)' 'overlap=$(LCS_OVERLAP)' 'reuse_budget=$(LCS_REUSE_BUFFER_BUDGET)' 'transform=$(LCS_TRANSFORM)' 'tile_sizes=$(LCS_TILE_SIZES)' 'plm_bytes=$(LCS_PLM_BYTES)' 'dma_request_cycles=$(LCS_DMA_REQUEST_CYCLES)' 'dma_word_cycles=$(LCS_DMA_WORD_CYCLES)' 'reusable=$(LCS_REUSABLE_GEMM)' 'gemm_schedule=$(LCS_GEMM_SCHEDULE)' 'gemm_tiles=$(LCS_GEMM_TILE_M),$(LCS_GEMM_TILE_N),$(LCS_GEMM_TILE_K)' > $@.tmp
 	@cmp -s $@.tmp $@ && rm $@.tmp || mv $@.tmp $@
 
 LCS_OUTPUTS = $(addprefix $(ODIR)/esp/%/,05_hw_acc.ll 05_kernel_riscv.ll 05_cpu_baseline.ll architecture.xml argument_order.txt host.mlir outlined.mlir layout.txt)
 # Multiple targets in one pattern rule share one lowering invocation.
-$(LCS_OUTPUTS): $(ODIR)/01_tosa.mlir $(SCRIPTS_DIR)/tosa_to_lcs.sh $(SCRIPTS_DIR)/tosa_to_reusable_gemm.sh $(SCRIPTS_DIR)/lcs/argument_order.py $(LCS_TRANSFORM) $(ODIR)/esp/lcs-options $(wildcard $(MLIR_PLUGIN_PATH) $(dir $(MLIR_PLUGIN_PATH))SODATosaPlugin.so)
-	LCS_PROFILE=$(LCS_PROFILE) LCS_DMA_WORD_STRIDE=$(LCS_DMA_WORD_STRIDE) LCS_OUTSTANDING_LOADS=$(LCS_OUTSTANDING_LOADS) LCS_SEQUENTIAL=$(LCS_SEQUENTIAL) LCS_TRANSFORM=$(LCS_TRANSFORM) LCS_TILE_SIZES='$(LCS_TILE_SIZES)' LCS_PLM_BYTES=$(LCS_PLM_BYTES) LCS_DMA_REQUEST_CYCLES=$(LCS_DMA_REQUEST_CYCLES) LCS_DMA_WORD_CYCLES=$(LCS_DMA_WORD_CYCLES) LCS_REUSABLE_GEMM=$(LCS_REUSABLE_GEMM) LCS_GEMM_SCHEDULE=$(LCS_GEMM_SCHEDULE) LCS_GEMM_TILE_M=$(LCS_GEMM_TILE_M) LCS_GEMM_TILE_N=$(LCS_GEMM_TILE_N) LCS_GEMM_TILE_K=$(LCS_GEMM_TILE_K) $(SCRIPTS_DIR)/tosa_to_lcs.sh $< $(@D)
+$(LCS_OUTPUTS): $(ODIR)/01_tosa.mlir $(SCRIPTS_DIR)/tosa_to_lcs.sh $(SCRIPTS_DIR)/tosa_to_reusable_gemm.sh $(SCRIPTS_DIR)/lcs/argument_order.py $(SCRIPTS_DIR)/lcs/select_tiles.py $(LCS_TRANSFORM) $(ODIR)/esp/lcs-options $(wildcard $(MLIR_PLUGIN_PATH) $(dir $(MLIR_PLUGIN_PATH))SODATosaPlugin.so)
+	LCS_PROFILE=$(LCS_PROFILE) LCS_DMA_WORD_STRIDE=$(LCS_DMA_WORD_STRIDE) LCS_OUTSTANDING_LOADS=$(LCS_OUTSTANDING_LOADS) LCS_SEQUENTIAL=$(LCS_SEQUENTIAL) LCS_OVERLAP=$(LCS_OVERLAP) LCS_REUSE_BUFFER_BUDGET=$(LCS_REUSE_BUFFER_BUDGET) LCS_TRANSFORM=$(LCS_TRANSFORM) LCS_TILE_SIZES='$(LCS_TILE_SIZES)' LCS_PLM_BYTES=$(LCS_PLM_BYTES) LCS_DMA_REQUEST_CYCLES=$(LCS_DMA_REQUEST_CYCLES) LCS_DMA_WORD_CYCLES=$(LCS_DMA_WORD_CYCLES) LCS_REUSABLE_GEMM=$(LCS_REUSABLE_GEMM) LCS_GEMM_SCHEDULE=$(LCS_GEMM_SCHEDULE) LCS_GEMM_TILE_M=$(LCS_GEMM_TILE_M) LCS_GEMM_TILE_N=$(LCS_GEMM_TILE_N) LCS_GEMM_TILE_K=$(LCS_GEMM_TILE_K) $(SCRIPTS_DIR)/tosa_to_lcs.sh $< $(@D)
 
 $(ODIR)/esp/%/testdata.h: $(FILE_PATH) $(ODIR)/esp/%/argument_order.txt
 	python $< --emit-testdata $@ --arg-order "$$(cat $(word 2,$^))"
