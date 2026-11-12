@@ -103,6 +103,8 @@ struct ChannelInfo {
   LLVM::LLVMFunctionType tryWriteType;
   std::string peekSymbol;
   LLVM::LLVMFunctionType peekType;
+  std::string readySymbol;
+  LLVM::LLVMFunctionType readyType;
 
   unsigned alignment;
 };
@@ -129,6 +131,7 @@ private:
   /// tuFileName and irFileName, in the tile's directory (getTileFilePath).
   std::string tuPath, irPath;
   DenseMap<Type, ChannelInfo> channels;
+  SetVector<Type> readyTypes;
 };
 
 //===----------------------------------------------------------------------===//
@@ -164,6 +167,8 @@ LogicalResult ConvertDataflowToLLVM::collectSpecializations(
       return WalkResult::interrupt();
     }
     seen.insert(elementType);
+    if (isa<StreamPeekOp>(op) && op->hasAttr("sodap.dma_ordered"))
+      readyTypes.insert(elementType);
     return WalkResult::advance();
   });
   if (result.wasInterrupted())
@@ -219,7 +224,14 @@ ConvertDataflowToLLVM::buildSpecializations(ArrayRef<Type> elementTypes) {
          << " v) { return p->nb_write(v); }\n"
          << "extern \"C\" __attribute__((always_inline)) " << bambuTypeNameStr
          << " __df_peek_" << id << "(C_" << id
-         << " *p) { return p->peek(); }\n\n";
+         << " *p) { return p->peek(); }\n";
+      // available()/size() inspect the software deque, not the synthesized
+      // FIFO. nb_peek returns the hardware valid bit without consuming it.
+      // Instantiate this helper only for channels needing an ordered peek.
+      if (readyTypes.contains(elementType))
+        os << "extern \"C\" __attribute__((always_inline)) bool __df_ready_" << id
+         << "(C_" << id << " *p) { " << bambuTypeNameStr
+         << " value{}; return p->nb_peek(value); }\n\n";
     }
   }
 
@@ -293,9 +305,12 @@ ConvertDataflowToLLVM::buildSpecializations(ArrayRef<Type> elementTypes) {
         {"__df_write_", &info.writeSymbol, &info.writeType},
         {"__df_try_write_", &info.tryWriteSymbol, &info.tryWriteType},
         {"__df_peek_", &info.peekSymbol, &info.peekType},
+        {"__df_ready_", &info.readySymbol, &info.readyType},
     };
 
     for (auto &entry : wanted) {
+      if (entry.probe == "__df_ready_" && !readyTypes.contains(elementType))
+        continue;
       auto probeName = (entry.probe + id).str();
       auto *probe = specModule->getFunction(probeName);
       if (!probe || probe->isDeclaration())
@@ -425,6 +440,23 @@ void ConvertDataflowToLLVM::runOnOperation() {
       auto elementType =
           cast<StreamType>(peekOp.getChannel().getType()).getElementType();
       auto &info = channels[elementType];
+      if (peekOp->hasAttr("sodap.dma_ordered")) {
+        // Readiness must dominate the following DMA command even when its
+        // address does not depend on the peeked ownership token. Poll without
+        // consuming the token: the producer must not reuse the PLM until the
+        // store's original stream_read releases it after the payload transfer.
+        auto loop = builder.create<scf::WhileOp>(loc, TypeRange{}, ValueRange{});
+        builder.createBlock(&loop.getBefore());
+        Value ready = builder.create<LLVM::CallOp>(
+            loc, getOrInsertFunc(info.readySymbol, info.readyType),
+            ValueRange{peekOp.getChannel()}).getResult();
+        Value again = builder.create<arith::XOrIOp>(
+            loc, ready, builder.create<arith::ConstantIntOp>(loc, 1, 1));
+        builder.create<scf::ConditionOp>(loc, again, ValueRange{});
+        builder.createBlock(&loop.getAfter());
+        builder.create<scf::YieldOp>(loc);
+        builder.setInsertionPointAfter(loop);
+      }
       auto call = builder.create<LLVM::CallOp>(
           loc, getOrInsertFunc(info.peekSymbol, info.peekType),
           ValueRange{peekOp.getChannel()});

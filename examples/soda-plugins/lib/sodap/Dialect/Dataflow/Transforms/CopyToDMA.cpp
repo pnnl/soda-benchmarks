@@ -244,10 +244,14 @@ struct CopyToDMA : public dataflow::impl::CopyToDMABase<CopyToDMA> {
 
     OpBuilder b(ctx);
     llvm::SmallPtrSet<Operation *, 4> receivers;
+    llvm::SmallPtrSet<Operation *, 4> writers;
     for (Transfer &transfer : transfers) {
       if (transfer.read)
         if (auto task = transfer.copy->getParentOfType<TaskOp>())
           receivers.insert(task);
+      if (!transfer.read)
+        if (auto task = transfer.copy->getParentOfType<TaskOp>())
+          writers.insert(task);
       lowerTransfer(b, transfer, dma, wordStride);
       transfer.copy.erase();
     }
@@ -259,6 +263,15 @@ struct CopyToDMA : public dataflow::impl::CopyToDMABase<CopyToDMA> {
     for (Operation *receiver : receivers)
       receiver->walk([&](StreamWriteOp write) {
         write->setAttr("sodap.dma_ordered", b.getUnitAttr());
+      });
+    // The store's peek acquires a ready output tile while retaining its
+    // ownership token until the copy finishes. Address-only DMA commands
+    // otherwise have no data dependency on this peek and HLS may issue them
+    // before compute has produced the tile. Make readiness an explicit
+    // control-flow barrier; keep the existing PLM and token lifetime.
+    for (Operation *writer : writers)
+      writer->walk([&](StreamPeekOp peek) {
+        peek->setAttr("sodap.dma_ordered", b.getUnitAttr());
       });
     for (Operation *tile : tiles)
       if (tile->use_empty())
