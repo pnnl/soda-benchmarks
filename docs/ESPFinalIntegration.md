@@ -140,8 +140,12 @@ SYMM, TRMM, DOITGEN and GESUMMV.
 - Both wrappers × both modes × ten kernels pass component RTL. Each case runs
   twice without reset at each of two initial write stalls (0 and 50,000 cycles):
   160 checked invocations in total. The model also applies ordinary backpressure.
-- Full-system native 2x2 ESP results and the relocated UID test are recorded in
-  the results file. LARGE HLS, FPGA implementation and measurements are deferred.
+- All 20 full-system native 2x2 ESP cases pass, one per kernel and mode. The
+  relocated ATAX test under UID 1011 also passes at 14,117 accelerator cycles.
+  A plugin rebuild and all 81 compiler tests pass under that UID; fresh ATAX
+  lowering reproduces the host/hardware LLVM byte for byte. Fresh HLS produces
+  the same RTL apart from the generated timestamp comment. LARGE HLS, FPGA
+  implementation and measurements are deferred.
 - Fresh reusable conv/add/GEMM RTL passes the EELS encoder, a synthetic Conv1D
   multi-output fixture and a small ResNet-style residual graph with stalled DMA.
   This does not constitute a new full ResNet-18 FPGA validation.

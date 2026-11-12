@@ -1,0 +1,1046 @@
+{
+  "status": "PASS",
+  "scope": "Compiler/MINI RTL candidate; no new LARGE HLS or FPGA measurements",
+  "upstream_base": "3522079d022797092ba9db4c588ef755a5a04ae9",
+  "implementation_revision": "dd7c63d72ee4dd38f81752fcd05ad4901e78c265",
+  "compiler_tests": 81,
+  "graph_frontend_tests": 13,
+  "contract_tests": 1,
+  "lowerings": 40,
+  "fresh_mini_hls": 20,
+  "hls_target": {
+    "device": "xc7vx485t-2ffg1761",
+    "period_ns": 20
+  },
+  "component_cases": [
+    {
+      "kernel": "atax",
+      "variant": "nonoverlap",
+      "wrapper": "buffered",
+      "invocations": 4,
+      "cycles": [
+        [
+          14356,
+          14355
+        ],
+        [
+          53713,
+          53713
+        ]
+      ],
+      "record_sha256": "f7670a075ff12c11eb4e5e83e080f571c964d4a806c8b3ee632ba0eade8ec557"
+    },
+    {
+      "kernel": "atax",
+      "variant": "nonoverlap",
+      "wrapper": "thin",
+      "invocations": 4,
+      "cycles": [
+        [
+          14319,
+          14317
+        ],
+        [
+          53736,
+          53737
+        ]
+      ],
+      "record_sha256": "36d1bcfceb0a7f8c9816cf9e5546104da4bd48e7d787d6d6af14b546550dd358"
+    },
+    {
+      "kernel": "atax",
+      "variant": "overlap",
+      "wrapper": "buffered",
+      "invocations": 4,
+      "cycles": [
+        [
+          11180,
+          11188
+        ],
+        [
+          50133,
+          50131
+        ]
+      ],
+      "record_sha256": "3cac5933b14e0690cb421e290d971c5a405052241079cb764e1b035fff7cd383"
+    },
+    {
+      "kernel": "atax",
+      "variant": "overlap",
+      "wrapper": "thin",
+      "invocations": 4,
+      "cycles": [
+        [
+          11220,
+          11223
+        ],
+        [
+          50154,
+          50154
+        ]
+      ],
+      "record_sha256": "c43448d4845d009067d8c1c37ce1d4e2d14010b1c2ee0c80b232923cddf505c9"
+    },
+    {
+      "kernel": "doitgen",
+      "variant": "nonoverlap",
+      "wrapper": "buffered",
+      "invocations": 4,
+      "cycles": [
+        [
+          26756,
+          26753
+        ],
+        [
+          65885,
+          65881
+        ]
+      ],
+      "record_sha256": "54af73dd064c8bef0e79bb8ed030e67830761d658441702d9916fbb81652c9b8"
+    },
+    {
+      "kernel": "doitgen",
+      "variant": "nonoverlap",
+      "wrapper": "thin",
+      "invocations": 4,
+      "cycles": [
+        [
+          25683,
+          25681
+        ],
+        [
+          64864,
+          64858
+        ]
+      ],
+      "record_sha256": "aef8cbc0eb63473cd0df7d8aa16361adcba32dbabfb3c292ed8311021ebe0991"
+    },
+    {
+      "kernel": "doitgen",
+      "variant": "overlap",
+      "wrapper": "buffered",
+      "invocations": 4,
+      "cycles": [
+        [
+          22447,
+          22451
+        ],
+        [
+          54122,
+          54122
+        ]
+      ],
+      "record_sha256": "dcd7c533c4d24821a91a9308fc1836c7cd23461fa13aefe2851fc661b124aa68"
+    },
+    {
+      "kernel": "doitgen",
+      "variant": "overlap",
+      "wrapper": "thin",
+      "invocations": 4,
+      "cycles": [
+        [
+          22368,
+          22332
+        ],
+        [
+          53371,
+          53370
+        ]
+      ],
+      "record_sha256": "373c386dfe2e6f190b0432657f96e07f3e07bea57bedadaa95d78d502ab95aa6"
+    },
+    {
+      "kernel": "gemm",
+      "variant": "nonoverlap",
+      "wrapper": "buffered",
+      "invocations": 4,
+      "cycles": [
+        [
+          29889,
+          29895
+        ],
+        [
+          66185,
+          66186
+        ]
+      ],
+      "record_sha256": "4ec87ded9c0067efe08335c9e49df5ce56fa232445c45413d78462bda622d26e"
+    },
+    {
+      "kernel": "gemm",
+      "variant": "nonoverlap",
+      "wrapper": "thin",
+      "invocations": 4,
+      "cycles": [
+        [
+          29317,
+          29315
+        ],
+        [
+          65682,
+          65679
+        ]
+      ],
+      "record_sha256": "cc6ede9f9905f9d3ea5e5fc85a48425215d8c219d547d6878da9d19183fb6f50"
+    },
+    {
+      "kernel": "gemm",
+      "variant": "overlap",
+      "wrapper": "buffered",
+      "invocations": 4,
+      "cycles": [
+        [
+          28766,
+          28765
+        ],
+        [
+          52069,
+          52067
+        ]
+      ],
+      "record_sha256": "7c956acd5293d2cdcd63aa0cb703a72a968d1442e60e75f6dfe6dea15f9e1d05"
+    },
+    {
+      "kernel": "gemm",
+      "variant": "overlap",
+      "wrapper": "thin",
+      "invocations": 4,
+      "cycles": [
+        [
+          29214,
+          29223
+        ],
+        [
+          51764,
+          51760
+        ]
+      ],
+      "record_sha256": "aa5ef58a49385d092ac955ff0122cf7ca1cb32b34558d1c9da1d7233b8fbf48e"
+    },
+    {
+      "kernel": "gesummv",
+      "variant": "nonoverlap",
+      "wrapper": "buffered",
+      "invocations": 4,
+      "cycles": [
+        [
+          8375,
+          8370
+        ],
+        [
+          50099,
+          50100
+        ]
+      ],
+      "record_sha256": "03ba2c4a14d6b6d61f5261451eedca8bd177260e6bf8beb28e386e9bde2d884e"
+    },
+    {
+      "kernel": "gesummv",
+      "variant": "nonoverlap",
+      "wrapper": "thin",
+      "invocations": 4,
+      "cycles": [
+        [
+          8339,
+          8341
+        ],
+        [
+          54231,
+          54232
+        ]
+      ],
+      "record_sha256": "8ff5cf76296c215e11bc3f958aa461c381dc86a60ac0c258c6b752c0f03b8f52"
+    },
+    {
+      "kernel": "gesummv",
+      "variant": "overlap",
+      "wrapper": "buffered",
+      "invocations": 4,
+      "cycles": [
+        [
+          7366,
+          7366
+        ],
+        [
+          50085,
+          50083
+        ]
+      ],
+      "record_sha256": "04412b7786fb3859bb6eddcc8d65d6d88b27d04e7343854505ed89b6534e8afb"
+    },
+    {
+      "kernel": "gesummv",
+      "variant": "overlap",
+      "wrapper": "thin",
+      "invocations": 4,
+      "cycles": [
+        [
+          7395,
+          7397
+        ],
+        [
+          50112,
+          50112
+        ]
+      ],
+      "record_sha256": "c791ff5ebdb878d04a89714a0bc832eea92bd9ee117ac3325010dfc1d0808fc5"
+    },
+    {
+      "kernel": "symm",
+      "variant": "nonoverlap",
+      "wrapper": "buffered",
+      "invocations": 4,
+      "cycles": [
+        [
+          29038,
+          29038
+        ],
+        [
+          66015,
+          66009
+        ]
+      ],
+      "record_sha256": "78668854f8e52efd1f4f69fc614e4d739a7200d01bd952cc0bc96edfe78f43ea"
+    },
+    {
+      "kernel": "symm",
+      "variant": "nonoverlap",
+      "wrapper": "thin",
+      "invocations": 4,
+      "cycles": [
+        [
+          28362,
+          28363
+        ],
+        [
+          65406,
+          65407
+        ]
+      ],
+      "record_sha256": "03ad757fa67ef25c0783c07b779853dffc1c5b4d297c1917a7dbc779e82a552a"
+    },
+    {
+      "kernel": "symm",
+      "variant": "overlap",
+      "wrapper": "buffered",
+      "invocations": 4,
+      "cycles": [
+        [
+          24893,
+          24893
+        ],
+        [
+          52486,
+          52486
+        ]
+      ],
+      "record_sha256": "eac205e7c88a290decb760932f63f571ad8eded3bcd91ed775e68e8aaf5f3bef"
+    },
+    {
+      "kernel": "symm",
+      "variant": "overlap",
+      "wrapper": "thin",
+      "invocations": 4,
+      "cycles": [
+        [
+          25427,
+          25429
+        ],
+        [
+          52111,
+          52106
+        ]
+      ],
+      "record_sha256": "a0c1882bb352c07a6cd383b7a053557c540174aa6a65bd10b6fdd408cba34e73"
+    },
+    {
+      "kernel": "syr2k",
+      "variant": "nonoverlap",
+      "wrapper": "buffered",
+      "invocations": 4,
+      "cycles": [
+        [
+          67611,
+          67610
+        ],
+        [
+          86079,
+          86079
+        ]
+      ],
+      "record_sha256": "f9f0967dbb8c16aa8e2ecf881cc5d6a7b65d890d4a054942031fd74ab9a5a9a0"
+    },
+    {
+      "kernel": "syr2k",
+      "variant": "nonoverlap",
+      "wrapper": "thin",
+      "invocations": 4,
+      "cycles": [
+        [
+          66607,
+          66610
+        ],
+        [
+          85136,
+          85146
+        ]
+      ],
+      "record_sha256": "cd5a43e6f9da682c223a9052a89e7acdc61f290052a47c4d2b2eb098eb57c12c"
+    },
+    {
+      "kernel": "syr2k",
+      "variant": "overlap",
+      "wrapper": "buffered",
+      "invocations": 4,
+      "cycles": [
+        [
+          39265,
+          39265
+        ],
+        [
+          53749,
+          53748
+        ]
+      ],
+      "record_sha256": "3f1a2838b36e1a01cf43daadd4404ef5d08cf178171ddc84991f6dcef00ab48d"
+    },
+    {
+      "kernel": "syr2k",
+      "variant": "overlap",
+      "wrapper": "thin",
+      "invocations": 4,
+      "cycles": [
+        [
+          40057,
+          40070
+        ],
+        [
+          53161,
+          53160
+        ]
+      ],
+      "record_sha256": "62d84893a6af67babadda77b1e68ce3b344de65ebe403534f6a3d478087ca1b5"
+    },
+    {
+      "kernel": "syrk",
+      "variant": "nonoverlap",
+      "wrapper": "buffered",
+      "invocations": 4,
+      "cycles": [
+        [
+          38482,
+          38487
+        ],
+        [
+          71514,
+          71518
+        ]
+      ],
+      "record_sha256": "447c7be2a5f9d49f8259763e45fd75ee8e52837c79c992a96566052883dfaa76"
+    },
+    {
+      "kernel": "syrk",
+      "variant": "nonoverlap",
+      "wrapper": "thin",
+      "invocations": 4,
+      "cycles": [
+        [
+          37483,
+          37480
+        ],
+        [
+          70572,
+          70576
+        ]
+      ],
+      "record_sha256": "98a7ebc45fd096f5f11bee61bded9379da86176ed4e27e932e1da5cf1772fe96"
+    },
+    {
+      "kernel": "syrk",
+      "variant": "overlap",
+      "wrapper": "buffered",
+      "invocations": 4,
+      "cycles": [
+        [
+          33449,
+          33454
+        ],
+        [
+          53749,
+          53748
+        ]
+      ],
+      "record_sha256": "73b7863e7a73d1b3985feab84abaa488cc3a50f018886332ce4b86ebc58b80f4"
+    },
+    {
+      "kernel": "syrk",
+      "variant": "overlap",
+      "wrapper": "thin",
+      "invocations": 4,
+      "cycles": [
+        [
+          34261,
+          34260
+        ],
+        [
+          53161,
+          53160
+        ]
+      ],
+      "record_sha256": "f70f17dd32f4bc34633a403fa01118e88ad554a5453cecca1fb9df0eb3618389"
+    },
+    {
+      "kernel": "threemm",
+      "variant": "nonoverlap",
+      "wrapper": "buffered",
+      "invocations": 4,
+      "cycles": [
+        [
+          37606,
+          37612
+        ],
+        [
+          63603,
+          63605
+        ]
+      ],
+      "record_sha256": "fcebb802675d6e9b65a72208138a9bd7ffe07670b0b6bec9d3299c437b9ae2d9"
+    },
+    {
+      "kernel": "threemm",
+      "variant": "nonoverlap",
+      "wrapper": "thin",
+      "invocations": 4,
+      "cycles": [
+        [
+          37244,
+          37248
+        ],
+        [
+          63285,
+          63287
+        ]
+      ],
+      "record_sha256": "ec0bbc5be1ea9bde148290ea199357cfc2a067dd90b022e0202ceae31b97958b"
+    },
+    {
+      "kernel": "threemm",
+      "variant": "overlap",
+      "wrapper": "buffered",
+      "invocations": 4,
+      "cycles": [
+        [
+          24537,
+          24537
+        ],
+        [
+          55196,
+          55196
+        ]
+      ],
+      "record_sha256": "9ad6a00ceb0b0fef7b6c8ce665d0837e829a813fbfc689f18c3726db80754e1f"
+    },
+    {
+      "kernel": "threemm",
+      "variant": "overlap",
+      "wrapper": "thin",
+      "invocations": 4,
+      "cycles": [
+        [
+          24464,
+          24464
+        ],
+        [
+          55100,
+          55099
+        ]
+      ],
+      "record_sha256": "f174578c90bf35da7facb89664c27cccb12ad9e030d260a9c40bfcd0bdebca67"
+    },
+    {
+      "kernel": "trmm",
+      "variant": "nonoverlap",
+      "wrapper": "buffered",
+      "invocations": 4,
+      "cycles": [
+        [
+          24874,
+          24854
+        ],
+        [
+          63929,
+          63928
+        ]
+      ],
+      "record_sha256": "e66a37afe6f5236a88991e44637351a10ebf7754766705fdf84661f135c771f6"
+    },
+    {
+      "kernel": "trmm",
+      "variant": "nonoverlap",
+      "wrapper": "thin",
+      "invocations": 4,
+      "cycles": [
+        [
+          24204,
+          24202
+        ],
+        [
+          63324,
+          63324
+        ]
+      ],
+      "record_sha256": "1b7737a1d229feb5d62235ecdb1f54a70825a73c4651b3317deb9ac58c6c46e9"
+    },
+    {
+      "kernel": "trmm",
+      "variant": "overlap",
+      "wrapper": "buffered",
+      "invocations": 4,
+      "cycles": [
+        [
+          22968,
+          22968
+        ],
+        [
+          52486,
+          52486
+        ]
+      ],
+      "record_sha256": "247381459ab4fb71129c370e9459b608fe12e6126f89db03fe8c0676f8d8952a"
+    },
+    {
+      "kernel": "trmm",
+      "variant": "overlap",
+      "wrapper": "thin",
+      "invocations": 4,
+      "cycles": [
+        [
+          23502,
+          23494
+        ],
+        [
+          52111,
+          52106
+        ]
+      ],
+      "record_sha256": "0628aa10ca734095828b6bd41f67f794350b6e28cadbc8104f9eeaa3539e47c4"
+    },
+    {
+      "kernel": "twomm",
+      "variant": "nonoverlap",
+      "wrapper": "buffered",
+      "invocations": 4,
+      "cycles": [
+        [
+          27691,
+          27694
+        ],
+        [
+          64791,
+          64780
+        ]
+      ],
+      "record_sha256": "f5ad2cadc4ad317a15954202e42bc4fb7e2b4f29037cde6764a1a94c51ed4e1d"
+    },
+    {
+      "kernel": "twomm",
+      "variant": "nonoverlap",
+      "wrapper": "thin",
+      "invocations": 4,
+      "cycles": [
+        [
+          27255,
+          27264
+        ],
+        [
+          64413,
+          64413
+        ]
+      ],
+      "record_sha256": "8210dc42689f1c63f9aa9ee7e70fc2d75f5edda9b82b40e3fac2cab6785482a7"
+    },
+    {
+      "kernel": "twomm",
+      "variant": "overlap",
+      "wrapper": "buffered",
+      "invocations": 4,
+      "cycles": [
+        [
+          24170,
+          24173
+        ],
+        [
+          51582,
+          51585
+        ]
+      ],
+      "record_sha256": "a07c0779fc07cef95fd109567b8b7b84fe52c5d7ec0607944e7099b4a937ee23"
+    },
+    {
+      "kernel": "twomm",
+      "variant": "overlap",
+      "wrapper": "thin",
+      "invocations": 4,
+      "cycles": [
+        [
+          24520,
+          24527
+        ],
+        [
+          51355,
+          51354
+        ]
+      ],
+      "record_sha256": "2fbceb28816a9cbda3c3bf8fbad4decfb8a101152865d9d577e6faf050fc5d04"
+    }
+  ],
+  "full_system_cases": [
+    {
+      "kernel": "atax",
+      "variant": "nonoverlap",
+      "status": "PASS",
+      "accelerator_cycles": 17259,
+      "outputs": 42,
+      "elf_sha256": "cdd39640dbd733e12922016010562072d391bf0db93de91faf730bc8317e54b2",
+      "simulation_log_sha256": "0eaebefbbc79144e755ac85826bf57ad1bcd15672a3250aeb9c49ec011d246be",
+      "rtl_sha256": {
+        "forward_kernel.v": "6977bba9a4acb38e1f919acd73dc7254e44c698928d4fad1359200d08e47ad79",
+        "panda_libtech.v": "89edefd1a69ec3bc170a8c793bbc5eebf043461024103789ad3a565f45e48041",
+        "thin_dma64.sv": "0d570d6cb8c8c1cb86ecb70183bc9b45e22fddf30a31b61660cccd26aea2e10a"
+      }
+    },
+    {
+      "kernel": "atax",
+      "variant": "overlap",
+      "status": "PASS",
+      "accelerator_cycles": 14117,
+      "outputs": 42,
+      "elf_sha256": "cdd39640dbd733e12922016010562072d391bf0db93de91faf730bc8317e54b2",
+      "simulation_log_sha256": "b6393b6a154213c44edb1e3ef5e90deeb5099d00d234037bf66c9b52dd4e0ac4",
+      "rtl_sha256": {
+        "forward_kernel.v": "edbe88584734de263c8978e6cd02862bef0ebbf27292367a29148e7f6834bdeb",
+        "panda_libtech.v": "1985569e036d8c9c5a8649771f29a687bd8a124498e1334ca3844e36b4dc273a",
+        "thin_dma64.sv": "0d570d6cb8c8c1cb86ecb70183bc9b45e22fddf30a31b61660cccd26aea2e10a"
+      }
+    },
+    {
+      "kernel": "doitgen",
+      "variant": "nonoverlap",
+      "status": "PASS",
+      "accelerator_cycles": 28246,
+      "outputs": 960,
+      "elf_sha256": "c2941e381249c3cc4176271b5361362a5c682e1e74989cc1a994c50460f10ab1",
+      "simulation_log_sha256": "bb409f2c58948aaea722365d95d7103c1ca5910a7b007f98ca8460d889c606f6",
+      "rtl_sha256": {
+        "forward_kernel.v": "d296123008565285e611584bdf0fc7daa2d9b45851a2b62b8098909ff115f944",
+        "panda_libtech.v": "c7bb1c29c2481aa32dfa63506097ed3aa91c5201cd365919c56ffc5400694bf8",
+        "thin_dma64.sv": "0d570d6cb8c8c1cb86ecb70183bc9b45e22fddf30a31b61660cccd26aea2e10a"
+      }
+    },
+    {
+      "kernel": "doitgen",
+      "variant": "overlap",
+      "status": "PASS",
+      "accelerator_cycles": 23866,
+      "outputs": 960,
+      "elf_sha256": "c2941e381249c3cc4176271b5361362a5c682e1e74989cc1a994c50460f10ab1",
+      "simulation_log_sha256": "cea20d4f753f79c540c25abee08af5709eaca76114c2ae31bd224a8f6b5e17e1",
+      "rtl_sha256": {
+        "forward_kernel.v": "ce0a215a8223daa4ca228591d1814aa9b2cc3106e5a3636ccff3a83629d94048",
+        "panda_libtech.v": "16053d6e00e3883b69598edd1a7447626e176e17a3fabd77fcbee99bb9507536",
+        "thin_dma64.sv": "0d570d6cb8c8c1cb86ecb70183bc9b45e22fddf30a31b61660cccd26aea2e10a"
+      }
+    },
+    {
+      "kernel": "gemm",
+      "variant": "nonoverlap",
+      "status": "PASS",
+      "accelerator_cycles": 31800,
+      "outputs": 500,
+      "elf_sha256": "229e046f47a22d0765f5ab5a3afe1737fcf1241df5c68c571e13578eb53f74ed",
+      "simulation_log_sha256": "e2f831f3a814cbb5a7708c75e8a6ba96f799e5d1d817b5f773357996f500d136",
+      "rtl_sha256": {
+        "forward_kernel.v": "71873bc7778ac673762b8cebc8c2e5a8dded89a0aec3ef3645587fe3cd3b492f",
+        "panda_libtech.v": "84b27fcb97ea5670923d32dcb56ca9da8a714ffd5c9cd733e987de28f267a72d",
+        "thin_dma64.sv": "0d570d6cb8c8c1cb86ecb70183bc9b45e22fddf30a31b61660cccd26aea2e10a"
+      }
+    },
+    {
+      "kernel": "gemm",
+      "variant": "overlap",
+      "status": "PASS",
+      "accelerator_cycles": 31525,
+      "outputs": 500,
+      "elf_sha256": "229e046f47a22d0765f5ab5a3afe1737fcf1241df5c68c571e13578eb53f74ed",
+      "simulation_log_sha256": "a7134f4f29b45922b42b5293df8969cc410c64490829d5d5fdc19967473c623c",
+      "rtl_sha256": {
+        "forward_kernel.v": "cdcca15d47645a62dc9bfd41e7da89ee98f853661de774ad58aee436c83c9a01",
+        "panda_libtech.v": "c382462e1a8f492e3d5c3b4491153f6a2b997d8ab9a3d07617ee13338b27c7be",
+        "thin_dma64.sv": "0d570d6cb8c8c1cb86ecb70183bc9b45e22fddf30a31b61660cccd26aea2e10a"
+      }
+    },
+    {
+      "kernel": "gesummv",
+      "variant": "nonoverlap",
+      "status": "PASS",
+      "accelerator_cycles": 9952,
+      "outputs": 30,
+      "elf_sha256": "686d0a66b759ac35a5aad35ee5db936b8c8d02747247976f476baf3ac07362e2",
+      "simulation_log_sha256": "7d1c203be4ee1f098d0d8b9222a82e2567dd91d634204fbe424877cd4239fba3",
+      "rtl_sha256": {
+        "forward_kernel.v": "25ea83530b6c30c06244b7c7d5969b1ea6d126b32abeb2e9b7f1ca62359fff19",
+        "panda_libtech.v": "6b469b55560c97d5352f92ea34b2b9d44e34efcfa82044ad8829ea3d8e550751",
+        "thin_dma64.sv": "0d570d6cb8c8c1cb86ecb70183bc9b45e22fddf30a31b61660cccd26aea2e10a"
+      }
+    },
+    {
+      "kernel": "gesummv",
+      "variant": "overlap",
+      "status": "PASS",
+      "accelerator_cycles": 9036,
+      "outputs": 30,
+      "elf_sha256": "686d0a66b759ac35a5aad35ee5db936b8c8d02747247976f476baf3ac07362e2",
+      "simulation_log_sha256": "e9b74866ef43d6fffc31490a403895a55b9bb9645c9e705258f7eb03ef5ba271",
+      "rtl_sha256": {
+        "forward_kernel.v": "38bbb715719ed87d50abfc63797649e0cd976d18d4e21eb6c4b955eb460e4a37",
+        "panda_libtech.v": "88b8369148cc97f382eedecf00c69e2ffc535e8ee9c03bd94583431caa7d989b",
+        "thin_dma64.sv": "0d570d6cb8c8c1cb86ecb70183bc9b45e22fddf30a31b61660cccd26aea2e10a"
+      }
+    },
+    {
+      "kernel": "symm",
+      "variant": "nonoverlap",
+      "status": "PASS",
+      "accelerator_cycles": 30864,
+      "outputs": 600,
+      "elf_sha256": "95612a148d1f3d68ed2aa0059a3fa0f4a5c46e3ba2b2d50b79baee52180d00f9",
+      "simulation_log_sha256": "84d20cd4b80de8500ded3428dfe7e792f81f4eff02356cb5fce3df6a13e63f6b",
+      "rtl_sha256": {
+        "forward_kernel.v": "e7a7d5f58394ef134695d16c778418132079bc69666695e405fa5cceeab33a10",
+        "panda_libtech.v": "ebc1816035cbe0dbcc0114bc9c8f81ab8b79360d4ca5492605bc0f98306263e8",
+        "thin_dma64.sv": "0d570d6cb8c8c1cb86ecb70183bc9b45e22fddf30a31b61660cccd26aea2e10a"
+      }
+    },
+    {
+      "kernel": "symm",
+      "variant": "overlap",
+      "status": "PASS",
+      "accelerator_cycles": 27206,
+      "outputs": 600,
+      "elf_sha256": "95612a148d1f3d68ed2aa0059a3fa0f4a5c46e3ba2b2d50b79baee52180d00f9",
+      "simulation_log_sha256": "ff62b43df9c34fbeeeb14cd300abc2a26361115897700f6bea0d72cc74aa795d",
+      "rtl_sha256": {
+        "forward_kernel.v": "68e5544b775116eb8108e19ba4c1c06e017cb8c9bf4fe08487fd6ac9f547c09d",
+        "panda_libtech.v": "da1e2d02da1e592cbc9b2445bf324d7389b54bc78e35eeea30dcffac901654c0",
+        "thin_dma64.sv": "0d570d6cb8c8c1cb86ecb70183bc9b45e22fddf30a31b61660cccd26aea2e10a"
+      }
+    },
+    {
+      "kernel": "syr2k",
+      "variant": "nonoverlap",
+      "status": "PASS",
+      "accelerator_cycles": 70779,
+      "outputs": 900,
+      "elf_sha256": "a36237a3908a5dc7c779530f8664053dbb4223bbd41dcac12e98be5616e7ffe5",
+      "simulation_log_sha256": "c2cb554833b4184ee9ee1e6c30e46ab8537f80c82bcd6e266a8037c2b3dd687e",
+      "rtl_sha256": {
+        "forward_kernel.v": "c99097eb3bab14d8097606a2ee79c217ce42769e922cc899f9100064a3df794d",
+        "panda_libtech.v": "e6c5f6adb82e9994fa5c47701abe0f9204588bc6310eda55d86a1a381dd15caa",
+        "thin_dma64.sv": "0d570d6cb8c8c1cb86ecb70183bc9b45e22fddf30a31b61660cccd26aea2e10a"
+      }
+    },
+    {
+      "kernel": "syr2k",
+      "variant": "overlap",
+      "status": "PASS",
+      "accelerator_cycles": 43204,
+      "outputs": 900,
+      "elf_sha256": "a36237a3908a5dc7c779530f8664053dbb4223bbd41dcac12e98be5616e7ffe5",
+      "simulation_log_sha256": "d88419988d0d615ce7fabb84720b63253818ccdeb664c64335f15230b46315c9",
+      "rtl_sha256": {
+        "forward_kernel.v": "177c536740179432b2fdfbf982334dc93ad794a59f73d4823d3211f8f29fb2e3",
+        "panda_libtech.v": "cb2e93f1ba31e589d6f2a783dc423fe6d72e7bd12b61e35dfaffe9d32e24bb6b",
+        "thin_dma64.sv": "0d570d6cb8c8c1cb86ecb70183bc9b45e22fddf30a31b61660cccd26aea2e10a"
+      }
+    },
+    {
+      "kernel": "syrk",
+      "variant": "nonoverlap",
+      "status": "PASS",
+      "accelerator_cycles": 39988,
+      "outputs": 900,
+      "elf_sha256": "bbd541052c502719887c248276823fbdc92480848b1a4ec4dfaeca11e295645f",
+      "simulation_log_sha256": "2d6d69b79decbc0a8dcba4111444c6136f0a7c63e9e44204c5de98772ce56899",
+      "rtl_sha256": {
+        "forward_kernel.v": "3077e664783a836b89c5b653e661ff56d8cb3d0e11b6c943ec54a475712ac9c5",
+        "panda_libtech.v": "cfd90f1029b1a29e3dcff92d028fca1f9591c267b0f38e028fc437fd111db135",
+        "thin_dma64.sv": "0d570d6cb8c8c1cb86ecb70183bc9b45e22fddf30a31b61660cccd26aea2e10a"
+      }
+    },
+    {
+      "kernel": "syrk",
+      "variant": "overlap",
+      "status": "PASS",
+      "accelerator_cycles": 35700,
+      "outputs": 900,
+      "elf_sha256": "bbd541052c502719887c248276823fbdc92480848b1a4ec4dfaeca11e295645f",
+      "simulation_log_sha256": "ef9a8edbb754b69ef97c3c66eb49043bf68e12eaea06930810a483cfb45f6d34",
+      "rtl_sha256": {
+        "forward_kernel.v": "09a229e175985efa814c6201016e958e0181137cd40770b0d82e476405fc0d72",
+        "panda_libtech.v": "5a69d9174f2a94a17eaaf65e5902d1b9b31d74d7277e147f4b91821324cab242",
+        "thin_dma64.sv": "0d570d6cb8c8c1cb86ecb70183bc9b45e22fddf30a31b61660cccd26aea2e10a"
+      }
+    },
+    {
+      "kernel": "threemm",
+      "variant": "nonoverlap",
+      "status": "PASS",
+      "accelerator_cycles": 40613,
+      "outputs": 352,
+      "elf_sha256": "73d1dc288947d029891ffff581c941bfb9d550a2e34523d4ab1114dfdf86d827",
+      "simulation_log_sha256": "8cc9ac32f80e18910f8d37f1d9a763da1f2bf08970b6f7175b018705cf06e5b4",
+      "rtl_sha256": {
+        "forward_kernel.v": "b90e964c6008cde8ff5a4a7acae951e50de117ad6d1b0cb292107ceb967d4f50",
+        "panda_libtech.v": "cb070a2aef2e6ef21e15eac3be1322aaeff6187f466dd052e856f829f46a19f2",
+        "thin_dma64.sv": "0d570d6cb8c8c1cb86ecb70183bc9b45e22fddf30a31b61660cccd26aea2e10a"
+      }
+    },
+    {
+      "kernel": "threemm",
+      "variant": "overlap",
+      "status": "PASS",
+      "accelerator_cycles": 26944,
+      "outputs": 352,
+      "elf_sha256": "73d1dc288947d029891ffff581c941bfb9d550a2e34523d4ab1114dfdf86d827",
+      "simulation_log_sha256": "15d6c4a42580dbf4a68083c652c25cbbbb149555a3782b40c8714db84aaeb3e3",
+      "rtl_sha256": {
+        "forward_kernel.v": "2e8d5d94ace5bd0cfe4fb1ad4747c64d3708a691a7a37b0b27bb8be5bc3dbc4f",
+        "panda_libtech.v": "a15dd2af84949108d10e205bbd5effc536517d741a2c8f50a9dbc5e8feb02827",
+        "thin_dma64.sv": "0d570d6cb8c8c1cb86ecb70183bc9b45e22fddf30a31b61660cccd26aea2e10a"
+      }
+    },
+    {
+      "kernel": "trmm",
+      "variant": "nonoverlap",
+      "status": "PASS",
+      "accelerator_cycles": 25708,
+      "outputs": 600,
+      "elf_sha256": "276afcfa9f9359db6d9589df4c5be57e950590ff43f292a6a0b3c58ed6279cea",
+      "simulation_log_sha256": "2bbc67731bbd5890a496ce16643d8c50b8ea5ba61100ba5a83495f3e1fb5782c",
+      "rtl_sha256": {
+        "forward_kernel.v": "f402398d29e94353cbf7c04da6b737e7838a261e6f79b16a9f14fb6d827816d7",
+        "panda_libtech.v": "6c79574d2b617777d20282e2fec95f7b809c9c15940d87fab23bd2ea42302cb7",
+        "thin_dma64.sv": "0d570d6cb8c8c1cb86ecb70183bc9b45e22fddf30a31b61660cccd26aea2e10a"
+      }
+    },
+    {
+      "kernel": "trmm",
+      "variant": "overlap",
+      "status": "PASS",
+      "accelerator_cycles": 24799,
+      "outputs": 600,
+      "elf_sha256": "276afcfa9f9359db6d9589df4c5be57e950590ff43f292a6a0b3c58ed6279cea",
+      "simulation_log_sha256": "6c3fdbca4f2153178601354f5399282ebca4a366478d6cb1bef51a88be9cf5ac",
+      "rtl_sha256": {
+        "forward_kernel.v": "9fff29819452a3f9f4d90fbb370be44b223e00c54f23c98484d5bb397946d12f",
+        "panda_libtech.v": "03736061577087f56a8a64e3b8f0793c9b019b04d804798d1e679eb888a97b7d",
+        "thin_dma64.sv": "0d570d6cb8c8c1cb86ecb70183bc9b45e22fddf30a31b61660cccd26aea2e10a"
+      }
+    },
+    {
+      "kernel": "twomm",
+      "variant": "nonoverlap",
+      "status": "PASS",
+      "accelerator_cycles": 30028,
+      "outputs": 384,
+      "elf_sha256": "2bb43daf79cedaafb948d01fc42b2082baf27b29ec2a270fbfeef2d5cc32d960",
+      "simulation_log_sha256": "402907bdc931dff373aeb5f35df25a2bf18cd89185f1be2871aa0f8018648b4a",
+      "rtl_sha256": {
+        "forward_kernel.v": "488e7fec31c461395e96fff038f1ff4c19315e0a0b7cd4dec275c3ed20ba127e",
+        "panda_libtech.v": "1e65c3936c8035ccf426912043467624ee01612846d2c5a2558314e37912e11c",
+        "thin_dma64.sv": "0d570d6cb8c8c1cb86ecb70183bc9b45e22fddf30a31b61660cccd26aea2e10a"
+      }
+    },
+    {
+      "kernel": "twomm",
+      "variant": "overlap",
+      "status": "PASS",
+      "accelerator_cycles": 26277,
+      "outputs": 384,
+      "elf_sha256": "2bb43daf79cedaafb948d01fc42b2082baf27b29ec2a270fbfeef2d5cc32d960",
+      "simulation_log_sha256": "ef2407cde4e56d46acad940615398924215b84c8341597bf26984cffd3f6d751",
+      "rtl_sha256": {
+        "forward_kernel.v": "3cf119e27d6c2473999edf8385a7069714a4d298ba2849bbfade2340cc84ff04",
+        "panda_libtech.v": "d670396f27190f92912bc08d4028282202cf65d2f236f56e492e7ab147715ad6",
+        "thin_dma64.sv": "0d570d6cb8c8c1cb86ecb70183bc9b45e22fddf30a31b61660cccd26aea2e10a"
+      }
+    }
+  ],
+  "reusable_network_rtl": [
+    {
+      "name": "eels",
+      "record_sha256": "92135560bc2a50983adba18b56796c68397a2602cc8c72ecc52939671a5909f8",
+      "outputs": 32,
+      "max_abs_error": 7.450580596923828e-08,
+      "operator_counts": {
+        "conv": 4,
+        "transpose": 2,
+        "gemm": 2
+      }
+    },
+    {
+      "name": "fixture",
+      "record_sha256": "134476b4d9397b03abda21da9e3572263854abe5e03d9973c378cce1c4c9cc18",
+      "outputs": 10,
+      "max_abs_error": 5.960464477539063e-08,
+      "operator_counts": {
+        "transpose": 2,
+        "conv": 2,
+        "gemm": 2,
+        "add": 2
+      }
+    },
+    {
+      "name": "residual",
+      "record_sha256": "47f6ea222beaafc49aef68b0bbc3491588b3a39be0022f79c4c2dbf3613716d4",
+      "outputs": 7,
+      "max_abs_error": 0.0,
+      "operator_counts": {
+        "transpose": 1,
+        "conv": 4,
+        "pool": 2,
+        "add": 2,
+        "gemm": 1
+      }
+    }
+  ],
+  "reusable_wrapper": "existing buffered adapter; not thin",
+  "relocated_uid": {
+    "uid": 1011,
+    "gid": 1012,
+    "compiler_tests": 81,
+    "fresh_lowering_matches": true,
+    "fresh_hls": {
+      "forward_kernel.v": {
+        "qualified_sha256": "edbe88584734de263c8978e6cd02862bef0ebbf27292367a29148e7f6834bdeb",
+        "regenerated_sha256": "204a151b0729e133e54f426b335131cd477a35e78b39c478c62b448cf547543a",
+        "same_except_panda_header_timestamp": true
+      },
+      "panda_libtech.v": {
+        "qualified_sha256": "1985569e036d8c9c5a8649771f29a687bd8a124498e1334ca3844e36b4dc273a",
+        "regenerated_sha256": "df2482a1491557480d6fa723276300d0e2493acdcf975d6edac9344f3d878232",
+        "same_except_panda_header_timestamp": true
+      }
+    },
+    "atax_accelerator_cycles": 14117,
+    "system_log_sha256": "a928e5ad8652b955e818646bed462020c5c61670601403dad1bf496db329be72",
+    "execution": "Docker UID 1011, host ModelSim and 32-bit libraries mounted read-only"
+  },
+  "preserved_fpga_reference": {
+    "status": "PASS",
+    "files": 4024,
+    "bytes": 3683380124,
+    "changed": [],
+    "manifest_sha256": "6c0cdd01fb60f7b005cda8e493333542909e9dc0cf53e977cd877e00a4ca7e1f"
+  }
+}
