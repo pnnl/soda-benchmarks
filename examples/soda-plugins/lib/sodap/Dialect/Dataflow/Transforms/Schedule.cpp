@@ -44,9 +44,10 @@ using Pins = DenseMap<Value, std::pair<OpFoldResult, int64_t>>;
 
 /// Builds the nest of one task, `target`, into a block of its own.
 struct Scheduler {
-  Scheduler(TaskOp target, TaskOp loadTask, Block *into, DominanceInfo &dom)
+  Scheduler(TaskOp target, TaskOp loadTask, Block *into, DominanceInfo &dom,
+            bool serial = false)
       : target(target), loadTask(loadTask), dom(dom),
-        builder(target.getContext()) {
+        builder(target.getContext()), serial(serial) {
     rootBlock = into;
     builder.setInsertionPointToEnd(into);
   }
@@ -63,6 +64,7 @@ struct Scheduler {
   IRMapping map;
   Block *rootBlock;
   DenseMap<Value, llvm::SmallPtrSet<Block *, 4>> produced;
+  bool serial;
 
   bool available(Value value) {
     return map.contains(value) || dom.properlyDominates(value, target);
@@ -207,7 +209,7 @@ struct Scheduler {
           continue;
         Value buffer = rootOf(operand);
         if (sources.count(buffer)) {
-          if (target == loadTask)
+          if (serial || target == loadTask)
             load(&op, operand);
         } else if (auto it = writers.find(buffer);
                    it != writers.end() && it->second.first != task) {
@@ -215,7 +217,7 @@ struct Scheduler {
             return failure();
         }
       }
-      if (task != target)
+      if (!serial && task != target)
         continue;
       // A clone maps the block arguments of its regions only if they aren't
       // already: drop those of the previous clone.
@@ -246,8 +248,75 @@ FailureOr<std::unique_ptr<Block>> scheduleTask(
   return body;
 }
 
+// A sequential LCS schedule has no simultaneously executing tasks. Compact
+// each dispatch buffer to the same tile/slab selected for the parallel flow,
+// with one physical copy. The reuse admission budget is deliberately unchanged
+// so turning off overlap cannot silently select additional cached edges.
+LogicalResult compactSerialBuffers(DispatchOp dispatch, TaskOp serialTask) {
+  OpBuilder builder(dispatch.getContext());
+  for (auto alloc : llvm::to_vector(
+           dispatch.getBody().front().getOps<memref::AllocOp>())) {
+    auto accesses = accessesOf(alloc, dispatch);
+    if (failed(accesses))
+      return failure();
+    if (accesses->empty())
+      continue;
+    if (accesses->size() != 1 || !accesses->count(serialTask))
+      return alloc.emitOpError("expected one sequential LCS task");
+    auto dims = alloc->getAttrOfType<DenseI64ArrayAttr>("sodap.reuse_dims");
+    auto shape = alloc->getAttrOfType<DenseI64ArrayAttr>("sodap.reuse_shape");
+    auto &list = (*accesses)[serialTask];
+    SmallVector<int64_t> footprint;
+    if (shape)
+      llvm::append_range(footprint, shape.asArrayRef());
+    else
+      llvm::append_range(footprint,
+                         cast<MemRefType>(list.front().view.getType()).getShape());
+    // These buffers belong to the one sequential process, not to Bambu's
+    // producer/consumer shared-memory protocol at the enclosing dispatch.
+    builder.setInsertionPointToStart(&serialTask.getBody().front());
+    Value local = builder.create<memref::AllocOp>(
+        alloc.getLoc(), MemRefType::get(footprint,
+                                       alloc.getType().getElementType()));
+    if (shape) {
+      local.getDefiningOp()->setAttr("sodap.reuse_dims", dims);
+      local.getDefiningOp()->setAttr("sodap.reuse_shape", shape);
+    }
+    for (const Access &access : list) {
+      if (!shape) {
+        if (cast<MemRefType>(access.view.getType()).getShape() !=
+            ArrayRef<int64_t>(footprint))
+          return access.op->emitOpError("inconsistent sequential tile shapes");
+        access.op->replaceUsesOfWith(access.view, local);
+        continue;
+      }
+      builder.setInsertionPoint(access.op);
+      IRMapping identity;
+      auto tile = tileOf(access.view, identity, &builder);
+      if (!tile)
+        return access.op->emitOpError("cannot rebase sequential reuse access");
+      for (int64_t dim : dims.asArrayRef())
+        tile->offsets[dim] = builder.getIndexAttr(0);
+      SmallVector<OpFoldResult> sizes,
+          strides(tile->sizes.size(), builder.getIndexAttr(1));
+      for (int64_t size : tile->sizes)
+        sizes.push_back(builder.getIndexAttr(size));
+      Value view = builder.create<memref::SubViewOp>(
+          access.op->getLoc(), local, tile->offsets, sizes, strides);
+      access.op->replaceUsesOfWith(access.view, view);
+    }
+  }
+  IRRewriter rewriter(dispatch.getContext());
+  (void)runRegionDCE(rewriter, serialTask->getRegions());
+  for (auto alloc : llvm::make_early_inc_range(
+           dispatch.getBody().front().getOps<memref::AllocOp>()))
+    if (alloc.use_empty())
+      alloc.erase();
+  return success();
+}
+
 LogicalResult scheduleDispatch(DispatchOp dispatch, DominanceInfo &dom,
-                               uint64_t reuseBudget) {
+                               uint64_t reuseBudget, bool serial) {
   Block &body = dispatch.getBody().front();
   auto tasks = llvm::to_vector(body.getOps<TaskOp>());
   if (tasks.size() < 2)
@@ -413,6 +482,34 @@ LogicalResult scheduleDispatch(DispatchOp dispatch, DominanceInfo &dom,
                    DenseI64ArrayAttr::get(dispatch.getContext(), footprint));
   }
 
+  if (serial) {
+    // The same demand-driven nest, including the same inferred reuse scopes,
+    // now retains all tasks' operations in dependency order. DMA copies and
+    // compute execute synchronously in one process; there are no inter-task
+    // token channels, ping-pong slots, or speculative read issuers.
+    auto scheduled = std::make_unique<Block>();
+    Scheduler scheduler(store, loadTask, scheduled.get(), dom, true);
+    scheduler.sources = sources;
+    scheduler.writers = writers;
+    for (TaskOp task : tasks)
+      for (auto alloc : task.getBody().front().getOps<memref::AllocOp>())
+        scheduler.builder.clone(*alloc, scheduler.map);
+    if (failed(scheduler.walk(store, &store.getBody().front(), Pins())))
+      return failure();
+    // Keep the new task after every dispatch allocation. Original compute
+    // tasks may be interleaved with the buffers they produce.
+    OpBuilder builder(store);
+    auto sequential = builder.create<TaskOp>(dispatch.getLoc(), TypeRange());
+    sequential->setAttr("serial_lcs", builder.getUnitAttr());
+    Block *block = builder.createBlock(&sequential.getBody());
+    builder.create<YieldOp>(dispatch.getLoc());
+    block->getOperations().splice(block->getTerminator()->getIterator(),
+                                 scheduled->getOperations());
+    for (TaskOp task : llvm::reverse(tasks))
+      task.erase();
+    return compactSerialBuffers(dispatch, sequential);
+  }
+
   // Every new body first, from the old ones; then replace them.
   SmallVector<std::unique_ptr<Block>> bodies;
   for (TaskOp task : tasks) {
@@ -442,7 +539,7 @@ struct Schedule : public mlir::sodap::dataflow::impl::ScheduleBase<Schedule> {
     DominanceInfo &dom = getAnalysis<DominanceInfo>();
     for (DispatchOp dispatch :
          llvm::to_vector(getOperation().front().getOps<DispatchOp>()))
-      if (failed(scheduleDispatch(dispatch, dom, reuseBufferBudget)))
+      if (failed(scheduleDispatch(dispatch, dom, reuseBufferBudget, serial)))
         return signalPassFailure();
   }
 };

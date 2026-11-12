@@ -136,7 +136,9 @@ def Schedule :
     unit-stride subviews, or covers part of a written tile.
   }];
   let options = [Option<"reuseBufferBudget", "reuse-buffer-budget", "uint64_t",
-      "0", "Byte budget for inferred intermediate reuse buffers (two slots plus accumulator); zero preserves the always-load schedule">];
+      "0", "Byte budget for inferred intermediate reuse buffers (two slots plus accumulator); zero preserves the always-load schedule">,
+      Option<"serial", "serial", "bool", "false",
+      "Emit the same demand-driven schedule as one sequential LCS task with single-copy tiles/slabs; preserve reuse selection">];
   let dependentDialects = [
     "::mlir::sodap::dataflow::DataflowDialect",
     "::mlir::arith::ArithDialect",

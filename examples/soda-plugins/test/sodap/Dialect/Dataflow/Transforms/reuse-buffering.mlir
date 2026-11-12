@@ -1,6 +1,18 @@
+// RUN: mlir-opt %s --load-dialect-plugin=%sodap_libs/SODAPlugin%shlibext --load-pass-plugin=%sodap_libs/SODAPlugin%shlibext --pass-pipeline="builtin.module(canonicalize,func.func(sodap-dataflow-load-store),canonicalize,func.func(sodap-dataflow-schedule{reuse-buffer-budget=431 serial=true}),fold-memref-alias-ops,func.func(sodap-dataflow-ping-pong),canonicalize)" | FileCheck %s --check-prefix=SERIAL_FALLBACK
+// RUN: mlir-opt %s --load-dialect-plugin=%sodap_libs/SODAPlugin%shlibext --load-pass-plugin=%sodap_libs/SODAPlugin%shlibext --pass-pipeline="builtin.module(canonicalize,func.func(sodap-dataflow-load-store),canonicalize,func.func(sodap-dataflow-schedule{reuse-buffer-budget=432 serial=true}),fold-memref-alias-ops,func.func(sodap-dataflow-ping-pong),canonicalize)" | FileCheck %s --check-prefix=SERIAL_FIT
 // RUN: mlir-opt %s --load-dialect-plugin=%sodap_libs/SODAPlugin%shlibext --load-pass-plugin=%sodap_libs/SODAPlugin%shlibext --pass-pipeline="builtin.module(canonicalize,func.func(sodap-dataflow-load-store),canonicalize,func.func(sodap-dataflow-schedule{reuse-buffer-budget=432}),fold-memref-alias-ops,func.func(sodap-dataflow-ping-pong),canonicalize)" | FileCheck %s --check-prefix=FIT
 // RUN: mlir-opt %s --load-dialect-plugin=%sodap_libs/SODAPlugin%shlibext --load-pass-plugin=%sodap_libs/SODAPlugin%shlibext --pass-pipeline="builtin.module(canonicalize,func.func(sodap-dataflow-load-store),canonicalize,func.func(sodap-dataflow-schedule{reuse-buffer-budget=431}),fold-memref-alias-ops,func.func(sodap-dataflow-ping-pong),canonicalize)" | FileCheck %s --check-prefix=FALLBACK
 // RUN: mlir-opt %s --load-dialect-plugin=%sodap_libs/SODAPlugin%shlibext --load-pass-plugin=%sodap_libs/SODAPlugin%shlibext --pass-pipeline="builtin.module(canonicalize,func.func(sodap-dataflow-load-store),canonicalize,func.func(sodap-dataflow-schedule{reuse-buffer-budget=0}),fold-memref-alias-ops,func.func(sodap-dataflow-ping-pong),canonicalize)" | FileCheck %s --check-prefix=FALLBACK
+// SERIAL_FIT: dataflow.task attributes {serial_lcs}
+// SERIAL_FIT: memref.alloc() {{.*}}: memref<2x18xf32>
+// SERIAL_FIT-NOT: dataflow.task
+// SERIAL_FIT-NOT: dataflow.stream
+// SERIAL_FIT: return
+// SERIAL_FALLBACK-NOT: memref<2x18xf32>
+// SERIAL_FALLBACK: dataflow.task attributes {serial_lcs}
+// SERIAL_FALLBACK-NOT: dataflow.task
+// SERIAL_FALLBACK-NOT: dataflow.stream
+// SERIAL_FALLBACK: return
 // FIT: memref.alloc() : memref<2x2x18xf32>
 // FALLBACK-NOT: memref<2x2x18xf32>
 // FALLBACK: return
