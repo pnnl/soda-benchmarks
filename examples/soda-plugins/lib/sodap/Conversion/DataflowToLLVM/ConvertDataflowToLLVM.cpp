@@ -45,6 +45,8 @@
 #include "sodap/Conversion/DataflowToLLVM/Passes.h"
 
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
+#include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/Target/LLVMIR/TypeFromLLVM.h"
 #include "llvm/IR/Instructions.h"
@@ -97,6 +99,8 @@ struct ChannelInfo {
   LLVM::LLVMFunctionType readType;
   std::string writeSymbol;
   LLVM::LLVMFunctionType writeType;
+  std::string tryWriteSymbol;
+  LLVM::LLVMFunctionType tryWriteType;
   std::string peekSymbol;
   LLVM::LLVMFunctionType peekType;
 
@@ -210,6 +214,9 @@ ConvertDataflowToLLVM::buildSpecializations(ArrayRef<Type> elementTypes) {
          << "extern \"C\" __attribute__((always_inline)) void __df_write_" << id
          << "(C_" << id << " *p, " << bambuTypeNameStr
          << " v) { p->write(v); }\n"
+         << "extern \"C\" __attribute__((always_inline)) bool __df_try_write_" << id
+         << "(C_" << id << " *p, " << bambuTypeNameStr
+         << " v) { return p->nb_write(v); }\n"
          << "extern \"C\" __attribute__((always_inline)) " << bambuTypeNameStr
          << " __df_peek_" << id << "(C_" << id
          << " *p) { return p->peek(); }\n\n";
@@ -284,6 +291,7 @@ ConvertDataflowToLLVM::buildSpecializations(ArrayRef<Type> elementTypes) {
         {"__df_dtor_", &info.dtorSymbol, &info.dtorType},
         {"__df_read_", &info.readSymbol, &info.readType},
         {"__df_write_", &info.writeSymbol, &info.writeType},
+        {"__df_try_write_", &info.tryWriteSymbol, &info.tryWriteType},
         {"__df_peek_", &info.peekSymbol, &info.peekType},
     };
 
@@ -385,15 +393,30 @@ void ConvertDataflowToLLVM::runOnOperation() {
       auto elementType =
           cast<StreamType>(writeOp.getChannel().getType()).getElementType();
       auto &info = channels[elementType];
-      auto func = getOrInsertFunc(info.writeSymbol, info.writeType);
+      bool ordered = writeOp->hasAttr("sodap.dma_ordered");
+      auto func = getOrInsertFunc(ordered ? info.tryWriteSymbol : info.writeSymbol,
+                                  ordered ? info.tryWriteType : info.writeType);
       Value payload = writeOp.getValue();
       auto payloadType = func.getFunctionType().getParams().back();
       if (payload.getType() != payloadType)
         payload = builder.create<LLVM::BitcastOp>(loc, payloadType, payload);
-      // The i1 "written" result is dropped: the FIFO is sized so the write
-      // cannot fail, which is the same assumption the HLS C++ backend makes.
-      builder.create<LLVM::CallOp>(loc, func,
-                                   ValueRange{writeOp.getChannel(), payload});
+      if (ordered) {
+        // Retry without advancing until the FIFO accepted this exact payload.
+        // Unlike two independent blocking calls in one basic block, the
+        // accepted result explicitly controls entry to the next DMA transfer.
+        auto loop = builder.create<scf::WhileOp>(loc, TypeRange{}, ValueRange{});
+        builder.createBlock(&loop.getBefore());
+        Value sent = builder.create<LLVM::CallOp>(
+            loc, func, ValueRange{writeOp.getChannel(), payload}).getResult();
+        Value again = builder.create<arith::XOrIOp>(
+            loc, sent, builder.create<arith::ConstantIntOp>(loc, 1, 1));
+        builder.create<scf::ConditionOp>(loc, again, ValueRange{});
+        builder.createBlock(&loop.getAfter());
+        builder.create<scf::YieldOp>(loc);
+      } else {
+        builder.create<LLVM::CallOp>(loc, func,
+                                     ValueRange{writeOp.getChannel(), payload});
+      }
       toErase.push_back(op);
       return;
     }

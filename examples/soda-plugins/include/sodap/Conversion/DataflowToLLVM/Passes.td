@@ -17,6 +17,11 @@ def ConvertDataflowToLLVM :
     directory as ac_channel_specializations.ll; llvm-link it into the
     translated kernel to get a single module.
 
+    A stream_write marked sodap.dma_ordered is lowered to an explicit
+    nb_write retry loop. Successful acceptance controls exit from the loop,
+    preventing a later DMA request from being co-issued with a stalled tile
+    publication on a different channel. Unmarked writes are unchanged.
+
     Both options default to the Bambu install -DSODAP_BAMBU_ROOT named at
     configure time, through the generated sodap/Config.h.
   }];
@@ -30,7 +35,9 @@ def ConvertDataflowToLLVM :
   ];
   let dependentDialects = [
     "::mlir::sodap::dataflow::DataflowDialect",
-    "::mlir::LLVM::LLVMDialect"
+    "::mlir::LLVM::LLVMDialect",
+    "::mlir::arith::ArithDialect",
+    "::mlir::scf::SCFDialect"
   ];
 }
 

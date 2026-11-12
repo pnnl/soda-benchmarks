@@ -21,6 +21,8 @@ add_mlir_dialect_library(MLIRSODAPDataflowToLLVM
         MLIRIR
         MLIRPass
         MLIRFuncDialect
+        MLIRArithDialect
+        MLIRSCFDialect
         MLIRLLVMDialect
         MLIRTargetLLVMIRImport
         MLIRAffineToStandard

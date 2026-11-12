@@ -8,8 +8,9 @@
 //
 // Moves the read requests of the load task, the writes of the DMA's request
 // stream, into a task of their own, in front of it: a copy of the load task
-// with only its loops and those writes. The requests then run ahead of the
-// data.
+// with only its loops and those writes. The receiver supplies each descriptor
+// when it reaches the corresponding receive loop; no speculative request may
+// occupy a serialized DMA engine while the receiver is blocked on compute.
 //
 //===----------------------------------------------------------------------===//
 
@@ -65,9 +66,19 @@ struct OutstandingLoad
     }
 
     OpBuilder builder(load);
+    Value admitted = builder.create<StreamOp>(
+        load.getLoc(), StreamType::get(func.getContext(), builder.getI64Type(), 1));
     auto issue = cast<TaskOp>(builder.clone(*load));
     issue->removeAttr("load");
     issue->setAttr("outstanding_load", builder.getUnitAttr());
+    issue.walk([&](StreamWriteOp write) {
+      if (!isRequest(write))
+        return;
+      builder.setInsertionPoint(write);
+      Value request = builder.create<StreamReadOp>(
+          write.getLoc(), builder.getI64Type(), admitted).getResult();
+      write.getValueMutable().assign(request);
+    });
 
     // Keep the loops, the requests and what they compute from; and every
     // block's terminator.
@@ -107,8 +118,10 @@ struct OutstandingLoad
       op->erase();
 
     load.walk([&](StreamWriteOp write) {
-      if (isRequest(write))
-        write.erase();
+      if (isRequest(write)) {
+        write.getChannelMutable().assign(admitted);
+        write->setAttr("sodap.dma_ordered", builder.getUnitAttr());
+      }
     });
   }
 };

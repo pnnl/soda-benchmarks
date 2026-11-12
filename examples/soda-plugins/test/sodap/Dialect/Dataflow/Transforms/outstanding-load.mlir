@@ -3,27 +3,29 @@
 // The load task of a 4x4 tile of A per (i, k), after copy-to-dma: a request
 // per row r, then the row's data, then the ping-pong token. The requests go
 // to a task of their own, in front, with the i, k and r loops; the load task
-// keeps the data and the token.
+// keeps the data and the token, and admits each request with its descriptor.
+// The issuer's DMA payload must depend on the blocking descriptor read.
 
 // CHECK-LABEL: func.func @top
 // CHECK-SAME: (%[[RQ:[^:]*]]: !dataflow.stream<i64, 4>, %[[RD:[^:]*]]: !dataflow.stream<i32, 1>
 // CHECK: %[[TOKEN:.*]] = dataflow.stream
+// CHECK: %[[ADMITTED:.*]] = dataflow.stream {{.*}} : <i64, 1>
 // CHECK: dataflow.task attributes {outstanding_load} {
 // CHECK:   scf.for
 // CHECK:     scf.for
 // CHECK:       scf.for
-// CHECK:         affine.apply
-// CHECK:         dataflow.stream_write %[[RQ]]
-// CHECK-NOT:     dataflow.stream_read
+// CHECK:         %[[REQUEST:.*]] = dataflow.stream_read %[[ADMITTED]]
+// CHECK:         dataflow.stream_write %[[RQ]], %[[REQUEST]] {sodap.dma_ordered}
 // CHECK-NOT:     memref.store
 // CHECK-NOT:     dataflow.stream_write %[[TOKEN]]
 // CHECK: dataflow.task attributes {load} {
 // CHECK-NOT: dataflow.stream_write %[[RQ]]
-// CHECK-NOT: affine.apply
+// CHECK:         affine.apply
+// CHECK:         dataflow.stream_write %[[ADMITTED]], %{{.*}} {sodap.dma_ordered}
 // CHECK:         scf.for
 // CHECK:           dataflow.stream_read %[[RD]]
 // CHECK:           memref.store
-// CHECK:     dataflow.stream_write %[[TOKEN]]
+// CHECK:     dataflow.stream_write %[[TOKEN]], %{{.*}} {sodap.dma_ordered}
 // CHECK: dataflow.task attributes {store} {
 func.func @top(%A: memref<8x12xf32>, %C: memref<8x16xf32>) {
   %c0 = arith.constant 0 : index

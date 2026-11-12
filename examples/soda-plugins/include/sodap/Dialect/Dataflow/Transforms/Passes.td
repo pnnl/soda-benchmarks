@@ -181,13 +181,18 @@ def OutstandingLoad :
     is the read-request stream of the DMA. The load task (the `dataflow.task`
     with the `load` attribute) sends a request per row and then reads the row,
     so a request waits for the data of the previous one. A new task, with the
-    `outstanding_load` attribute, put before it, takes the requests: it is the
-    load task with only its loops and its writes of the request stream, and
-    what they compute from. The load task keeps everything else. The requests
-    run ahead of the data by the depth of the request stream.
+    `outstanding_load` attribute, takes the requests through a depth-one
+    descriptor stream supplied by the receiver. The DMA command payload
+    depends on a blocking descriptor read; it cannot issue speculatively
+    while the receiver is blocked publishing a previous tile. The existing
+    tile memories receive the payload; no new payload buffer is allocated.
+
+    This conservative admission policy keeps one row transaction at a time.
+    The pass name is retained for pipeline compatibility; unrestricted
+    read-ahead is unsafe with a serialized read/write DMA socket.
 
     Run `canonicalize` afterwards: it drops the loops left empty in the new
-    task and the request arithmetic left dead in the load task.
+    task and the request arithmetic left dead in the request task.
 
     Example:
 
@@ -203,14 +208,17 @@ def OutstandingLoad :
       }
     }
     // becomes, after canonicalize
+    %admitted = dataflow.stream {depth = 1 : i32} : <i64, 1>
     dataflow.task attributes {outstanding_load} {
       scf.for %r = %c0 to %c4 step %c1 {
-        %req = arith.ori %len, ... : i64
-        dataflow.stream_write %rq, %req : <i64, 4>, i64
+        %req = dataflow.stream_read %admitted : (!dataflow.stream<i64, 1>) -> i64
+        dataflow.stream_write %rq, %req {sodap.dma_ordered} : <i64, 4>, i64
       }
     }
     dataflow.task attributes {load} {
       scf.for %r = %c0 to %c4 step %c1 {
+        %req = arith.ori %len, ... : i64
+        dataflow.stream_write %admitted, %req {sodap.dma_ordered} : <i64, 1>, i64
         scf.for %e = %c0 to %c4 step %c1 {
           %w = dataflow.stream_read %rd : (!dataflow.stream<i32, 1>) -> i32
           memref.store ...

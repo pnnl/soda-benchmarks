@@ -243,10 +243,23 @@ struct CopyToDMA : public dataflow::impl::CopyToDMABase<CopyToDMA> {
                    top.getArgument(first + 2), top.getArgument(first + 3)};
 
     OpBuilder b(ctx);
+    llvm::SmallPtrSet<Operation *, 4> receivers;
     for (Transfer &transfer : transfers) {
+      if (transfer.read)
+        if (auto task = transfer.copy->getParentOfType<TaskOp>())
+          receivers.insert(task);
       lowerTransfer(b, transfer, dma, wordStride);
       transfer.copy.erase();
     }
+    // A stalled tile publication must complete before the receiver admits
+    // another DMA burst. Different ac_channel writes otherwise have no data
+    // dependence, and HLS may issue a request while the receiver is blocked
+    // publishing the preceding tile. Lower these writes with an explicit
+    // accepted-result loop, making completion a control-flow dependency.
+    for (Operation *receiver : receivers)
+      receiver->walk([&](StreamWriteOp write) {
+        write->setAttr("sodap.dma_ordered", b.getUnitAttr());
+      });
     for (Operation *tile : tiles)
       if (tile->use_empty())
         tile->erase();
