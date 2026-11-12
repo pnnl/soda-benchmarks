@@ -15,7 +15,7 @@
 
 #include "sodap/Dialect/Dataflow/Transforms/Passes.h"
 
-#include "Prefix.h"
+#include "Reuse.h"
 
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/Linalg/IR/Linalg.h"
@@ -55,8 +55,7 @@ FailureOr<Side> sideOf(TaskOp task, ArrayRef<Access> accesses) {
   auto tileScope = [&](Operation *access) -> Operation * {
     for (Operation *op = access->getParentOp(); op != task;
          op = op->getParentOp())
-      if (isa<scf::ExecuteRegionOp>(op) &&
-          op->hasAttr("sodap.dataflow_tile"))
+      if (isa<scf::ExecuteRegionOp>(op) && op->hasAttr("sodap.dataflow_tile"))
         return op;
     return nullptr;
   };
@@ -124,6 +123,54 @@ Value slotView(OpBuilder &builder, Location loc, Value buffer, Value slot) {
                                            sizes, strides);
 }
 
+// Retain the slot over the complete inferred reuse lifetime, including every
+// consumer access. A producer cannot overwrite it until that scope finishes.
+LogicalResult reuseScope(Side &side, Value buffer, DenseI64ArrayAttr dims) {
+  Prefix prefix = prefixOf(side.accesses, buffer, side.task);
+  if (prefix.size() < unsigned(dims.size()))
+    return side.task.emitOpError(
+        "reuse prefix was not preserved by scheduling");
+  side.level = &side.task.getBody().front();
+  for (unsigned i = 0; i < dims.size(); ++i) {
+    if (prefix[i].dim != dims[i])
+      return side.task.emitOpError("reuse prefix dimension changed");
+    side.level = prefix[i].loop.getBody();
+  }
+  side.first = side.last = nullptr;
+  for (const Access &access : side.accesses) {
+    Operation *op = side.level->findAncestorOpInBlock(*access.op);
+    if (!side.first || op->isBeforeInBlock(side.first))
+      side.first = op;
+    if (!side.last || side.last->isBeforeInBlock(op))
+      side.last = op;
+  }
+  return success();
+}
+
+LogicalResult replaceAccess(OpBuilder &builder, const Access &access,
+                            Value target, DenseI64ArrayAttr reuseDims) {
+  if (!reuseDims) {
+    access.op->replaceUsesOfWith(access.view, target);
+    return success();
+  }
+  OpBuilder::InsertionGuard guard(builder);
+  builder.setInsertionPoint(access.op);
+  IRMapping identity;
+  auto tile = tileOf(access.view, identity, &builder);
+  if (!tile)
+    return access.op->emitOpError("cannot rebase reuse-buffer access");
+  for (int64_t dim : reuseDims.asArrayRef())
+    tile->offsets[dim] = builder.getIndexAttr(0);
+  SmallVector<OpFoldResult> sizes,
+      strides(tile->sizes.size(), builder.getIndexAttr(1));
+  for (int64_t size : tile->sizes)
+    sizes.push_back(builder.getIndexAttr(size));
+  Value view = builder.create<memref::SubViewOp>(access.op->getLoc(), target,
+                                                 tile->offsets, sizes, strides);
+  access.op->replaceUsesOfWith(access.view, view);
+  return success();
+}
+
 LogicalResult pingPong(DispatchOp dispatch) {
   Block &body = dispatch.getBody().front();
   OpBuilder builder(dispatch.getContext());
@@ -136,20 +183,32 @@ LogicalResult pingPong(DispatchOp dispatch) {
     if (accesses->size() < 2)
       continue;
 
+    auto reuseDims =
+        alloc->getAttrOfType<DenseI64ArrayAttr>("sodap.reuse_dims");
+    auto reuseShape =
+        alloc->getAttrOfType<DenseI64ArrayAttr>("sodap.reuse_shape");
+    if (bool(reuseDims) != bool(reuseShape))
+      return alloc.emitOpError("incomplete inferred reuse-buffer metadata");
     // The writer and the readers, and the tile they exchange.
     std::optional<Side> writer;
     SmallVector<Side> readers;
     MemRefType tile;
+    if (reuseShape)
+      tile =
+          MemRefType::get(reuseShape.asArrayRef(),
+                          cast<MemRefType>(buffer.getType()).getElementType());
     for (auto &[task, list] : *accesses) {
       auto inferredSide = sideOf(task, list);
       if (failed(inferredSide))
         return failure();
       Side side = *inferredSide;
+      if (reuseDims && failed(reuseScope(side, buffer, reuseDims)))
+        return failure();
       for (const Access &access : list) {
         auto type = cast<MemRefType>(access.view.getType());
         if (!tile)
           tile = type;
-        if (type.getShape() != tile.getShape())
+        if (!reuseDims && type.getShape() != tile.getShape())
           return access.op->emitOpError(
               "expected the tasks sharing a buffer to use it a tile of one "
               "shape at a time (sodap-dataflow-schedule)");
@@ -215,7 +274,8 @@ LogicalResult pingPong(DispatchOp dispatch) {
     else
       target = view;
     for (const Access &access : writer->accesses)
-      access.op->replaceUsesOfWith(access.view, target);
+      if (failed(replaceAccess(builder, access, target, reuseDims)))
+        return failure();
     if (!writer->reads)
       builder.setInsertionPointAfter(writer->last);
     for (Value stream : streams)
@@ -231,7 +291,8 @@ LogicalResult pingPong(DispatchOp dispatch) {
       Value peek = builder.create<StreamPeekOp>(loc, i8, stream);
       Value view = slotView(builder, loc, slots, peek);
       for (const Access &access : reader.accesses)
-        access.op->replaceUsesOfWith(access.view, view);
+        if (failed(replaceAccess(builder, access, view, reuseDims)))
+          return failure();
       builder.setInsertionPointAfter(reader.last);
       builder.create<StreamReadOp>(loc, i8, stream);
     }

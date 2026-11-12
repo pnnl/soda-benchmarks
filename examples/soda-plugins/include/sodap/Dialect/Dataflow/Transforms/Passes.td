@@ -104,6 +104,19 @@ def Schedule :
     order: `sodap-dataflow-ping-pong` can synchronise them with a depth-1
     token per tile.
 
+    With `reuse-buffer-budget` greater than zero, regular static intermediate
+    edges may instead retain a rectangular slab across repeated reads. The
+    common writer/reader loop prefix determines the slab dimensions; no kernel
+    names, matrix sizes, or compute tile constants are used by the analysis.
+    The producer runs before the consumer's reuse loops. Ping-pong lowering
+    publishes the whole slab and holds its token until every use completes.
+    The budget covers two slots plus a conservative private-accumulator
+    allowance for each selected edge. It is a reuse-storage budget, not a
+    bound on all accelerator resources. Selection follows allocation order;
+    this is not a global cost model. Unproven and over-budget edges retain
+    the always-load schedule. Dynamic/ragged footprints, fan-out, off-chip
+    materialization, and loop-order search are not added by this option.
+
     On trmm (matmul of the transpose of A_lower, then `alpha *`, then the
     store), per tile of the result, the loads are:
 
@@ -122,6 +135,8 @@ def Schedule :
     read of another task's buffer that isn't a tile of it through static,
     unit-stride subviews, or covers part of a written tile.
   }];
+  let options = [Option<"reuseBufferBudget", "reuse-buffer-budget", "uint64_t",
+      "0", "Byte budget for inferred intermediate reuse buffers (two slots plus accumulator); zero preserves the always-load schedule">];
   let dependentDialects = [
     "::mlir::sodap::dataflow::DataflowDialect",
     "::mlir::arith::ArithDialect",

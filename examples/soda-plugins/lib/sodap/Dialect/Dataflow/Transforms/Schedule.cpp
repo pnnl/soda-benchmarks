@@ -15,7 +15,8 @@
 
 #include "sodap/Dialect/Dataflow/Transforms/Passes.h"
 
-#include "Prefix.h"
+#include "Reuse.h"
+#include "llvm/ADT/SmallPtrSet.h"
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
@@ -37,77 +38,6 @@ using namespace mlir;
 using namespace mlir::sodap::dataflow;
 
 namespace {
-/// The buffer `value` is a view of, and the views in between, innermost
-/// first.
-Value rootOf(Value value, SmallVectorImpl<Operation *> *chain = nullptr) {
-  while (auto view = value.getDefiningOp<ViewLikeOpInterface>()) {
-    if (chain)
-      chain->push_back(view);
-    value = view.getViewSource();
-  }
-  return value;
-}
-
-/// A tile of a buffer: per dim, its offset and size.
-struct Tile {
-  Value buffer;
-  SmallVector<OpFoldResult> offsets;
-  SmallVector<int64_t> sizes;
-};
-
-/// The tile `view` is of the buffer it views, through rank-preserving,
-/// unit-stride subviews with static sizes. The offsets go through `map`; where
-/// two subviews offset a dim, they are added with `builder`, or left null
-/// without one.
-std::optional<Tile> tileOf(Value view, IRMapping &map, OpBuilder *builder) {
-  SmallVector<Operation *> chain;
-  Value buffer = rootOf(view, &chain);
-  auto type = cast<MemRefType>(buffer.getType());
-  if (!type.hasStaticShape())
-    return std::nullopt;
-  unsigned rank = type.getRank();
-  Builder attrs(view.getContext());
-  Tile tile{buffer, SmallVector<OpFoldResult>(rank, attrs.getIndexAttr(0)),
-            SmallVector<int64_t>(type.getShape())};
-  for (Operation *op : llvm::reverse(chain)) {
-    auto subview = dyn_cast<memref::SubViewOp>(op);
-    if (!subview || subview.getType().getRank() != rank ||
-        !llvm::all_of(subview.getStaticStrides(),
-                      [](int64_t stride) { return stride == 1; }))
-      return std::nullopt;
-    for (unsigned d = 0; d < rank; ++d) {
-      std::optional<int64_t> size =
-          getConstantIntValue(subview.getMixedSizes()[d]);
-      if (!size)
-        return std::nullopt;
-      tile.sizes[d] = *size;
-      OpFoldResult offset = subview.getMixedOffsets()[d];
-      if (auto value = dyn_cast<Value>(offset))
-        offset = map.lookupOrDefault(value);
-      OpFoldResult &total = tile.offsets[d];
-      if (isConstantIntValue(offset, 0) || !total)
-        continue;
-      if (isConstantIntValue(total, 0)) {
-        total = offset;
-      } else if (!builder) {
-        total = OpFoldResult();
-      } else {
-        Location loc = subview.getLoc();
-        auto valueOf = [&](OpFoldResult ofr) -> Value {
-          if (auto value = dyn_cast<Value>(ofr))
-            return value;
-          return builder->create<arith::ConstantIndexOp>(
-              loc, *getConstantIntValue(ofr));
-        };
-        total =
-            builder->create<arith::AddIOp>(loc, valueOf(total), valueOf(offset))
-                .getResult();
-      }
-    }
-  }
-  return tile;
-}
-
 /// Where a pinned loop of a producer runs: the offset and size of the tile
 /// the consumer reads, along the dim the loop steps through.
 using Pins = DenseMap<Value, std::pair<OpFoldResult, int64_t>>;
@@ -117,6 +47,7 @@ struct Scheduler {
   Scheduler(TaskOp target, TaskOp loadTask, Block *into, DominanceInfo &dom)
       : target(target), loadTask(loadTask), dom(dom),
         builder(target.getContext()) {
+    rootBlock = into;
     builder.setInsertionPointToEnd(into);
   }
 
@@ -130,6 +61,8 @@ struct Scheduler {
   /// Appends to the target's new body.
   OpBuilder builder;
   IRMapping map;
+  Block *rootBlock;
+  DenseMap<Value, llvm::SmallPtrSet<Block *, 4>> produced;
 
   bool available(Value value) {
     return map.contains(value) || dom.properlyDominates(value, target);
@@ -166,6 +99,42 @@ struct Scheduler {
     if (!tile)
       return op->emitOpError("expected to read a tile of another task's "
                              "buffer through static, unit-stride subviews");
+    // A selected reuse edge is produced once per shared prefix, before the
+    // consumer's reuse loop. The consumer retains that aggregate transaction.
+    OpBuilder::InsertionGuard guard(builder);
+    if (auto dims =
+            tile->buffer.getDefiningOp()->getAttrOfType<DenseI64ArrayAttr>(
+                "sodap.reuse_dims")) {
+      SmallVector<scf::ForOp> retained;
+      for (int64_t dim : dims.asArrayRef())
+        if (auto value = dyn_cast<Value>(tile->offsets[dim])) {
+          auto loop = scf::getForInductionVarOwner(value);
+          if (!loop)
+            return op->emitOpError("reuse prefix offset is not a loop index");
+          retained.push_back(loop);
+        }
+      Block *scope = rootBlock;
+      for (Block *b = builder.getInsertionBlock(); b != rootBlock;
+           b = b->getParentOp()->getBlock())
+        if (llvm::is_contained(retained,
+                               dyn_cast<scf::ForOp>(b->getParentOp()))) {
+          scope = b;
+          break;
+        }
+      if (!produced[tile->buffer].insert(scope).second)
+        return success();
+      if (scope != builder.getInsertionBlock()) {
+        Operation *ancestor = scope->findAncestorOpInBlock(
+            *builder.getInsertionBlock()->getParentOp());
+        builder.setInsertionPoint(ancestor);
+      }
+      auto shape = cast<MemRefType>(tile->buffer.getType()).getShape();
+      for (unsigned d = 0; d < shape.size(); ++d)
+        if (!llvm::is_contained(dims.asArrayRef(), int64_t(d))) {
+          tile->offsets[d] = builder.getIndexAttr(0);
+          tile->sizes[d] = shape[d];
+        }
+    }
     auto &[producer, writes] = writers[tile->buffer];
     // The loops whose induction variable is the offset of a write, a tile at
     // a time.
@@ -277,7 +246,8 @@ FailureOr<std::unique_ptr<Block>> scheduleTask(
   return body;
 }
 
-LogicalResult scheduleDispatch(DispatchOp dispatch, DominanceInfo &dom) {
+LogicalResult scheduleDispatch(DispatchOp dispatch, DominanceInfo &dom,
+                               uint64_t reuseBudget) {
   Block &body = dispatch.getBody().front();
   auto tasks = llvm::to_vector(body.getOps<TaskOp>());
   if (tasks.size() < 2)
@@ -347,6 +317,102 @@ LogicalResult scheduleDispatch(DispatchOp dispatch, DominanceInfo &dom) {
     if (!feeding.contains(task))
       return task.emitOpError("expected a compute task the store depends on");
 
+  // Infer reuse from the original accesses, before constructing a common
+  // schedule. Only regular, statically bounded, single-reader edges qualify.
+  // Unproven accesses and oversized footprints keep the existing schedule.
+  uint64_t remaining = reuseBudget;
+  for (auto alloc : body.getOps<memref::AllocOp>()) {
+    Value buffer = alloc.getResult();
+    if (!remaining || !writers.count(buffer) || sources.count(buffer))
+      continue;
+    auto accesses = accessesOf(buffer, dispatch);
+    if (failed(accesses) || accesses->size() != 2)
+      continue;
+    TaskOp producer = writers[buffer].first;
+    TaskOp reader;
+    for (auto &[task, list] : *accesses)
+      if (task != producer)
+        reader = task;
+    auto &reads = (*accesses)[reader];
+    if (reads.size() != 1 || reads.front().writes)
+      continue;
+    IRMapping identity;
+    auto tile = tileOf(reads.front().view, identity, nullptr);
+    if (!tile)
+      continue;
+    llvm::SmallPtrSet<Operation *, 4> indexed;
+    bool regular = true;
+    auto shape = cast<MemRefType>(buffer.getType()).getShape();
+    for (unsigned d = 0; d < shape.size(); ++d) {
+      if (auto offset = getConstantIntValue(tile->offsets[d])) {
+        regular &= *offset == 0 && tile->sizes[d] == shape[d];
+        continue;
+      }
+      auto value = dyn_cast_if_present<Value>(tile->offsets[d]);
+      auto loop = value ? scf::getForInductionVarOwner(value) : nullptr;
+      auto bounds = loop ? boundsOf(loop) : std::nullopt;
+      if (!bounds || (*bounds)[0] != 0 || (*bounds)[1] != shape[d] ||
+          (*bounds)[2] != tile->sizes[d] || shape[d] % tile->sizes[d]) {
+        regular = false;
+        break;
+      }
+      indexed.insert(loop);
+    }
+    bool repeats = false;
+    for (Operation *op = reads.front().op->getParentOp(); op != reader;
+         op = op->getParentOp()) {
+      if (auto loop = dyn_cast<scf::ForOp>(op)) {
+        auto bounds = boundsOf(loop);
+        if (!bounds || (*bounds)[2] <= 0) {
+          regular = false;
+          break;
+        }
+        if (!indexed.count(loop) && (*bounds)[1] - (*bounds)[0] > (*bounds)[2])
+          repeats = true;
+      } else {
+        regular = false;
+        break;
+      }
+    }
+    if (!regular || !repeats)
+      continue;
+    Prefix written = prefixOf((*accesses)[producer], buffer, producer);
+    Prefix read = prefixOf(reads, buffer, reader);
+    sharePrefix(written, read);
+    SmallVector<int64_t> dims, footprint(shape);
+    for (Step step : written) {
+      auto bounds = *boundsOf(step.loop);
+      if (bounds[0] != 0 || bounds[1] != shape[step.dim] ||
+          shape[step.dim] % bounds[2]) {
+        regular = false;
+        break;
+      }
+      dims.push_back(step.dim);
+      footprint[step.dim] = bounds[2];
+    }
+    if (!regular)
+      continue;
+    auto element = cast<MemRefType>(buffer.getType()).getElementType();
+    if (!element.isIntOrFloat())
+      continue;
+    // Two shared slots plus a conservative allowance for a private accumulator.
+    uint64_t bytes = 3 * ((element.getIntOrFloatBitWidth() + 7) / 8);
+    for (int64_t size : footprint) {
+      if (size <= 0 || uint64_t(size) > remaining / bytes) {
+        bytes = 0;
+        break;
+      }
+      bytes *= size;
+    }
+    if (!bytes || bytes > remaining)
+      continue;
+    remaining -= bytes;
+    alloc->setAttr("sodap.reuse_dims",
+                   DenseI64ArrayAttr::get(dispatch.getContext(), dims));
+    alloc->setAttr("sodap.reuse_shape",
+                   DenseI64ArrayAttr::get(dispatch.getContext(), footprint));
+  }
+
   // Every new body first, from the old ones; then replace them.
   SmallVector<std::unique_ptr<Block>> bodies;
   for (TaskOp task : tasks) {
@@ -371,11 +437,12 @@ LogicalResult scheduleDispatch(DispatchOp dispatch, DominanceInfo &dom) {
 }
 
 struct Schedule : public mlir::sodap::dataflow::impl::ScheduleBase<Schedule> {
+  using ScheduleBase::ScheduleBase;
   void runOnOperation() override {
     DominanceInfo &dom = getAnalysis<DominanceInfo>();
     for (DispatchOp dispatch :
          llvm::to_vector(getOperation().front().getOps<DispatchOp>()))
-      if (failed(scheduleDispatch(dispatch, dom)))
+      if (failed(scheduleDispatch(dispatch, dom, reuseBufferBudget)))
         return signalPassFailure();
   }
 };
