@@ -99,15 +99,266 @@ tileSizes(::mlir::OpBuilder &builder, ::mlir::linalg::LinalgOp op,
   return result;
 }
 
+namespace {
+/// One dim of a tile: the size of loop `id` (see TileModel), or `fixed`.
+struct Extent {
+  int id = -1;
+  int64_t fixed = 1;
+};
+
+/// A tile buffer in the accelerator, and the DMA transfers filling or draining
+/// it, if `moves`: one per iteration of `loops`.
+struct Tile {
+  ::mlir::SmallVector<Extent> extents;
+  int64_t elementBytes;
+  /// 2 for a ping-pong buffer between tasks, 1 for one inside a compute task.
+  int64_t copies;
+  bool moves;
+  ::mlir::SmallVector<int> loops;
+};
+
+/// What tile_and_fuse's nests keep and move, as a function of the size of
+/// every loop of the yielded ops. Loop ids follow the yielded ops' order.
+struct TileModel {
+  ::mlir::SmallVector<int64_t> ranges;
+  /// The parallel loops of each yielded op.
+  ::mlir::SmallVector<::mlir::SmallVector<int>> parallel;
+  ::mlir::SmallVector<Tile> tiles;
+  /// Loops that must have one size: a task and the one reading its result
+  /// exchange tiles of one shape (ping-pong).
+  ::llvm::EquivalenceClasses<int> same;
+  /// Leaders of classes that must stay whole: their tile meets a whole dim.
+  ::llvm::SmallDenseSet<int> whole;
+};
+} // namespace
+
+static int64_t elementBytes(::mlir::ShapedType type) {
+  ::mlir::Type element = type.getElementType();
+  return element.isIntOrFloat()
+             ? ::llvm::divideCeil(element.getIntOrFloatBitWidth(), 8)
+             : 4;
+}
+
+/// The tile of an operand read through `map` by loops of the given extents.
+static ::mlir::SmallVector<Extent> tileOf(::mlir::AffineMap map,
+                                          ::llvm::ArrayRef<Extent> loops,
+                                          ::mlir::ShapedType type) {
+  using namespace ::mlir;
+  SmallVector<Extent> tile;
+  for (auto [r, expr] : llvm::enumerate(map.getResults())) {
+    if (auto dim = dyn_cast<AffineDimExpr>(expr))
+      tile.push_back(loops[dim.getPosition()]);
+    else if (isa<AffineConstantExpr>(expr))
+      tile.push_back({-1, 1});
+    else // ponytail: a window (conv) counts whole; size it if convs matter.
+      tile.push_back({-1, type.getDimSize(r)});
+  }
+  return tile;
+}
+
+/// The model of the nests tile_and_fuse makes for `lasts`, before tiling, as
+/// sodap-dataflow-load-store will cut them: each operand read from outside the
+/// tasks (an argument) is loaded a tile at a time, at the innermost loop around
+/// its reader (a yielded op reads its inputs in the reduction loops, its init
+/// and its fused producers once per parallel tile); each yielded value has a
+/// ping-pong buffer, stored a tile at a time if read outside the tasks; values
+/// computed in the nest keep a buffer of their own.
+static TileModel buildTileModel(::llvm::ArrayRef<::mlir::Operation *> lasts) {
+  using namespace ::mlir;
+  using sodap::dataflow::TaskOp;
+  TileModel m;
+  DenseMap<Value, SmallVector<Extent>> written;
+  SmallVector<std::pair<Value, SmallVector<Extent>>> read;
+  for (Operation *op : lasts) {
+    auto last = cast<linalg::LinalgOp>(op);
+    auto task = op->getParentOfType<TaskOp>();
+    SmallVector<Extent> leaf, fused;
+    SmallVector<int> all, parallel;
+    for (auto [iterator, range] : llvm::zip_equal(
+             last.getIteratorTypesArray(), last.getStaticLoopRanges())) {
+      int id = m.ranges.size();
+      m.ranges.push_back(range);
+      m.same.insert(id);
+      leaf.push_back({id, 0});
+      all.push_back(id);
+      bool isParallel = iterator == utils::IteratorType::parallel;
+      // Producers are fused in the parallel loops: they see whole reductions.
+      fused.push_back(isParallel ? Extent{id, 0} : Extent{-1, range});
+      if (isParallel)
+        parallel.push_back(id);
+    }
+    m.parallel.push_back(parallel);
+
+    for (OpOperand &yielded : task.getYieldOp()->getOpOperands()) {
+      if (yielded.get().getDefiningOp() != op)
+        continue;
+      auto result = cast<OpResult>(yielded.get());
+      auto type = cast<ShapedType>(result.getType());
+      Value taskResult = task->getResult(yielded.getOperandNumber());
+      SmallVector<Extent> tile =
+          tileOf(last.getIndexingMapMatchingResult(result), leaf, type);
+      bool stored = llvm::any_of(taskResult.getUsers(), [](Operation *user) {
+        return !user->getParentOfType<TaskOp>();
+      });
+      m.tiles.push_back({tile, elementBytes(type), 2, stored, parallel});
+      written[taskResult] = tile;
+    }
+
+    SmallVector<std::pair<linalg::LinalgOp, SmallVector<Extent>>> worklist{
+        {last, leaf}};
+    while (!worklist.empty()) {
+      auto [current, loops] = worklist.pop_back_val();
+      bool isLast = current == last;
+      for (OpOperand &operand : current->getOpOperands()) {
+        auto type = dyn_cast<ShapedType>(operand.get().getType());
+        if (!type)
+          continue;
+        AffineMap map = current.getMatchingIndexingMap(&operand);
+        Operation *def = operand.get().getDefiningOp();
+        if (isa_and_nonnull<bufferization::AllocTensorOp, tensor::EmptyOp>(def))
+          continue;
+        if (def && task->isProperAncestor(def)) {
+          auto producer = dyn_cast<linalg::LinalgOp>(def);
+          if (!producer)
+            continue;
+          SmallVector<Extent> tile = tileOf(map, isLast ? fused : loops, type);
+          m.tiles.push_back({tile, elementBytes(type), 1, false, {}});
+          SmallVector<Extent> producerLoops;
+          for (int64_t range : producer.getStaticLoopRanges())
+            producerLoops.push_back({-1, range});
+          AffineMap producerMap = producer.getIndexingMapMatchingResult(
+              cast<OpResult>(operand.get()));
+          for (auto [r, expr] : llvm::enumerate(producerMap.getResults()))
+            if (auto dim = dyn_cast<AffineDimExpr>(expr))
+              producerLoops[dim.getPosition()] = tile[r];
+          worklist.push_back({producer, producerLoops});
+          continue;
+        }
+        SmallVector<Extent> tile = tileOf(map, loops, type);
+        if (isa_and_nonnull<TaskOp>(def)) {
+          read.push_back({operand.get(), tile});
+          continue;
+        }
+        bool everyIteration = isLast && !current.isDpsInit(&operand);
+        m.tiles.push_back({tile, elementBytes(type), 2, true,
+                           everyIteration ? all : parallel});
+      }
+    }
+  }
+
+  SmallVector<int> whole;
+  for (auto &[value, tile] : read) {
+    auto it = written.find(value);
+    if (it == written.end())
+      continue;
+    for (auto [a, b] : llvm::zip_equal(tile, it->second)) {
+      if (a.id >= 0 && b.id >= 0)
+        m.same.unionSets(a.id, b.id);
+      else if (a.id >= 0 || b.id >= 0)
+        whole.push_back(std::max(a.id, b.id));
+    }
+  }
+  for (int id : whole)
+    m.whole.insert(m.same.getLeaderValue(id));
+  return m;
+}
+
+/// DMA cycles and buffer bytes of the model with loop `id` tiled by `size[id]`.
+static std::pair<int64_t, int64_t> tileCost(const TileModel &m,
+                                            ::llvm::ArrayRef<int64_t> size,
+                                            int64_t requestCycles,
+                                            int64_t wordCycles) {
+  int64_t cycles = 0, bytes = 0;
+  for (const Tile &tile : m.tiles) {
+    int64_t elements = 1, rows = 1;
+    for (auto [d, extent] : llvm::enumerate(tile.extents)) {
+      int64_t n = extent.id < 0 ? extent.fixed : size[extent.id];
+      elements *= n;
+      if (d + 1 < tile.extents.size())
+        rows *= n;
+    }
+    bytes += tile.copies * elements * tile.elementBytes;
+    if (!tile.moves)
+      continue;
+    // CopyToDMA: a request per row, then the row's words.
+    int64_t transfers = 1;
+    for (int id : tile.loops)
+      transfers *= m.ranges[id] / size[id];
+    int64_t words = elements * llvm::divideCeil(tile.elementBytes, 4);
+    cycles += transfers * (rows * requestCycles + words * wordCycles);
+  }
+  return {cycles, bytes};
+}
+
+/// The sizes, one per loop id, with the fewest DMA cycles whose buffers fit in
+/// `budget` bytes (fewer bytes on a tie), each a divisor of its range, and
+/// every yielded op with a parallel loop tiled. Empty if none fits.
+// ponytail: exhaustive over every class's divisors; prune (e.g. branch and
+// bound on bytes) if a kernel has many classes.
+static ::mlir::SmallVector<int64_t> searchTileSizes(const TileModel &m,
+                                                    int64_t budget,
+                                                    int64_t requestCycles,
+                                                    int64_t wordCycles) {
+  using namespace ::mlir;
+  SmallVector<int> leaders, classOf;
+  SmallVector<SmallVector<int64_t>> choices;
+  DenseMap<int, int> index;
+  for (auto [id, range] : llvm::enumerate(m.ranges)) {
+    int leader = m.same.getLeaderValue(id);
+    auto [it, inserted] = index.try_emplace(leader, leaders.size());
+    if (inserted) {
+      leaders.push_back(leader);
+      SmallVector<int64_t> divisors;
+      for (int64_t d = 1; d <= range; ++d)
+        if (range % d == 0 && (!m.whole.contains(leader) || d == range))
+          divisors.push_back(d);
+      choices.push_back(divisors);
+    }
+    classOf.push_back(it->second);
+  }
+
+  SmallVector<size_t> pick(leaders.size(), 0);
+  SmallVector<int64_t> size(m.ranges.size()), best;
+  int64_t bestCycles = 0, bestBytes = 0;
+  while (true) {
+    for (auto [id, c] : llvm::enumerate(classOf))
+      size[id] = choices[c][pick[c]];
+    bool nested = llvm::all_of(m.parallel, [&](const SmallVector<int> &ids) {
+      return llvm::any_of(ids, [&](int id) { return size[id] < m.ranges[id]; });
+    });
+    if (nested) {
+      auto [cycles, bytes] = tileCost(m, size, requestCycles, wordCycles);
+      if (bytes <= budget &&
+          (best.empty() ||
+           std::tie(cycles, bytes) < std::tie(bestCycles, bestBytes))) {
+        best = size;
+        bestCycles = cycles;
+        bestBytes = bytes;
+      }
+    }
+    size_t c = 0;
+    for (; c < pick.size(); ++c) {
+      if (++pick[c] < choices[c].size())
+        break;
+      pick[c] = 0;
+    }
+    if (c == pick.size())
+      return best;
+  }
+}
+
 ::mlir::DiagnosedSilenceableFailure mlir::transform::TileAndFuseOp::apply(
     ::mlir::transform::TransformRewriter &rewriter,
     ::mlir::transform::TransformResults &results,
     ::mlir::transform::TransformState &state) {
   std::optional<int64_t> maxTileSize = getMaxTileSize();
   ArrayAttr explicitSizes = getTileSizesAttr();
-  if (maxTileSize.has_value() == static_cast<bool>(explicitSizes))
+  std::optional<int64_t> plmBytes = getPlmBytes();
+  if (maxTileSize.has_value() + static_cast<bool>(explicitSizes) +
+          plmBytes.has_value() !=
+      1)
     return emitSilenceableError()
-           << "expected exactly one of max_tile_size and tile_sizes";
+           << "expected exactly one of max_tile_size, tile_sizes and plm_bytes";
 
   // The op producing each yielded value, before anything changes, with its
   // tile sizes, one per loop: the tile of its function in every loop, or
@@ -194,6 +445,37 @@ tileSizes(::mlir::OpBuilder &builder, ::mlir::linalg::LinalgOp op,
         sizes[d] = tile;
       }
     }
+  }
+
+  TileModel model =
+      buildTileModel(llvm::to_vector(llvm::make_first_range(lasts)));
+  int64_t requestCycles = getDmaRequestCycles();
+  int64_t wordCycles = getDmaWordCycles();
+  if (plmBytes) {
+    SmallVector<int64_t> size =
+        searchTileSizes(model, *plmBytes, requestCycles, wordCycles);
+    if (size.empty())
+      return emitSilenceableError()
+             << "expected tile sizes whose buffers fit in " << *plmBytes
+             << " bytes";
+    int id = 0;
+    for (auto &[last, sizes] : lasts)
+      for (int64_t &tile : sizes) {
+        tile = size[id] == model.ranges[id] ? 0 : size[id];
+        ++id;
+      }
+  }
+
+  // The model's prediction for the sizes used, whichever chose them.
+  {
+    SmallVector<int64_t> size;
+    for (auto &[last, sizes] : lasts)
+      llvm::append_range(size, sizes);
+    for (auto [tile, range] : llvm::zip_equal(size, model.ranges))
+      if (tile == 0)
+        tile = range;
+    auto [cycles, bytes] = tileCost(model, size, requestCycles, wordCycles);
+    emitRemark() << "dma_cycles = " << cycles << ", plm_bytes = " << bytes;
   }
 
   // The sizes used, as tile_sizes would give them.

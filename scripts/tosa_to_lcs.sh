@@ -41,10 +41,15 @@
 #                        so it loads everything, computes everything, then stores
 #                        everything, on whole buffers; no schedule, ping-pong or
 #                        outstanding_load (default false)
-#   LCS_TILE_SIZES       tile sizes instead of the automatic ones: one list per
+#   LCS_TILE_SIZES       tile sizes instead of the cost model's: one list per
 #                        task result, one size per loop of the op producing it
 #                        (0 = untiled), e.g. '[[10, 10, 10], [10, 10]]' on gemm
 #                        SMALL. tile_sizes.txt has the sizes of a run, in this form.
+#   LCS_PLM_BYTES        the cost model (transform.sodap.tile_and_fuse): the tile
+#   LCS_DMA_REQUEST_CYCLES  sizes with the fewest DMA cycles whose buffers fit in
+#   LCS_DMA_WORD_CYCLES  LCS_PLM_BYTES (default 65536), with a request per tile
+#                        row costing LCS_DMA_REQUEST_CYCLES (64) and a word
+#                        LCS_DMA_WORD_CYCLES (1)
 #
 # Writes in <outdir>:
 #   ir_after_each_pass.mlir         the IR after each pass (also split in
@@ -62,7 +67,9 @@
 #   cpu/                            the baseline's bufferized.mlir, outlined.mlir, kernel.mlir
 #   layout.txt                      the options above
 #   tile_sizes.txt                  the tile sizes used, as LCS_TILE_SIZES takes them
-#   transform_tile_sizes.mlir       with LCS_TILE_SIZES: the schedules, with those sizes
+#   tile_cost.txt                   the cost model's DMA cycles and buffer bytes for them
+#   transform_tile_sizes.mlir       with any LCS_TILE_SIZES or model variable: the
+#                                   schedules, with those sizes or that model
 
 set -eou pipefail
 
@@ -97,15 +104,21 @@ case "$SEQUENTIAL" in true|false) ;; *) echo "LCS_SEQUENTIAL must be true or fal
 [ "$SEQUENTIAL" = true ] && OUTSTANDING_LOADS=false
 printf 'dma_word_stride=%s\nprofile=%s\noutstanding_loads=%s\nsequential=%s\n' \
   "$WORD_STRIDE" "$PROFILE" "$OUTSTANDING_LOADS" "$SEQUENTIAL" > layout.txt
-# LCS_TILE_SIZES replaces the automatic sizes of @tile_tasks, the only
-# tile_and_fuse on %tasks.
+# LCS_TILE_SIZES or the model's variables replace the attributes of
+# @tile_tasks's tile_and_fuse, the only one on %tasks.
+TILE_ATTRS=
 if [ -n "${LCS_TILE_SIZES:-}" ]; then
-  TILE_PATTERN='tile_and_fuse %tasks {max_tile_size = [0-9]* : i64}'
+  TILE_ATTRS="tile_sizes = $LCS_TILE_SIZES"
+elif [ -n "${LCS_PLM_BYTES:-}${LCS_DMA_REQUEST_CYCLES:-}${LCS_DMA_WORD_CYCLES:-}" ]; then
+  TILE_ATTRS="plm_bytes = ${LCS_PLM_BYTES:-65536} : i64, dma_request_cycles = ${LCS_DMA_REQUEST_CYCLES:-64} : i64, dma_word_cycles = ${LCS_DMA_WORD_CYCLES:-1} : i64"
+fi
+if [ -n "$TILE_ATTRS" ]; then
+  TILE_PATTERN='tile_and_fuse %tasks {[^}]*}'
   if ! grep -q "$TILE_PATTERN" "$TRANSFORM"; then
-    echo "LCS_TILE_SIZES: no '$TILE_PATTERN' in $TRANSFORM" >&2
+    echo "LCS_TILE_SIZES/LCS_PLM_BYTES/...: no '$TILE_PATTERN' in $TRANSFORM" >&2
     exit 1
   fi
-  sed "s|$TILE_PATTERN|tile_and_fuse %tasks {tile_sizes = $LCS_TILE_SIZES}|" \
+  sed "s|$TILE_PATTERN|tile_and_fuse %tasks {$TILE_ATTRS}|" \
     "$TRANSFORM" > transform_tile_sizes.mlir
   TRANSFORM=$PWD/transform_tile_sizes.mlir
 fi
@@ -198,6 +211,8 @@ step "$FRONTEND_DUMP" mlir-opt outlined.mlir $PLUGIN --pass-pipeline="builtin.mo
 # tile_and_fuse's remark: the sizes it used.
 { grep -o 'remark: tile_sizes = .*' "$FRONTEND_DUMP" || true; } \
   | sed 's/^remark: tile_sizes = //' > tile_sizes.txt
+{ grep -o 'remark: dma_cycles = .*' "$FRONTEND_DUMP" || true; } \
+  | sed 's/^remark: //' > tile_cost.txt
 
 section "$FRONTEND_DUMP" "Tile: bufferization, mlir-opt"
 step "$FRONTEND_DUMP" mlir-opt tasks.mlir $PLUGIN --pass-pipeline="builtin.module(

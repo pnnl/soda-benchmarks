@@ -50,6 +50,7 @@ func.func @epilogue(%A: tensor<8x12xf32>, %B: tensor<12x16xf32>, %C: tensor<8x16
 module attributes {transform.with_named_sequence} {
   transform.named_sequence @__transform_main(%root: !transform.any_op {transform.readonly}) {
     %tasks = transform.structured.match ops{["dataflow.task"]} in %root : (!transform.any_op) -> !transform.any_op
+    // expected-remark @below {{dma_cycles = }}
     // expected-remark @below {{tile_sizes = [[4, 4]]}}
     transform.sodap.tile_and_fuse %tasks {max_tile_size = 4 : i64} : !transform.any_op
     transform.yield
@@ -104,6 +105,7 @@ func.func @two_tasks(%A: tensor<8x8xf32>, %B: tensor<8x8xf32>) -> tensor<8x8xf32
 module attributes {transform.with_named_sequence} {
   transform.named_sequence @__transform_main(%root: !transform.any_op {transform.readonly}) {
     %tasks = transform.structured.match ops{["dataflow.task"]} in %root : (!transform.any_op) -> !transform.any_op
+    // expected-remark @below {{dma_cycles = }}
     // expected-remark @below {{tile_sizes = [[4, 4], [4, 4, 4]]}}
     transform.sodap.tile_and_fuse %tasks {max_tile_size = 4 : i64} : !transform.any_op
     transform.yield
@@ -161,6 +163,7 @@ func.func @two_results(%A: tensor<8x12xf32>, %x: tensor<12xf32>, %y: tensor<12xf
 module attributes {transform.with_named_sequence} {
   transform.named_sequence @__transform_main(%root: !transform.any_op {transform.readonly}) {
     %tasks = transform.structured.match ops{["dataflow.task"]} in %root : (!transform.any_op) -> !transform.any_op
+    // expected-remark @below {{dma_cycles = }}
     // expected-remark @below {{tile_sizes = [[4, 4], [4, 4]]}}
     transform.sodap.tile_and_fuse %tasks {max_tile_size = 4 : i64} : !transform.any_op
     transform.yield
@@ -205,6 +208,7 @@ func.func @gcd(%A: tensor<60x80xf32>, %B: tensor<80x70xf32>) -> tensor<60x70xf32
 module attributes {transform.with_named_sequence} {
   transform.named_sequence @__transform_main(%root: !transform.any_op {transform.readonly}) {
     %tasks = transform.structured.match ops{["dataflow.task"]} in %root : (!transform.any_op) -> !transform.any_op
+    // expected-remark @below {{dma_cycles = }}
     // expected-remark @below {{tile_sizes = [[10, 10, 10]]}}
     transform.sodap.tile_and_fuse %tasks {max_tile_size = 16 : i64} : !transform.any_op
     transform.yield
@@ -313,6 +317,7 @@ func.func @explicit_gcd(%A: tensor<60x80xf32>, %B: tensor<80x70xf32>) -> tensor<
 module attributes {transform.with_named_sequence} {
   transform.named_sequence @__transform_main(%root: !transform.any_op {transform.readonly}) {
     %tasks = transform.structured.match ops{["dataflow.task"]} in %root : (!transform.any_op) -> !transform.any_op
+    // expected-remark @below {{dma_cycles = }}
     // expected-remark @below {{tile_sizes = [[10, 10, 10]]}}
     transform.sodap.tile_and_fuse %tasks {tile_sizes = [[10, 10, 10]]} : !transform.any_op
     transform.yield
@@ -354,6 +359,7 @@ func.func @per_dim(%A: tensor<8x12xf32>, %B: tensor<12x16xf32>) -> tensor<8x16xf
 module attributes {transform.with_named_sequence} {
   transform.named_sequence @__transform_main(%root: !transform.any_op {transform.readonly}) {
     %tasks = transform.structured.match ops{["dataflow.task"]} in %root : (!transform.any_op) -> !transform.any_op
+    // expected-remark @below {{dma_cycles = }}
     // expected-remark @below {{tile_sizes = [[2, 4, 3]]}}
     transform.sodap.tile_and_fuse %tasks {tile_sizes = [[2, 4, 3]]} : !transform.any_op
     transform.yield
@@ -393,6 +399,7 @@ func.func @untiled(%A: tensor<8x12xf32>, %B: tensor<12x16xf32>) -> tensor<8x16xf
 module attributes {transform.with_named_sequence} {
   transform.named_sequence @__transform_main(%root: !transform.any_op {transform.readonly}) {
     %tasks = transform.structured.match ops{["dataflow.task"]} in %root : (!transform.any_op) -> !transform.any_op
+    // expected-remark @below {{dma_cycles = }}
     // expected-remark @below {{tile_sizes = [[2, 0, 0]]}}
     transform.sodap.tile_and_fuse %tasks {tile_sizes = [[2, 0, 0]]} : !transform.any_op
     transform.yield
@@ -428,7 +435,7 @@ func.func @both(%A: tensor<8x12xf32>, %B: tensor<12x16xf32>) -> tensor<8x16xf32>
 module attributes {transform.with_named_sequence} {
   transform.named_sequence @__transform_main(%root: !transform.any_op {transform.readonly}) {
     %tasks = transform.structured.match ops{["dataflow.task"]} in %root : (!transform.any_op) -> !transform.any_op
-    // expected-error @below {{expected exactly one of max_tile_size and tile_sizes}}
+    // expected-error @below {{expected exactly one of max_tile_size, tile_sizes and plm_bytes}}
     transform.sodap.tile_and_fuse %tasks {max_tile_size = 4 : i64, tile_sizes = [[2, 4, 3]]} : !transform.any_op
     transform.yield
   }
@@ -463,7 +470,7 @@ func.func @neither(%A: tensor<8x12xf32>, %B: tensor<12x16xf32>) -> tensor<8x16xf
 module attributes {transform.with_named_sequence} {
   transform.named_sequence @__transform_main(%root: !transform.any_op {transform.readonly}) {
     %tasks = transform.structured.match ops{["dataflow.task"]} in %root : (!transform.any_op) -> !transform.any_op
-    // expected-error @below {{expected exactly one of max_tile_size and tile_sizes}}
+    // expected-error @below {{expected exactly one of max_tile_size, tile_sizes and plm_bytes}}
     transform.sodap.tile_and_fuse %tasks : !transform.any_op
     transform.yield
   }
@@ -615,9 +622,127 @@ func.func @fused_reduction(%A: tensor<8x12xf32>, %B: tensor<12x16xf32>, %C: tens
 module attributes {transform.with_named_sequence} {
   transform.named_sequence @__transform_main(%root: !transform.any_op {transform.readonly}) {
     %tasks = transform.structured.match ops{["dataflow.task"]} in %root : (!transform.any_op) -> !transform.any_op
+    // expected-remark @below {{dma_cycles = }}
     // expected-remark @below {{tile_sizes = [[4, 4]]}}
     // expected-error @below {{expected the reductions in the yielded op with tile_sizes}}
     transform.sodap.tile_and_fuse %tasks {tile_sizes = [[4, 4]]} : !transform.any_op
+    transform.yield
+  }
+}
+
+// -----
+
+// gemm's two tasks with the cost model. The epilogue reads the contraction's
+// result, so i and j get one size in both. Loads: A (i, k) and B (k, j) in
+// every (i, j, k) iteration, C once per (i, j); stores: the result once per
+// (i, j). A request costs 64 cycles, a word 1: long rows pay, so j and k stay
+// whole and only i is tiled, by 4 (8 would leave the epilogue no loop).
+// A: 2 x (4 x 64 + 48), B: 2 x (12 x 64 + 192), C and the result:
+// 2 x (4 x 64 + 64) each. Buffers: A, B, C, the two results twice, the
+// accumulator once: 3712 bytes.
+// CHECK-LABEL: func.func @model(
+// CHECK: dataflow.task
+// CHECK:   scf.for
+// CHECK-NOT: scf.for
+// CHECK:     linalg.fill
+// CHECK-NOT: scf.for
+// CHECK:     linalg.matmul
+// CHECK: dataflow.task
+func.func @model(%A: tensor<8x12xf32>, %B: tensor<12x16xf32>, %C: tensor<8x16xf32>) -> tensor<8x16xf32> {
+  %zero = arith.constant 0.0 : f32
+  %r = dataflow.dispatch : tensor<8x16xf32> {
+    %mm_buf = bufferization.alloc_tensor() : tensor<8x16xf32>
+    %mm = dataflow.task : tensor<8x16xf32> {
+      %f = linalg.fill ins(%zero : f32) outs(%mm_buf : tensor<8x16xf32>) -> tensor<8x16xf32>
+      %0 = linalg.matmul ins(%A, %B : tensor<8x12xf32>, tensor<12x16xf32>) outs(%f : tensor<8x16xf32>) -> tensor<8x16xf32>
+      dataflow.yield %0 : tensor<8x16xf32>
+    }
+    %o_buf = bufferization.alloc_tensor() : tensor<8x16xf32>
+    %o = dataflow.task : tensor<8x16xf32> {
+      %0 = linalg.add ins(%mm, %C : tensor<8x16xf32>, tensor<8x16xf32>) outs(%o_buf : tensor<8x16xf32>) -> tensor<8x16xf32>
+      dataflow.yield %0 : tensor<8x16xf32>
+    }
+    dataflow.yield %o : tensor<8x16xf32>
+  }
+  return %r : tensor<8x16xf32>
+}
+
+module attributes {transform.with_named_sequence} {
+  transform.named_sequence @__transform_main(%root: !transform.any_op {transform.readonly}) {
+    %tasks = transform.structured.match ops{["dataflow.task"]} in %root : (!transform.any_op) -> !transform.any_op
+    // expected-remark @below {{dma_cycles = 3808, plm_bytes = 3712}}
+    // expected-remark @below {{tile_sizes = [[4, 0, 0], [4, 0]]}}
+    transform.sodap.tile_and_fuse %tasks {plm_bytes = 4096 : i64} : !transform.any_op
+    transform.yield
+  }
+}
+
+// -----
+
+// @model with half the bytes: B's whole (k, j) tile no longer fits, so k is
+// tiled by 6 and i by 2 (i by 4 needs 2272 bytes even with k by 3).
+// CHECK-LABEL: func.func @model_budget(
+// CHECK: dataflow.task
+// CHECK:   scf.for
+// CHECK:     linalg.fill
+// CHECK:     scf.for
+// CHECK:       linalg.matmul
+func.func @model_budget(%A: tensor<8x12xf32>, %B: tensor<12x16xf32>, %C: tensor<8x16xf32>) -> tensor<8x16xf32> {
+  %zero = arith.constant 0.0 : f32
+  %r = dataflow.dispatch : tensor<8x16xf32> {
+    %mm_buf = bufferization.alloc_tensor() : tensor<8x16xf32>
+    %mm = dataflow.task : tensor<8x16xf32> {
+      %f = linalg.fill ins(%zero : f32) outs(%mm_buf : tensor<8x16xf32>) -> tensor<8x16xf32>
+      %0 = linalg.matmul ins(%A, %B : tensor<8x12xf32>, tensor<12x16xf32>) outs(%f : tensor<8x16xf32>) -> tensor<8x16xf32>
+      dataflow.yield %0 : tensor<8x16xf32>
+    }
+    %o_buf = bufferization.alloc_tensor() : tensor<8x16xf32>
+    %o = dataflow.task : tensor<8x16xf32> {
+      %0 = linalg.add ins(%mm, %C : tensor<8x16xf32>, tensor<8x16xf32>) outs(%o_buf : tensor<8x16xf32>) -> tensor<8x16xf32>
+      dataflow.yield %0 : tensor<8x16xf32>
+    }
+    dataflow.yield %o : tensor<8x16xf32>
+  }
+  return %r : tensor<8x16xf32>
+}
+
+module attributes {transform.with_named_sequence} {
+  transform.named_sequence @__transform_main(%root: !transform.any_op {transform.readonly}) {
+    %tasks = transform.structured.match ops{["dataflow.task"]} in %root : (!transform.any_op) -> !transform.any_op
+    // expected-remark @below {{dma_cycles = 6240, plm_bytes = 1760}}
+    // expected-remark @below {{tile_sizes = [[2, 0, 6], [2, 0]]}}
+    transform.sodap.tile_and_fuse %tasks {plm_bytes = 2048 : i64} : !transform.any_op
+    transform.yield
+  }
+}
+
+// -----
+
+// @model with 32 bytes: not even 1x1 tiles fit (44 bytes).
+func.func @model_too_small(%A: tensor<8x12xf32>, %B: tensor<12x16xf32>, %C: tensor<8x16xf32>) -> tensor<8x16xf32> {
+  %zero = arith.constant 0.0 : f32
+  %r = dataflow.dispatch : tensor<8x16xf32> {
+    %mm_buf = bufferization.alloc_tensor() : tensor<8x16xf32>
+    %mm = dataflow.task : tensor<8x16xf32> {
+      %f = linalg.fill ins(%zero : f32) outs(%mm_buf : tensor<8x16xf32>) -> tensor<8x16xf32>
+      %0 = linalg.matmul ins(%A, %B : tensor<8x12xf32>, tensor<12x16xf32>) outs(%f : tensor<8x16xf32>) -> tensor<8x16xf32>
+      dataflow.yield %0 : tensor<8x16xf32>
+    }
+    %o_buf = bufferization.alloc_tensor() : tensor<8x16xf32>
+    %o = dataflow.task : tensor<8x16xf32> {
+      %0 = linalg.add ins(%mm, %C : tensor<8x16xf32>, tensor<8x16xf32>) outs(%o_buf : tensor<8x16xf32>) -> tensor<8x16xf32>
+      dataflow.yield %0 : tensor<8x16xf32>
+    }
+    dataflow.yield %o : tensor<8x16xf32>
+  }
+  return %r : tensor<8x16xf32>
+}
+
+module attributes {transform.with_named_sequence} {
+  transform.named_sequence @__transform_main(%root: !transform.any_op {transform.readonly}) {
+    %tasks = transform.structured.match ops{["dataflow.task"]} in %root : (!transform.any_op) -> !transform.any_op
+    // expected-error @below {{expected tile sizes whose buffers fit in 32 bytes}}
+    transform.sodap.tile_and_fuse %tasks {plm_bytes = 32 : i64} : !transform.any_op
     transform.yield
   }
 }

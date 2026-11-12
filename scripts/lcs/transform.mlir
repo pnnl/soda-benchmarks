@@ -61,13 +61,15 @@ module attributes {transform.with_named_sequence} {
     transform.yield
   }
 
-  // Each task gets its own nest (the tile as in @tile). LCS_TILE_SIZES in
-  // tosa_to_lcs.sh replaces max_tile_size here with tile_sizes.
+  // Each task gets its own nest, its sizes from the cost model (64 KiB of
+  // buffers; a DMA request 64 cycles, a word 1). LCS_TILE_SIZES and
+  // LCS_PLM_BYTES, LCS_DMA_REQUEST_CYCLES, LCS_DMA_WORD_CYCLES in
+  // tosa_to_lcs.sh replace these attributes.
   // fold_tensor_empty shrinks the private tensor.empty to tiles; its pattern
   // driver also removes the untiled ops left dead by the fusion.
   transform.named_sequence @tile_tasks(%func: !transform.any_op {transform.readonly}) {
     %tasks = transform.structured.match ops{["dataflow.task"]} in %func : (!transform.any_op) -> !transform.any_op
-    transform.sodap.tile_and_fuse %tasks {max_tile_size = 10 : i64} : !transform.any_op
+    transform.sodap.tile_and_fuse %tasks {plm_bytes = 65536 : i64, dma_request_cycles = 64 : i64, dma_word_cycles = 1 : i64} : !transform.any_op
     transform.apply_patterns to %func {
       transform.apply_patterns.tensor.fold_tensor_empty
     } : !transform.any_op

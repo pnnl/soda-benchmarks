@@ -76,17 +76,31 @@ def TileAndFuseOp : Op<Transform_Dialect, "sodap.tile_and_fuse",
       tile is static. gemm's fill + matmul, then its epilogue:
       `[[10, 10, 10], [10, 10]]`. Any other op with reductions in a nest
       (a fused producer) is an error: its sizes have no place in the list.
+    - `plm_bytes`, a cost model: the sizes with the fewest DMA cycles whose
+      buffers fit in `plm_bytes` bytes. It models the tasks as
+      `sodap-dataflow-load-store` and `sodap-dataflow-copy-to-dma` will cut
+      them: every tile of an argument is loaded, and every tile of a result
+      stored, at the innermost loop around its reader or writer, as a request
+      per row (`dma_request_cycles`) then one word at a time
+      (`dma_word_cycles`). Every buffer between tasks counts twice
+      (ping-pong); a buffer inside a compute task counts once. Compute is
+      left out: the same iterations run whatever the tiles. Each size divides
+      its range, every yielded op keeps a tiled parallel loop, and loops whose
+      tiles meet in a buffer between two tasks get one size. Every
+      combination of divisors is tried.
 
     The parallel sizes tile the nest, the reduction sizes the reduction:
     `[4, 4, 4]` on parallel-parallel-reduction tiles by `[4, 4, 0]` then
-    `[0, 0, 4]`. Both forms report the sizes used as a remark,
-    `tile_sizes = [...]`, which given back as `tile_sizes` tiles the same.
+    `[0, 0, 4]`. Every form reports the sizes used as a remark,
+    `tile_sizes = [...]`, which given back as `tile_sizes` tiles the same,
+    and the model's prediction for them as another,
+    `dma_cycles = ..., plm_bytes = ...`.
 
     #### Return modes
 
     Returns nothing, and only reads the handle. Fails silenceably, without
-    changing the IR, if not exactly one of `max_tile_size` and `tile_sizes` is
-    set, a target is not a `dataflow.task` in a `func.func`, a yielded value
+    changing the IR, if not exactly one of `max_tile_size`, `tile_sizes` and
+    `plm_bytes` is set, no sizes fit in `plm_bytes`, a target is not a `dataflow.task` in a `func.func`, a yielded value
     is not produced by a linalg op with a parallel dim, a loop range in the
     function is dynamic, or `tile_sizes` doesn't fit the yielded ops. Fails
     definitely if tiling fails, or if `tile_sizes` is given and a fused op
@@ -96,7 +110,10 @@ def TileAndFuseOp : Op<Transform_Dialect, "sodap.tile_and_fuse",
   let arguments = (ins
     TransformHandleTypeInterface:$target,
     OptionalAttr<ConfinedAttr<I64Attr, [IntPositive]>>:$max_tile_size,
-    OptionalAttr<ArrayAttr>:$tile_sizes);
+    OptionalAttr<ArrayAttr>:$tile_sizes,
+    OptionalAttr<ConfinedAttr<I64Attr, [IntPositive]>>:$plm_bytes,
+    DefaultValuedAttr<I64Attr, "64">:$dma_request_cycles,
+    DefaultValuedAttr<I64Attr, "1">:$dma_word_cycles);
 
   let results = (outs);
 
