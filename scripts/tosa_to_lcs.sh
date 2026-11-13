@@ -29,6 +29,13 @@
 #
 # Environment:
 #   LCS_TRANSFORM        schedules, default scripts/lcs/transform.mlir
+#   LCS_TILES            kernel (default): the whole kernel on one tile
+#                        (sodap-tosa-outline-kernel); operators: one accelerator
+#                        per operator, today tosa.matmul, launched once per
+#                        invocation with its shapes (sodap-tosa-outline-operators,
+#                        sodap-join-multiple-tiles); always without
+#                        outstanding loads, stride 2; always without
+#                        outstanding loads, stride 2
 #   LCS_ENTRY            the partition to run, default tasks (ops chained through
 #                        their inits share a task); tasks_trmm is trmm's from the plan
 #   LCS_DMA_WORD_STRIDE  32-bit words per element in shared memory, 2 (default) or 1.
@@ -45,7 +52,8 @@
 #                        task result, one size per loop of the op producing it
 #                        (0 = untiled), e.g. '[[10, 10, 10], [10, 10]]' on gemm
 #                        SMALL. tile_sizes.txt has the sizes of a run, in this form.
-#   LCS_PLM_BYTES        cap on final scheduled logical storage (default 327680).
+#   LCS_PLM_BYTES        cap on final scheduled logical storage (default 327680),
+#                        per tile.
 #   LCS_REUSE_BUFFER_BUDGET  conservative reuse admission budget (default 262144),
 #                        within the final total cap, not additional to it.
 #   LCS_DMA_REQUEST_CYCLES  cost per DMA row request (default 64).
@@ -103,6 +111,14 @@ PLUGIN="--load-dialect-plugin=$MLIR_PLUGIN_PATH --load-pass-plugin=$MLIR_PLUGIN_
 TOSA_PLUGIN="--load-pass-plugin=${SODAP_TOSA_PLUGIN:-$(dirname "$MLIR_PLUGIN_PATH")/SODATosaPlugin.so}"
 TRANSFORM="${LCS_TRANSFORM:-$REPO_DIR/scripts/lcs/transform.mlir}"
 ENTRY="${LCS_ENTRY:-tasks}"
+TILES="${LCS_TILES:-kernel}"
+case "$TILES" in
+  kernel) OUTLINE=sodap-tosa-outline-kernel ;;
+  # One tile per operator, its shapes as arguments (one accelerator, one
+  # launch per invocation); the host's reshapes cancel with the model's.
+  operators) OUTLINE='sodap-tosa-outline-operators, sodap-join-multiple-tiles, func.func(canonicalize)' ;;
+  *) echo 'LCS_TILES must be kernel or operators' >&2; exit 1 ;;
+esac
 TOP=forward_kernel
 TILE=tiles/$TOP
 PROFILE=${LCS_PROFILE:-false}
@@ -117,16 +133,25 @@ case "$OVERLAP" in true|false) ;; *) echo 'LCS_OVERLAP must be true or false' >&
 [ "$OVERLAP" = false ] && SEQUENTIAL=true
 WORD_STRIDE=${LCS_DMA_WORD_STRIDE:-2}
 case "$WORD_STRIDE" in 1|2) ;; *) echo "LCS_DMA_WORD_STRIDE must be 1 or 2" >&2; exit 1 ;; esac
+if [ "$TILES" = operators ] && [ "$WORD_STRIDE" != 2 ]; then
+  echo "LCS_TILES=operators needs LCS_DMA_WORD_STRIDE=2 (the descriptor's ABI)" >&2
+  exit 1
+fi
 case "$PROFILE" in true|false) ;; *) echo "LCS_PROFILE must be true or false" >&2; exit 1 ;; esac
 case "$OUTSTANDING_LOADS" in true|false) ;; *) echo "LCS_OUTSTANDING_LOADS must be true or false" >&2; exit 1 ;; esac
 case "$SEQUENTIAL" in true|false) ;; *) echo "LCS_SEQUENTIAL must be true or false" >&2; exit 1 ;; esac
 [ "$SEQUENTIAL" = true ] && OUTSTANDING_LOADS=false
+# One accelerator per operator: no outstanding-load task (its requests would
+# need the descriptor the load task reads).
+[ "$TILES" = operators ] && OUTSTANDING_LOADS=false
 printf 'dma_word_stride=%s\nprofile=%s\noutstanding_loads=%s\nsequential=%s\n' \
   "$WORD_STRIDE" "$PROFILE" "$OUTSTANDING_LOADS" "$SEQUENTIAL" > layout.txt
 printf 'reuse_buffer_budget=%s\nplm_budget=%s\noverlap=%s\n' "$REUSE_BUFFER_BUDGET" "$TOTAL_PLM_BYTES" "$OVERLAP" >> layout.txt
 # Rank proposals using the actual scheduled IR, with the same overlap/reuse
 # policy for both ablation variants. Explicit tile sizes remain reproducible.
-if [ -z "${LCS_TILE_SIZES:-}" ] && [ "${_LCS_INTERNAL_CANDIDATE:-false}" = false ]; then
+# ponytail: no search with LCS_TILES=operators (it reruns the whole script per
+# candidate); each tile takes the cost model's sizes.
+if [ -z "${LCS_TILE_SIZES:-}" ] && [ "${_LCS_INTERNAL_CANDIDATE:-false}" = false ] && [ "$TILES" = kernel ]; then
   python3 "$REPO_DIR/scripts/lcs/select_tiles.py" "$INPUT" "$PWD" "$REPO_DIR/scripts/tosa_to_lcs.sh"
   export LCS_TILE_SIZES="$(cat selected_tile_sizes.txt)"
 fi
@@ -211,7 +236,7 @@ FRONT_END="func.func(
     ),
     linalg-fold-unit-extent-dims,
     linalg-fuse-elementwise-ops,
-    func.func(sodap-linalg-constants-to-indices),
+    func.func(sodap-linalg-constants-to-indices, sodap-dataflow-bind-dims),
     canonicalize"
 BUFFERIZE="one-shot-bufferize{bufferize-function-boundaries function-boundary-type-conversion=identity-layout-map},
     canonicalize,
@@ -225,7 +250,7 @@ step "$FRONTEND_DUMP" mlir-opt "$INPUT" $TOSA_PLUGIN --pass-pipeline="builtin.mo
       sodap-tosa-raise-transposes,
       sodap-tosa-fold-constant-transposes
     ),
-    sodap-tosa-outline-kernel
+    $OUTLINE
   )" -o outlined.mlir
 
 section "$FRONTEND_DUMP" "Tile: front end, compute tasks and tiling ($ENTRY), mlir-opt"
@@ -253,7 +278,7 @@ section "$ACC_DUMP" "Tile: load and store tasks, $([ "$SEQUENTIAL" = true ] && e
 step "$ACC_DUMP" mlir-opt bufferized.mlir $PLUGIN --pass-pipeline="builtin.module(
     builtin.module(
       canonicalize,
-      func.func(sodap-dataflow-load-store),
+      func.func(sodap-dataflow-bind-dims, sodap-dataflow-load-store, sodap-dataflow-bind-dims),
       canonicalize,
       $STAGES,
       canonicalize
@@ -262,10 +287,19 @@ step "$ACC_DUMP" mlir-opt bufferized.mlir $PLUGIN --pass-pipeline="builtin.modul
 
 { grep 'remark: reuse_buffer ' "$ACC_DUMP" || true; } | sed 's/^.*remark: / /' > reuse_decisions.txt
 section "$ACC_DUMP" "Scheduled DMA work and total logical storage"
-step "$ACC_DUMP" mlir-opt dataflow.mlir $PLUGIN --pass-pipeline="builtin.module(
-  sodap-dataflow-report-cost{file=schedule_cost.json request-cycles=${LCS_DMA_REQUEST_CYCLES:-64} word-cycles=${LCS_DMA_WORD_CYCLES:-1} dma-word-stride=$WORD_STRIDE plm-bytes=$TOTAL_PLM_BYTES}
-)" -o /dev/null
-python3 -c 'import json; c=json.load(open("schedule_cost.json")); print("dma_cycles = %d, plm_bytes = %d" % (c["dma_cycles"], c["plm_bytes"]))' > tile_cost.txt
+REPORT_COST="sodap-dataflow-report-cost{file=schedule_cost.json request-cycles=${LCS_DMA_REQUEST_CYCLES:-64} word-cycles=${LCS_DMA_WORD_CYCLES:-1} dma-word-stride=$WORD_STRIDE plm-bytes=$TOTAL_PLM_BYTES}"
+COST_LINE='import json,sys; c=json.load(open(sys.argv[1])); print(sys.argv[2] + "dma_cycles = %d, plm_bytes = %d" % (c["dma_cycles"], c["plm_bytes"]))'
+if [ "$TILES" = kernel ]; then
+  step "$ACC_DUMP" mlir-opt dataflow.mlir $PLUGIN --pass-pipeline="builtin.module($REPORT_COST)" -o /dev/null
+  python3 -c "$COST_LINE" schedule_cost.json '' > tile_cost.txt
+else
+  # Each tile has its own PLM: one report and one budget per tile, in its
+  # directory; tile_cost.txt has a line per tile.
+  step "$ACC_DUMP" mlir-opt dataflow.mlir $PLUGIN --pass-pipeline="builtin.module(builtin.module($REPORT_COST))" -o /dev/null
+  for dir in tiles/*/; do
+    python3 -c "$COST_LINE" "$dir/schedule_cost.json" "$(basename "$dir"): "
+  done > tile_cost.txt
+fi
 [ "${_LCS_INTERNAL_CANDIDATE:-false}" = true ] && exit 0
 
 # The passes taking top-func find the kernel by the tile's name, and write
@@ -302,8 +336,10 @@ step "$ACC_DUMP" mlir-opt dataflow.mlir $PLUGIN --pass-pipeline="builtin.module(
     sodap-tiles-to-llvm
   )" -o acc.mlir
 
-$DOCKER_RUN llvm-link -S - "$TILE/ac_channel_specializations.ll" < "$TILE/acc.ll" \
-  | $DOCKER_RUN opt -passes=always-inline -S -o "$TILE/05_hw_acc.ll"
+for dir in tiles/*/; do
+  $DOCKER_RUN llvm-link -S - "$dir/ac_channel_specializations.ll" < "$dir/acc.ll" \
+    | $DOCKER_RUN opt -passes=always-inline -S -o "$dir/05_hw_acc.ll"
+done
 cp "$TILE/05_hw_acc.ll" "$TILE/architecture.xml" .
 
 section "$HOST_DUMP" "Host: TOSA to linalg, bufferization, the ESP calls, mlir-opt"

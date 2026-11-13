@@ -42,6 +42,15 @@ _DATASETS: dict[str, dict[str, dict[str, int]]] = {
         "LARGE": {"ni": 800, "nj": 900, "nk": 1100, "nl": 1200},
         "EXTRALARGE": {"ni": 1600, "nj": 1800, "nk": 2200, "nl": 2400},
     },
+    # twomm without its elementwise ops (kernels/twomm_mm): twomm's shapes.
+    "twomm_mm": {
+        "TEST": {"ni": 4, "nj": 4, "nk": 4, "nl": 4},
+        "MINI": {"ni": 16, "nj": 18, "nk": 22, "nl": 24},
+        "SMALL": {"ni": 40, "nj": 50, "nk": 70, "nl": 80},
+        "MEDIUM": {"ni": 180, "nj": 190, "nk": 210, "nl": 220},
+        "LARGE": {"ni": 800, "nj": 900, "nk": 1100, "nl": 1200},
+        "EXTRALARGE": {"ni": 1600, "nj": 1800, "nk": 2200, "nl": 2400},
+    },
     "threemm": {
         "TEST": {"ni": 4, "nj": 4, "nk": 4, "nl": 4, "nm": 4},
         "MINI": {"ni": 16, "nj": 18, "nk": 20, "nl": 22, "nm": 24},
