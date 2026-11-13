@@ -68,7 +68,8 @@ def StreamOp : DataflowOp<"stream", [
   let hasVerifier = 1;
   let builders = [
     OpBuilder<(ins "mlir::Type":$channel),
-        "build($_builder, $_state, channel, 1);">
+        "build($_builder, $_state, channel, "
+        "::llvm::cast<::mlir::sodap::dataflow::StreamType>(channel).getDepth());">
   ];
 }
 
@@ -140,13 +141,16 @@ def StreamPeekOp : DataflowOp<"stream_peek", []> {
 //===----------------------------------------------------------------------===//
 
 def DispatchOp : DataflowOp<"dispatch", [RecursiveMemoryEffects,
-      SingleBlockImplicitTerminator<"YieldOp">,
-      ParentOneOf<["func::FuncOp", "affine::AffineForOp"]>]> {
+      SingleBlockImplicitTerminator<"YieldOp">]> {
   let summary = "Represent a dataflow dispatch region";
   let description = [{
     Dispatch has a transparent region holding the stages to be dispatched. It
     is the analogue of an HLS `#pragma HLS DATAFLOW` region: every stage in the
     body runs concurrently, communicating through the streams declared in it.
+
+    Its parent is a `func.func`, an `affine.for`, or, during soda-opt's
+    outlining, a `soda.launch` (the function's body) then a `soda.func` (the
+    kernel, a `func.func` again after `-soda-generate-bambu-accelcode`).
   }];
 
   let results = (outs Variadic<AnyType>:$results);
@@ -285,6 +289,45 @@ def YieldOp : DataflowOp<"yield", [NoMemoryEffect, ReturnLike, Terminator,
   let assemblyFormat = "$results attr-dict ( `:` type($results)^ )?";
 
   let builders = [OpBuilder<(ins), "build($_builder, $_state, mlir::ValueRange());">];
+}
+
+//===----------------------------------------------------------------------===//
+// Host operations
+//===----------------------------------------------------------------------===//
+
+def LaunchOp : DataflowOp<"launch", [
+      DeclareOpInterfaceMethods<SymbolUserOpInterface>,
+      AttrSizedOperandSegments]> {
+  let summary = "Run a kernel on its accelerator tile";
+  let description = [{
+    The host's call of a kernel, the analogue of `gpu.launch_func`: `kernel`
+    names a function in a nested module, `@module::@function`, made by
+    `sodap-tosa-outline-kernel`. On tensors, the kernel's results are the op's
+    results. Bufferization turns each result into a buffer allocated by the
+    host and passed in `outs`, which is what `buffer-results-to-out-params`
+    does to the kernel's signature: the operands are then the kernel's
+    arguments, in order. The kernel reads `inputs` and writes `outs`.
+
+    Only the symbol is checked, not the types: the kernel is bufferized and
+    lowered to LLVM (`sodap-tiles-to-llvm` leaves a declaration) while the
+    host is still on tensors.
+
+    Example:
+
+    ```mlir
+    %r = dataflow.launch @k::@k(%a) : (tensor<4xf32>) -> tensor<4xf32>
+    // after bufferization
+    dataflow.launch @k::@k(%a) outs(%r : memref<4xf32>) : (memref<4xf32>) -> ()
+    ```
+  }];
+
+  let arguments = (ins SymbolRefAttr:$kernel, Variadic<AnyType>:$inputs,
+    Variadic<AnyMemRef>:$outs);
+  let results = (outs Variadic<AnyType>:$results);
+  let assemblyFormat = [{
+    $kernel `(` $inputs `)` ( `outs` `(` $outs^ `:` type($outs) `)` )?
+    attr-dict `:` functional-type($inputs, $results)
+  }];
 }
 
 #endif // SODAP_DIALECT_DATAFLOW_OPS_TD

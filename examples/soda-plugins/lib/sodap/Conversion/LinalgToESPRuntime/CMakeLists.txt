@@ -1,15 +1,22 @@
 add_mlir_dialect_library(MLIRLinalgToESPRuntime
         ESPPasses.cpp
+        GenerateReusableGemm.cpp
+        GenerateReusableOperator.cpp
+        ReusableGemmToESP.cpp
 
         ADDITIONAL_HEADER_DIRS
         ${PROJECT_SOURCE_DIR}/include/sodap
 
         DEPENDS
         MLIRSODAPPassesIncGen
+        MLIRDataflowIncGen
 
         LINK_LIBS PUBLIC
         MLIRIR
         MLIRFuncDialect
         MLIRLinalgDialect
         MLIRMemRefDialect
+        MLIRSCFDialect
+        MLIRSODAPDataflow
+        MLIRSODAPDataflowTransforms
         )

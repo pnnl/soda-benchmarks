@@ -19,8 +19,21 @@ add_mlir_dialect_library(MLIRSODAP
         MLIRIR
         MLIRInferTypeOpInterface
         MLIRFuncDialect
+        MLIRAffineDialect
+        MLIRLinalgDialect
+        MLIRLinalgTransforms
+        MLIRMemRefDialect
+        MLIRSCFDialect
+        MLIRSCFTransforms
+        MLIRTensorDialect
+        MLIRTilingInterface
+        MLIRArithDialect
+        MLIRBufferizationDialect
+        MLIRTransformUtils
+        MLIRSODAPDataflow
         )
 
 add_subdirectory(Dialect)
+add_subdirectory(Tosa)
 add_subdirectory(Conversion)
 add_subdirectory(ExecutionEngine)

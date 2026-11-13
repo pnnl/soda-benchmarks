@@ -92,8 +92,9 @@ struct NodesToFunc : public impl::NodesToFuncBase<NodesToFunc> {
       SmallVector<DispatchOp> dispatches;
       func.walk([&](DispatchOp dispatch) { dispatches.push_back(dispatch); });
 
+      // Numbered across the dispatches: each one's nodes get their own names.
+      unsigned index = 0;
       for (auto dispatch : dispatches) {
-        unsigned index = 0;
         SmallVector<NodeOp> nodes(dispatch.getOps<NodeOp>());
         for (auto node : nodes)
           outlineNode(node, func, index++, builder);

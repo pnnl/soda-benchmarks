@@ -92,6 +92,18 @@ void setTopFuncAttr(Operation *op);
 bool hasRuntimeAttr(Operation *op);
 void setRuntimeAttr(Operation *op);
 
+/// One-shot-bufferize support for dispatch, task, yield and launch.
+void registerBufferizableOpInterfaceExternalModels(DialectRegistry &registry);
+
+/// Where a pass writes `file` for the IR holding `op`: in a tile (a module
+/// with `sodap.tile_dir`, set by `sodap-tosa-outline-kernel`), under that
+/// directory, created if needed; elsewhere, `file` as given.
+std::string getTileFilePath(Operation *op, llvm::StringRef file);
+
+/// The top function of `module`: `topFunc` if given, else the module's name
+/// (a tile's kernel is named after its module), else empty.
+std::string getTopName(ModuleOp module, llvm::StringRef topFunc);
+
 } // namespace dataflow
 } // namespace sodap
 } // namespace mlir

@@ -75,23 +75,18 @@ def emit_testdata(path: str, arg_order: list[int] | None = None) -> None:
     with torch.no_grad():
         golden = model(*inputs)
 
-    if isinstance(golden, tuple):
-        raise SystemExit(
-            "--emit-testdata supports single-output kernels only; "
-            f"{'$kernel_name'} returns {len(golden)} tensors"
-        )
+    outputs = list(golden) if isinstance(golden, (tuple, list)) else [golden]
 
     ctype = _C_TYPES[dtype_name]
-    out_n = golden.numel()
+    out_n = sum(result.numel() for result in outputs)
 
-    # @forward takes the inputs first and the destination buffer last, which is
-    # what bufferization leaves behind, so index len(inputs) is the output.
+    # Bufferization appends one destination argument per returned tensor.
     n_in = len(inputs)
     if arg_order is None:
-        arg_order = list(range(n_in + 1))
-    if sorted(arg_order) != list(range(n_in + 1)):
+        arg_order = list(range(n_in + len(outputs)))
+    if sorted(arg_order) != list(range(n_in + len(outputs))):
         raise SystemExit(
-            f"--arg-order must be a permutation of 0..{n_in}, got {arg_order}"
+            f"--arg-order must be a permutation of 0..{n_in + len(outputs) - 1}, got {arg_order}"
         )
 
     def shape(tensor):
@@ -126,12 +121,17 @@ def emit_testdata(path: str, arg_order: list[int] | None = None) -> None:
         parts.append("};")
         parts.append("")
 
+    offset = 0
+    for result in outputs:
+        names.append("td_out" if offset == 0 else f"(td_out + {offset})")
+        offset += result.numel()
+
     parts += [
-        f"/* result: shape {shape(golden)} */",
+        f"/* results: shapes {', '.join(shape(result) for result in outputs)} */",
         f"static td_elem_t td_out[{out_n}];",
         "",
         f"static const td_elem_t td_golden[{out_n}] = {{",
-        _c_array(golden.reshape(-1).tolist()),
+        _c_array([value for result in outputs for value in result.reshape(-1).tolist()]),
         "};",
         "",
         "#define TD_OUT     td_out",
@@ -140,7 +140,7 @@ def emit_testdata(path: str, arg_order: list[int] | None = None) -> None:
         "/* forward_kernel's parameter order, which -soda-outline-bambu-code",
         f" * derived by first use: {arg_order} into @forward's signature. */",
         "#define TD_CALL(F) F("
-        + ", ".join(names[i] if i < n_in else "td_out" for i in arg_order)
+        + ", ".join(names[i] for i in arg_order)
         + ")",
         # A real prototype rather than an empty parameter list: C2x removed those,
         # and the arity is only known here.

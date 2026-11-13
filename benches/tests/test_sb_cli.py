@@ -190,9 +190,10 @@ class TestCpuAndEspBackends:
             ("cpu", "llvm", "$(ODIR)/05_llvm_{flow}.ll"),
             ("cpu", "binary", "$(ODIR)/cpu/{flow}/06_kernel"),
             ("cpu", "simulation", "$(ODIR)/cpu/{flow}/07_results.txt"),
-            ("esp", "llvm", "$(ODIR)/05_llvm_{flow}.ll"),
-            ("esp", "object", "$(ODIR)/esp/{flow}/06_kernel_riscv.o"),
+            ("esp", "llvm", "$(ODIR)/esp/{flow}/05_kernel_riscv.ll $(ODIR)/esp/{flow}/05_hw_acc.ll"),
+            ("esp", "object", "$(ODIR)/esp/{flow}/06_kernel_riscv.o $(ODIR)/esp/{flow}/06_verilog.v"),
             ("esp", "binary", "$(ODIR)/esp/{flow}/07_kernel.riscv"),
+            ("esp", "verilog", "$(ODIR)/esp/{flow}/06_verilog.v"),
         ],
     )
     def test_target_paths(
@@ -204,12 +205,8 @@ class TestCpuAndEspBackends:
         got = resolve_target(flow, backend, stage, device="nangate45")
         assert got == expected.format(flow=flow)
 
-    def test_esp_backend_selects_the_esp_schedule(self, tmp_path: Path) -> None:
-        """--backend esp implies the schedule that produces the ESP calls.
-
-        The backend is only reachable through that rewrite, so requiring a second
-        flag to enable it would just be a way to get a silently CPU-only build.
-        """
+    def test_esp_backend_selects_generated_lcs(self, tmp_path: Path) -> None:
+        """The generated ESP path must not silently select the legacy FFN pass."""
         base = _make_base_dir(tmp_path)
         exp_dir = _run_scaffold(
             base,
@@ -220,7 +217,8 @@ class TestCpuAndEspBackends:
         )
 
         schedule = (exp_dir / "transform.mlir").read_text()
-        assert "sodap-linalg-batch-matmul-to-esp" in schedule
+        assert "sodap-linalg-batch-matmul-to-esp" not in schedule
+        assert "TARGET=$(ODIR)/esp/transformed/06_kernel_riscv.o $(ODIR)/esp/transformed/06_verilog.v" in (exp_dir / "Makefile").read_text()
 
     def test_explicit_instrumentation_overrides_the_esp_default(
         self, tmp_path: Path
@@ -1726,7 +1724,7 @@ class TestTransformSchedules:
         assert (exp_dir / "IPs" / "sodaInstrHWCounters.v").is_file()
         assert "BAMBU_IP_INTEGRATION=true" in (exp_dir / "Makefile").read_text()
 
-    def test_every_kernel_has_a_full_alo_soda_mini_set(self) -> None:
+    def test_polybench_kernels_have_a_full_alo_soda_mini_set(self) -> None:
         """65 files: 13 bare schedules plus one per instrumentation recipe."""
         from benches import catalog
         from sb_cli.schedules import resolve_schedule
@@ -1738,7 +1736,14 @@ class TestTransformSchedules:
             "change-location-exposed-ports",
             "hw-counters",
         ]
-        for kernel in catalog.available():
+        # These schedules cover the upstream PolyBench kernels. Additional
+        # validation apps (e.g. gemmreuse) use their own lowering path.
+        kernels = {
+            "atax", "bicg", "doitgen", "gemm", "gemver", "gesummv", "mvt",
+            "symm", "syr2k", "syrk", "threemm", "trmm", "twomm",
+        }
+        assert kernels <= set(catalog.available())
+        for kernel in kernels:
             for recipe in recipes:
                 path = resolve_schedule(
                     "alo_soda",
@@ -1818,3 +1823,46 @@ class TestTransformSchedules:
         )
 
         assert 'default_ts: str = "alo_soda"' in (exp_dir / "flow.py").read_text()
+
+
+class TestLcsArtifacts:
+    def test_argument_order_uses_the_actual_launch(self, tmp_path: Path) -> None:
+        import subprocess
+        import sys
+        from benches import REPO_ROOT
+
+        source = tmp_path / "outlined.mlir"
+        source.write_text(
+            "soda.launch_func  @forward_kernel::@forward_kernel "
+            "args(%arg2 : memref<4xf32>, %arg0 : memref<f32>, "
+            "%arg1 : memref<4xf32>)\n"
+        )
+        result = subprocess.run(
+            [sys.executable, str(REPO_ROOT / "scripts/lcs/argument_order.py"), str(source)],
+            check=True, text=True, capture_output=True,
+        )
+        assert result.stdout.strip() == "2 0 1"
+        source.write_text(source.read_text().replace("%arg1", "%arg2"))
+        result = subprocess.run(
+            [sys.executable, str(REPO_ROOT / "scripts/lcs/argument_order.py"), str(source)],
+            text=True, capture_output=True,
+        )
+        assert result.returncode != 0
+        assert "distinct forward arguments" in result.stderr
+
+    @pytest.mark.parametrize("kernel", ["bicg", "mvt"])
+    def test_multiple_results_get_distinct_destinations(self, tmp_path: Path, kernel: str) -> None:
+        import subprocess
+        import sys
+
+        base = _make_base_dir(tmp_path)
+        exp = _run_scaffold(base, output_dir="multi", benchmark_name=kernel)
+        header = exp / "testdata.h"
+        subprocess.run(
+            [sys.executable, str(exp / "torchscript.py"), "--emit-testdata", str(header)],
+            check=True, capture_output=True, text=True,
+        )
+        text = header.read_text()
+        assert "#define TD_OUT_N   80" in text
+        assert "td_out, (td_out + " in text
+        assert "single-output kernels only" not in text

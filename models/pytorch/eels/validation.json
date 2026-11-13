@@ -1,0 +1,346 @@
+{
+  "status": "PASS",
+  "date": "2026-11-10T15:05:10.232796-05:00",
+  "source_base": "9f2dfa504ace23e4cc6f24b25fd1115ed6d3a051",
+  "branch": "local/eels-reusable",
+  "published": false,
+  "model": "local 240-bin EELS encoder, float32 batch one",
+  "training_provenance": "not established",
+  "outputs": [
+    "z_mean[16]",
+    "z_log_var[16]"
+  ],
+  "hardware_bindings": {
+    "conv": {
+      "instance": 0,
+      "socket": 0,
+      "module": "conv_kernel"
+    },
+    "add": {
+      "instance": 0,
+      "socket": 0,
+      "module": "add_kernel"
+    },
+    "gemm": {
+      "instance": 0,
+      "socket": 0,
+      "module": "gemm_kernel"
+    }
+  },
+  "hardware_invocations": [
+    "conv",
+    "conv",
+    "conv",
+    "conv",
+    "gemm",
+    "gemm"
+  ],
+  "fused_leaky_relus": 4,
+  "cpu_operations": {
+    "transpose": 2
+  },
+  "arena_bytes": 382848,
+  "programming": "runtime DMA descriptors; ESP start/done MMIO; fixed tiles and resources",
+  "compiler_tests": 68,
+  "frontend_graph_tests": 13,
+  "pytorch": 1.1920928955078125e-07,
+  "native": {
+    "status": "PASS",
+    "backend": "native-operator-oracle",
+    "outputs": 32,
+    "max_abs_error": 7.450580596923828e-08,
+    "atol": 1e-06,
+    "rtol": 1e-05,
+    "wall_seconds": 0.00026643899036571383,
+    "top5": [
+      30,
+      5,
+      25,
+      8,
+      15
+    ],
+    "reference_top5": [
+      30,
+      5,
+      25,
+      8,
+      15
+    ],
+    "operator_counts": {
+      "conv": 4,
+      "transpose": 2,
+      "gemm": 2
+    },
+    "fused_relus": 0,
+    "fused_leaky_relus": 4,
+    "output_slices": [
+      {
+        "shape": [
+          1,
+          16
+        ],
+        "offset_elements": 0,
+        "arena_offset_bytes": 349952
+      },
+      {
+        "shape": [
+          1,
+          16
+        ],
+        "offset_elements": 16,
+        "arena_offset_bytes": 350080
+      }
+    ]
+  },
+  "rtl_periodic_stalls": {
+    "status": "PASS",
+    "backend": "rtl-stalls",
+    "outputs": 32,
+    "max_abs_error": 7.450580596923828e-08,
+    "atol": 1e-06,
+    "rtol": 1e-05,
+    "wall_seconds": 2.0153095810092054,
+    "top5": [
+      30,
+      5,
+      25,
+      8,
+      15
+    ],
+    "reference_top5": [
+      30,
+      5,
+      25,
+      8,
+      15
+    ],
+    "operator_counts": {
+      "conv": 4,
+      "transpose": 2,
+      "gemm": 2
+    },
+    "fused_relus": 0,
+    "fused_leaky_relus": 4,
+    "output_slices": [
+      {
+        "shape": [
+          1,
+          16
+        ],
+        "offset_elements": 0,
+        "arena_offset_bytes": 349952
+      },
+      {
+        "shape": [
+          1,
+          16
+        ],
+        "offset_elements": 16,
+        "arena_offset_bytes": 350080
+      }
+    ]
+  },
+  "rtl_dma_latency_97": {
+    "status": "PASS",
+    "backend": "rtl-latency",
+    "outputs": 32,
+    "max_abs_error": 7.450580596923828e-08,
+    "atol": 1e-06,
+    "rtol": 1e-05,
+    "wall_seconds": 7.792435550014488,
+    "top5": [
+      30,
+      5,
+      25,
+      8,
+      15
+    ],
+    "reference_top5": [
+      30,
+      5,
+      25,
+      8,
+      15
+    ],
+    "operator_counts": {
+      "conv": 4,
+      "transpose": 2,
+      "gemm": 2
+    },
+    "fused_relus": 0,
+    "fused_leaky_relus": 4,
+    "output_slices": [
+      {
+        "shape": [
+          1,
+          16
+        ],
+        "offset_elements": 0,
+        "arena_offset_bytes": 349952
+      },
+      {
+        "shape": [
+          1,
+          16
+        ],
+        "offset_elements": 16,
+        "arena_offset_bytes": 350080
+      }
+    ]
+  },
+  "residual_rtl_regression": {
+    "status": "PASS",
+    "backend": "rtl-regression",
+    "outputs": 7,
+    "max_abs_error": 0.0,
+    "atol": 0.001,
+    "rtol": 0.0001,
+    "wall_seconds": 0.29464540898334235,
+    "top5": [
+      3,
+      5,
+      0,
+      2,
+      1
+    ],
+    "reference_top5": [
+      3,
+      5,
+      0,
+      2,
+      1
+    ],
+    "operator_counts": {
+      "transpose": 1,
+      "conv": 4,
+      "pool": 2,
+      "add": 2,
+      "gemm": 1
+    },
+    "fused_relus": 3,
+    "fused_leaky_relus": 0,
+    "output_slices": [
+      {
+        "shape": [
+          1,
+          7
+        ],
+        "offset_elements": 0,
+        "arena_offset_bytes": 28280
+      }
+    ]
+  },
+  "different_shape_rtl": {
+    "status": "PASS",
+    "backend": "rtl-stalls",
+    "outputs": 10,
+    "max_abs_error": 5.960464477539063e-08,
+    "atol": 1e-06,
+    "rtol": 1e-05,
+    "wall_seconds": 0.017977574025280774,
+    "top5": [
+      7,
+      3,
+      1,
+      9,
+      8
+    ],
+    "reference_top5": [
+      7,
+      3,
+      1,
+      9,
+      8
+    ],
+    "operator_counts": {
+      "transpose": 2,
+      "conv": 2,
+      "gemm": 2,
+      "add": 2
+    },
+    "fused_relus": 0,
+    "fused_leaky_relus": 2,
+    "output_slices": [
+      {
+        "shape": [
+          1,
+          4
+        ],
+        "offset_elements": 0,
+        "arena_offset_bytes": 4640
+      },
+      {
+        "shape": [
+          1,
+          6
+        ],
+        "offset_elements": 4,
+        "arena_offset_bytes": 4248
+      }
+    ]
+  },
+  "full_system_eels": {
+    "status": "PASS",
+    "execution": "full-system RTL",
+    "operators": [
+      "conv",
+      "conv",
+      "conv",
+      "conv",
+      "gemm",
+      "gemm"
+    ],
+    "hardware_invocations": 6,
+    "outputs": 32,
+    "max_error_e9": 75,
+    "cpu_cycles": 5069323
+  },
+  "full_system_different_shape": {
+    "status": "PASS",
+    "execution": "full-system RTL",
+    "operators": [
+      "conv",
+      "conv",
+      "gemm",
+      "add",
+      "gemm",
+      "add"
+    ],
+    "hardware_invocations": 6,
+    "outputs": 10,
+    "max_error_e9": 60,
+    "cpu_cycles": 989291
+  },
+  "simulation_pma_fix": {
+    "dram_bytes": 16777216,
+    "cpu_cacheable_bytes": 8388608,
+    "dma_base": "0x80800000",
+    "source": "/home/william/bambu-esp-example/validation/esp-local-checkpoint-20261106/machine-handoff/esp/socs/compare/../../rtl/tiles/tile_cpu.vhd"
+  },
+  "hardware_llvm_reproduced_identically": true,
+  "fpga_programmed": false,
+  "negative_evidence": {
+    "build/eels-system-2": "stale L1 data; 28/32 output errors",
+    "build/eels-fixture-system": "stale L1 data; 6/10 output errors"
+  },
+  "sha256": {
+    "build/eels/01_tosa.mlir": "2ad877494be342609fce80ba6636266059e54f12c04d77d1a53bbea10c02a133",
+    "build/eels/model.json": "25dafd79a04cc9be2e98527b5e15cb0441df21fa9d483cfa28f235951da9d2db",
+    "build/eels/input.npy": "a2867f6a50f51d11e7cfc83e8b72d3652f8393dc52e490553512747fa79f7531",
+    "build/eels/reference.npy": "0f4ebb1e2b8138684fac635001cdaa1aeff50509b31cdec83de078083287d1ba",
+    "build/eels/compiled/plan.json": "b2dfce80986d839cdef76964a087523ba5d3a0e49ab861d53b0edaacdb5c9f7a",
+    "build/eels/compiled/host.ll": "31052a9813b1b46f5128faa013f2a2da52f24be599f6d7bd3050140692f5fde5",
+    "build/eels/compiled/host-riscv.o": "1535189eb91221c27d3db0b0d86b44fd6a06bda28312bfc9ef1c19a2c1566057",
+    "build/eels/compiled/parameters.bin": "ff61c64329d12dbb288529bcd0b560aac3f557d3ca35c550c2c92499df704a19",
+    "build/eels-app/nn_app.exe": "9b02ea706f28aaf390776c85e4ec810ab7f4b411d21632ec5a3e3453d3179cf7",
+    "build/eels-hardware/combined/operator_engines.v": "324f7b91994ab560df77d003f88bcbc6fb9aa4981d106114f78e66b05e092ed4",
+    "build/eels-hardware/combined/forward_kernel.sv": "3c112dd9f59b3464706b3a795aebddc0144bdf97f445586b9628cea26b3c1fd1",
+    "build/eels-system-pma/full-system/tile_cpu_sim.vhd": "77815251ef14d2a6d0ca5d3b6ceb3f3fd83d9d1891f933157c0a48769d1225b3",
+    "build/eels-system-pma/full-system/pma.json": "ef20793ebba8d29e18ff6535143757421ce6e210d06ddf6272d305527b494d2d",
+    "build/eels-system-pma/full-system/validation.json": "965ca487d9066eff6bf267d108d59fd9c4a4bdf2e08fd00d889dc36787908bed",
+    "build/eels-fixture-system-pma/full-system/validation.json": "892a851fead312d8bd3dac6185a32eafca4c8abad7dbe1fbb65248222ccf4eeb",
+    "build/eels-hardware/conv/accelerator.ll": "685f91c34d2c5693ebbda473b86cfca9e12dc053669cb3e4377cec0c4af51ca9",
+    "build/eels-hardware/add/accelerator.ll": "6f2f9f8bfbd38924512fbe3b8dacaa3887b44dc2e1dd4e50e81e7c25bc30084e",
+    "build/eels-hardware/gemm/accelerator.ll": "8e26f82a9e19eeb5c5b3e3c3b697cbeec427b418d8d0a912502e19b08202dd3f"
+  }
+}

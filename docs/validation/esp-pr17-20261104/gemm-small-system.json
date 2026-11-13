@@ -1,0 +1,39 @@
+{
+  "dataset": "SMALL",
+  "kernel": "gemm",
+  "elements": 4200,
+  "test": "PASS",
+  "runner_exit": 0,
+  "max_error_e_minus9": 11444,
+  "tolerance_e_minus9": 1000000,
+  "hardware_boundary_cycles": 578239,
+  "regions": {
+    "total": {
+      "cycles": 5513851,
+      "calls": 1
+    },
+    "pack": {
+      "cycles": 2778190,
+      "calls": 1
+    },
+    "accel": {
+      "cycles": 578718,
+      "calls": 1
+    },
+    "unpack": {
+      "cycles": 1054762,
+      "calls": 1
+    },
+    "alloc": {
+      "cycles": 1100069,
+      "calls": 1
+    },
+    "kernel": {
+      "cycles": 5513088,
+      "calls": 1
+    }
+  },
+  "full_transcript_sha256": "a584c8eca4faab808b7f705bfcff4efd7c15b22405c7266393682c6523f14443",
+  "uart_excerpt": "gemm-small-uart.log",
+  "note": "Regions are nested; kernel includes pack/accel/unpack/alloc. Shares must not be summed."
+}

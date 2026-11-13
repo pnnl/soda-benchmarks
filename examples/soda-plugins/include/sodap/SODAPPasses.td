@@ -27,6 +27,67 @@ def SODAPSwitchBarFoo: Pass<"sodap-switch-bar-foo", "::mlir::ModuleOp"> {
   }];
 }
 
+def LinalgRankReduceContractions
+    : Pass<"sodap-linalg-rank-reduce-contractions"> {
+  let summary = "Drop the unit batch dim of linalg contractions";
+  let description = [{
+    Runs upstream's `linalg::populateContractionOpRankReducingPatterns`, which
+    has no pass of its own in LLVM 19: a contraction with a unit batch or a
+    unit outer dim becomes the next smaller named op, between
+    `collapse_shape`/`expand_shape` of its operands. For example
+    `linalg.batch_matmul` 1×M×K becomes `linalg.matmul`, and `linalg.matmul`
+    with a unit M becomes `linalg.vecmat`. The op stays named, so
+    `linalg-fold-unit-extent-dims` and `linalg-fuse-elementwise-ops` leave it
+    alone.
+  }];
+  let dependentDialects = [
+    "::mlir::linalg::LinalgDialect",
+    "::mlir::tensor::TensorDialect",
+    "::mlir::memref::MemRefDialect"
+  ];
+}
+
+def LinalgConstantsToIndices
+    : Pass<"sodap-linalg-constants-to-indices"> {
+  let summary = "Compute tril/triu/eye-like constant inputs of linalg.generic "
+                "from the loop indices";
+  let description = [{
+    A rank-2 dense constant whose element (i, j) depends only on the diagonal
+    d = j - i, as a step (`d >= k ? c1 : c0`, tril and triu) or a single
+    diagonal (`d == k ? c1 : c0`, eye), is dropped from the `ins` of every
+    `linalg.generic` that reads it through a permutation. The body computes it
+    instead, from `linalg.index`, `arith.cmpi` and `arith.select`, so the
+    constant needs no buffer and no load. Other constants are left alone.
+
+    This is upstream's `FoldScalarOrSplatConstant` (run by
+    `linalg-fuse-elementwise-ops`) for diagonal-structured constants: TOSA
+    has no tril, triu or eye, so PyTorch models pass them as constants.
+    ```mlir
+    %eye = arith.constant dense<[[1.0, 0.0], [0.0, 1.0]]> : tensor<2x2xf32>
+    %0 = linalg.generic ... ins(%a, %eye) outs(%e) {
+    ^bb0(%x: f32, %y: f32, %o: f32):
+      %s = arith.addf %x, %y : f32
+      linalg.yield %s : f32
+    }
+    // becomes
+    %0 = linalg.generic ... ins(%a) outs(%e) {
+    ^bb0(%x: f32, %o: f32):
+      %i = linalg.index 0 : index
+      %j = linalg.index 1 : index
+      %d = arith.subi %j, %i : index
+      %c = arith.cmpi eq, %d, %c0 : index
+      %y = arith.select %c, %one, %zero : f32
+      %s = arith.addf %x, %y : f32
+      linalg.yield %s : f32
+    }
+    ```
+  }];
+  let dependentDialects = [
+    "::mlir::arith::ArithDialect",
+    "::mlir::linalg::LinalgDialect"
+  ];
+}
+
 def ViewOpGraph : Pass<"soda-view-op-graph"> {
   let summary = "Print Graphviz visualization of an operation";
   let description = [{
@@ -201,6 +262,160 @@ def SwapOpToHW : Pass<"sodap-swap-op-to-hw", "::mlir::ModuleOp"> {
   }];
 }
 
+def ProfileKernel : Pass<"sodap-profile-kernel", "::mlir::ModuleOp"> {
+  let summary = "Measure a complete kernel call with the ESP region profiler";
+  let description = [{
+    Bracket the named function with region 7 (ESP_PROF_KERNEL). This measures
+    the CPU kernel or the complete offload including allocation and transfers.
+    Region 0 remains available to the application's outer timer.
+  }];
+  let options = [
+    Option<"kernel", "kernel", "std::string", /*default=*/"\"forward_kernel\"",
+           "Function to instrument">
+  ];
+  let dependentDialects = ["::mlir::arith::ArithDialect", "::mlir::func::FuncDialect"];
+}
+
+def GenerateReusableGemm : Pass<"sodap-generate-reusable-gemm", "::mlir::ModuleOp"> {
+  let summary = "Generate a tiled float32 GEMM with runtime dimensions and DMA addresses";
+  let options = [
+    Option<"topName", "top-name", "std::string", "\"forward_kernel\"", "Hardware entry point">,
+    Option<"tileM", "tile-m", "int64_t", "4", "Local output row tile extent">,
+    Option<"tileN", "tile-n", "int64_t", "4", "Local output column tile extent">,
+    Option<"tileK", "tile-k", "int64_t", "4", "Local reduction tile extent">,
+    Option<"schedule", "schedule", "std::string", "\"sequential\"", "sequential or lcs; independent of the runtime ABI">
+  ];
+  let dependentDialects = ["::mlir::arith::ArithDialect", "::mlir::func::FuncDialect",
+      "::mlir::memref::MemRefDialect", "::mlir::scf::SCFDialect",
+      "::mlir::sodap::dataflow::DataflowDialect"];
+}
+
+def GenerateReusableOperator : Pass<"sodap-generate-reusable-operator", "::mlir::ModuleOp"> {
+  let summary = "Generate a reusable convolution or elementwise addition engine";
+  let options = [
+    Option<"kind", "kind", "std::string", "\"conv\"", "conv or add">,
+    Option<"pixels", "tile-pixels", "int64_t", "4", "Local output spatial tile">,
+    Option<"lanes", "output-lanes", "int64_t", "8", "Parallel convolution output channels">,
+    Option<"channels", "tile-channels", "int64_t", "16", "Local input channel tile">,
+    Option<"blockElements", "block-elements", "int64_t", "128", "Addition block size">,
+    Option<"schedule", "schedule", "std::string", "\"sequential\"", "sequential or lcs (convolution)">
+  ];
+  let dependentDialects = ["::mlir::arith::ArithDialect", "::mlir::func::FuncDialect",
+      "::mlir::memref::MemRefDialect", "::mlir::scf::SCFDialect",
+      "::mlir::sodap::dataflow::DataflowDialect"];
+}
+
+def ReusableGemmToESP : Pass<"sodap-reusable-gemm-to-esp", "::mlir::ModuleOp"> {
+  let summary = "Bind a straight-line GEMM graph to one reusable ESP device";
+  let options = [
+    Option<"kernel", "kernel", "std::string", "\"forward_kernel\"", "Host function">,
+    Option<"instance", "instance", "int64_t", "0", "Physical instance index">
+  ];
+  let dependentDialects = ["::mlir::arith::ArithDialect", "::mlir::func::FuncDialect",
+      "::mlir::memref::MemRefDialect"];
+}
+
+def KernelToESPAccelerator : Pass<"sodap-kernel-to-esp-accelerator", "::mlir::ModuleOp"> {
+  let summary = "Replace a kernel's body with one run of its ESP accelerator";
+  let description = [{
+    For the CPU side of a kernel whose whole body is the accelerator, as Bambu
+    builds it from the same function. The body becomes:
+
+    1. `esp_alloc_shared` -- allocate the shared buffer
+    2. `esp_copy_to_shared_f32` -- preserve every argument's initial contents
+    3. `esp_accel_start`, `esp_accel_wait`
+    4. `esp_copy_from_shared_f32` -- once per argument the body writes
+    5. `esp_free_shared`
+
+    The arguments lie one after the other in argument order, in words, which is
+    the layout `sodap-dataflow-copy-to-dma` compiles into the accelerator. Run
+    both on the same function, so the argument order is the same. The data is
+    copied as its bits: the accelerator reads `f32` from the DMA channel as is.
+
+    Arguments must be f32 memrefs with static shapes and the identity layout.
+    Copy-in is conservative: a written argument may be read before writing or
+    only partially overwritten. Removing these copies requires a full-overwrite
+    proof. With profile=true, measure allocation, packing, execution and unpacking.
+  }];
+  let options = [
+    Option<"kernel", "kernel", "std::string", /*default=*/"\"forward_kernel\"",
+           "Function to replace">,
+    Option<"profile", "profile", "bool", /*default=*/"false",
+           "Measure allocation, packing, execution and unpacking">,
+    Option<"dmaWordStride", "dma-word-stride", "unsigned", /*default=*/"1",
+           "32-bit words per shared-memory element (1 dense, 2 padded for DMA64)">
+  ];
+  let dependentDialects = [
+    "::mlir::arith::ArithDialect",
+    "::mlir::func::FuncDialect",
+    "::mlir::memref::MemRefDialect"
+  ];
+}
+
+def LaunchesToESP : Pass<"sodap-launches-to-esp", "::mlir::ModuleOp"> {
+  let summary = "Run each dataflow.launch on its ESP accelerator tile";
+  let description = [{
+    The host side of the single-module flow, after the host's bufferization
+    and `sodap-tiles-to-llvm`. Each `dataflow.launch` becomes one run of its
+    tile's accelerator, as `sodap-kernel-to-esp-accelerator` emits it for a
+    kernel: `esp_alloc_shared`, `esp_copy_to_shared_f32` of every operand,
+    `esp_accel_start`, `esp_accel_wait`, `esp_copy_from_shared_f32` of each
+    `outs` operand, `esp_free_shared`. The operands lie one after the other in
+    order, in words, the layout `sodap-dataflow-copy-to-dma` compiles into the
+    accelerator from the kernel's arguments, which are the launch's operands
+    by construction. Exactly one tile module is expected.
+
+    An `outs` buffer that the host only copies into an out-param of its
+    function (what `buffer-results-to-out-params` leaves) is replaced by the
+    out-param, so one tile gives today's calls on the function's arguments.
+    The tile modules are erased, and the function holding the launches is
+    renamed `host`, the name the application calls.
+
+    Operands must be f32 memrefs with static shapes and the identity layout.
+  }];
+  let options = [
+    Option<"host", "host", "std::string", /*default=*/"\"forward_kernel\"",
+           "New name of the function holding the launches">,
+    Option<"profile", "profile", "bool", /*default=*/"false",
+           "Measure allocation, packing, execution and unpacking">,
+    Option<"dmaWordStride", "dma-word-stride", "unsigned", /*default=*/"1",
+           "32-bit words per shared-memory element (1 dense, 2 padded for DMA64)">
+  ];
+  let dependentDialects = [
+    "::mlir::arith::ArithDialect",
+    "::mlir::func::FuncDialect",
+    "::mlir::memref::MemRefDialect"
+  ];
+}
+
+def OrderKernelArguments : Pass<"sodap-order-kernel-arguments", "::mlir::ModuleOp"> {
+  let summary = "Give an outlined kernel its caller's argument order";
+  let description = [{
+    Run in soda-opt, right after `-soda-outline-bambu-code`. The outlining
+    orders the kernel's arguments by their first use in the body, so two
+    pipelines outlining the same function (the accelerator and the CPU
+    baseline) can give the kernel two orders, while the test data is built for
+    one (`argument_order.txt`). This pass permutes the operands of each
+    `soda.launch_func`, and the arguments of the `soda.func` it launches, into
+    the order of the caller's arguments: `argument_order.txt` is then
+    `0 1 2 ...` whatever the body.
+
+    Example:
+
+    ```mlir
+    soda.launch_func @k::@k args(%arg1 : memref<f32>, %arg0 : memref<4xf32>)
+    soda.func @k(%arg0: memref<f32>, %arg1: memref<4xf32>) kernel { ... }
+    // becomes
+    soda.launch_func @k::@k args(%arg0 : memref<4xf32>, %arg1 : memref<f32>)
+    soda.func @k(%arg0: memref<4xf32>, %arg1: memref<f32>) kernel { ... }
+    ```
+
+    Fails on a launch whose operands aren't distinct arguments of its caller,
+    or with async dependencies. The soda ops are matched by name: the plugin
+    doesn't link the soda dialect.
+  }];
+}
+
 def LinalgBatchMatmulToESP : Pass<"sodap-linalg-batch-matmul-to-esp", "::mlir::ModuleOp"> {
   let summary = "Replace linalg.batch_matmul with ESP accelerator runtime calls";
   let description = [{
@@ -210,12 +425,45 @@ def LinalgBatchMatmulToESP : Pass<"sodap-linalg-batch-matmul-to-esp", "::mlir::M
 
     1. `esp_alloc_shared` — allocate shared memory buffer
     2. `esp_float2fixed_f32` — convert each input memref to fixed-point in shared mem
-    3. `esp_accel_cfg_regs` — configure accelerator registers with dimensions/offsets
+    3. `esp_accel_write_reg` — one call per accelerator register (offset, value)
     4. `esp_accel_start` — launch the accelerator
     5. `esp_accel_wait` — busy-wait for completion
     6. `esp_fixed2float_f32` — convert fixed-point output back to float
     7. `esp_free_shared` — free shared memory buffer
+
+    The pass owns the shared-memory layout. It pads the output dimension to a
+    multiple of `vec-len`, gives the bias its own region, and passes each
+    operand's leading dimension to the copy routines, so the runtime needs no
+    knowledge of the accelerator: it copies with the stride it is told and
+    writes the registers it is told.
+
+    With `marshal=ir`, steps 2 and 6 are not runtime calls but `linalg.generic`
+    ops over strided views (`memref.reinterpret_cast`) of the shared buffer,
+    which `esp_alloc_shared` then returns as a `memref<i32>`. The conversion
+    becomes ordinary IR that later transformations can fuse and optimize, and
+    the runtime no longer contains the token format.
+
+    With `profile`, the sequence is bracketed by `esp_prof_begin`/`esp_prof_end`
+    calls around the pack, accelerator and unpack phases, and -- when the block
+    holds a single matmul -- the rest of the block as the epilogue.
+
+    Operands must be rank-3 f32 memrefs with a statically known batch size of 1.
+    `marshal=ir` additionally requires static shapes and permits at most one
+    offload per function: its shared buffer stays live until the enclosing
+    block terminator. Use `marshal=runtime` for sequential offloads. Reentrant
+    offloads through calls while a shared buffer is live remain unsupported;
+    this pass does not perform interprocedural lifetime analysis.
   }];
+  let options = [
+    Option<"vecLen", "vec-len", "unsigned",
+           /*default=*/"8", "Accelerator vector length; outdim is padded to a multiple of it">,
+    Option<"profile", "profile", "bool",
+           /*default=*/"false", "Emit esp_prof_begin/end around pack, accel, unpack and epilogue">,
+    Option<"marshal", "marshal", "std::string",
+           /*default=*/"\"runtime\"",
+           "Where the float<->token conversion runs: 'runtime' (calls into the ESP runtime) "
+           "or 'ir' (linalg.generic over views of the shared buffer)">
+  ];
 }
 
 #endif // SODAP_PASS

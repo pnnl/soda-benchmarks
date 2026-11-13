@@ -1,0 +1,62 @@
+Local validation on 3 November 2026
+Upstream main: c533c3b73d751772d7187492629698c8cadc9368
+Runtime commit: e6934972908f9393acfb849ca4ce07886b88fb97
+Compiler image: agostini01/soda-trixie:v19.03
+Plugin build: PASS; lit: 42/42 PASS
+CLI unit tests: 139 PASS; one SiliconCompiler execution test deselected
+Native raw-f32 test: PASS with address/undefined/leak sanitizers
+Fresh CLI GEMM MINI esp-ir object: ELF64 RISC-V, RVC, double-float ABI
+Object SHA256: ac904de7792528d2a890fb059f2187f078ec9652a981599b86c1daed561760e9
+Undefined object symbols: esp_accel_start, esp_accel_wait, esp_accel_write_reg,
+  esp_alloc_shared, esp_free_shared, esp_prof_begin, esp_prof_end, malloc, memcpy
+
+Selected adapter transcript (write requests withheld until cycle 12000):
+GEMM_BOUNDARY START invocation=1 stall_until=12000
+GEMM_HANDSHAKE cycles=1000 rst=1 core_req=0 req=00000004000000e0 socket_req=0 grant=0 active=0 core_done=0
+GEMM_SCALAR word_index=512 words=1 beat_index=256 beats=1 lane=0
+GEMM_SCALAR word_index=513 words=1 beat_index=256 beats=1 lane=1
+GEMM_HANDSHAKE cycles=16 rst=1 core_req=0 req=00000004000000e0 socket_req=0 grant=0 active=1 core_done=0
+GEMM_HANDSHAKE cycles=1000 rst=1 core_req=0 req=0000000400000170 socket_req=0 grant=0 active=0 core_done=0
+GEMM_BOUNDARY RESULT invocation=1 requests=218/24 words=866/96 beats=434/48 cycles=19402 blocked=9593
+GEMM_DMA64 PASS errors=0
+
+Full-system replay: ModelSim DE 2023.2; Ariane RV64; 64-bit noncoherent DMA;
+  scatter/gather TLB; one memory tile; ESP L2/LLC disabled; 16 MiB simulated RAM.
+Baremetal executable SHA256: f88c2f573ae68303de7d3b4710c29dc2545a7dc316f549e2657f39e4dfeafe6a
+Undefined executable symbols: none
+All 29 supplied archive files checked unchanged, including host.ll and RTL.
+Selected full-system transcript (reset warnings and host paths omitted):
+# GEMM_SYSTEM BEGIN unchanged_host_and_rtl cases=3
+# GEMM_SYSTEM START case=0
+# GEMM_BOUNDARY START invocation=1 stall_until=50000
+# GEMM_SCALAR word_index=512 words=1 beat_index=256 beats=1 lane=0
+# GEMM_HANDSHAKE cycles=16 rst=1 core_req=0 req=0000000100000200 socket_req=0 grant=0 active=1 core_done=0
+# GEMM_SCALAR word_index=513 words=1 beat_index=256 beats=1 lane=1
+# GEMM_HANDSHAKE cycles=1000 rst=1 core_req=0 req=0000000400000170 socket_req=0 grant=0 active=1 core_done=0
+# GEMM_BOUNDARY RESULT invocation=1 requests=218/24 words=866/96 beats=434/48 cycles=58120 blocked=47546
+# GEMM_SYSTEM RESULT case=0 output_errors=0 input_errors=0
+# GEMM_SYSTEM START case=1
+# GEMM_BOUNDARY START invocation=2 stall_until=50000
+# GEMM_SCALAR word_index=512 words=1 beat_index=256 beats=1 lane=0
+# GEMM_HANDSHAKE cycles=16 rst=1 core_req=0 req=0000000100000200 socket_req=0 grant=0 active=1 core_done=0
+# GEMM_SCALAR word_index=513 words=1 beat_index=256 beats=1 lane=1
+# GEMM_HANDSHAKE cycles=1000 rst=1 core_req=0 req=0000000400000170 socket_req=0 grant=0 active=1 core_done=0
+# GEMM_BOUNDARY RESULT invocation=2 requests=218/24 words=866/96 beats=434/48 cycles=58124 blocked=47549
+# GEMM_SYSTEM RESULT case=1 output_errors=0 input_errors=0
+# GEMM_SYSTEM START case=2
+# GEMM_BOUNDARY START invocation=3 stall_until=50000
+# GEMM_SCALAR word_index=512 words=1 beat_index=256 beats=1 lane=0
+# GEMM_HANDSHAKE cycles=16 rst=1 core_req=0 req=0000000100000200 socket_req=0 grant=0 active=1 core_done=0
+# GEMM_SCALAR word_index=513 words=1 beat_index=256 beats=1 lane=1
+# GEMM_HANDSHAKE cycles=1000 rst=1 core_req=0 req=0000000400000170 socket_req=0 grant=0 active=1 core_done=0
+# GEMM_BOUNDARY RESULT invocation=3 requests=218/24 words=866/96 beats=434/48 cycles=58124 blocked=47549
+# GEMM_SYSTEM RESULT case=2 output_errors=0 input_errors=0
+# GEMM_SYSTEM PASS total_errors=0
+
+The testbench then exited through its normal "Program Completed!" assertion.
+The numerical/transcript checker passed after simulation completed.
+An earlier attempt with the cached SoC's 2 MiB RAM model failed because address
+wraparound aliased allocation/probe buffers with application storage. The replay
+now overrides RAM capacity; it does not modify the generated accelerator RTL.
+The vendor simulation cache also had to be rebuilt locally from Xilinx sources.
+These are local checks, not remote CI or a fresh FPGA deployment.

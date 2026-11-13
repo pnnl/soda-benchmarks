@@ -1,0 +1,21 @@
+COMMAND ["/workspace/local-results/vc707-small-20261104/gemver/native.exe"]
+kernel=gemver dataset=SMALL dtype=float32 elements=120 tol=0.001
+  MISMATCH at [2]: got=15492.6 want=15492.6 err=0.00488281
+  MISMATCH at [3]: got=17818.5 want=17818.5 err=0.00195312
+  MISMATCH at [6]: got=25696.3 want=25696.3 err=0.00195312
+  MISMATCH at [8]: got=31135.8 want=31135.8 err=0.00195312
+  MISMATCH at [9]: got=34288.7 want=34288.7 err=0.00390625
+  MISMATCH at [11]: got=40271.5 want=40271.5 err=0.00390625
+  MISMATCH at [12]: got=42127.6 want=42127.6 err=0.00390625
+  MISMATCH at [13]: got=45723.3 want=45723.3 err=0.00390625
+  MISMATCH at [14]: got=48486.1 want=48486.1 err=0.00390625
+  MISMATCH at [15]: got=50409.4 want=50409.4 err=0.00390625
+---------------------------------
+TEST FAILED (76/120 elements exceed tolerance 0.001)
+max error = 93750000 e-9, tolerance = 1000000 e-9
+---------------------------------
+region            ns       calls        mean     share
+------------------------------------------------------
+total              66765       1       66765     100%
+kernel             66615       1       66615      99%
+------------------------------------------------------

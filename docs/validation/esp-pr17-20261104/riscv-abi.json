@@ -1,0 +1,334 @@
+[
+  {
+    "kernel": "gemm",
+    "variant": "esp",
+    "flags": "0x5, RVC, double-float ABI",
+    "undefined": [
+      "esp_accel_start",
+      "esp_accel_wait",
+      "esp_alloc_shared",
+      "esp_copy_from_shared_f32_strided",
+      "esp_copy_to_shared_f32_strided",
+      "esp_free_shared",
+      "esp_prof_begin",
+      "esp_prof_end"
+    ]
+  },
+  {
+    "kernel": "gemm",
+    "variant": "cpu-baseline",
+    "flags": "0x5, RVC, double-float ABI",
+    "undefined": [
+      "esp_prof_begin",
+      "esp_prof_end",
+      "malloc",
+      "memset"
+    ]
+  },
+  {
+    "kernel": "syr2k",
+    "variant": "esp",
+    "flags": "0x5, RVC, double-float ABI",
+    "undefined": [
+      "esp_accel_start",
+      "esp_accel_wait",
+      "esp_alloc_shared",
+      "esp_copy_from_shared_f32_strided",
+      "esp_copy_to_shared_f32_strided",
+      "esp_free_shared",
+      "esp_prof_begin",
+      "esp_prof_end"
+    ]
+  },
+  {
+    "kernel": "syr2k",
+    "variant": "cpu-baseline",
+    "flags": "0x5, RVC, double-float ABI",
+    "undefined": [
+      "esp_prof_begin",
+      "esp_prof_end",
+      "malloc",
+      "memset"
+    ]
+  },
+  {
+    "kernel": "threemm",
+    "variant": "esp",
+    "flags": "0x5, RVC, double-float ABI",
+    "undefined": [
+      "esp_accel_start",
+      "esp_accel_wait",
+      "esp_alloc_shared",
+      "esp_copy_from_shared_f32_strided",
+      "esp_copy_to_shared_f32_strided",
+      "esp_free_shared",
+      "esp_prof_begin",
+      "esp_prof_end"
+    ]
+  },
+  {
+    "kernel": "threemm",
+    "variant": "cpu-baseline",
+    "flags": "0x5, RVC, double-float ABI",
+    "undefined": [
+      "esp_prof_begin",
+      "esp_prof_end",
+      "malloc",
+      "memset"
+    ]
+  },
+  {
+    "kernel": "trmm",
+    "variant": "esp",
+    "flags": "0x5, RVC, double-float ABI",
+    "undefined": [
+      "esp_accel_start",
+      "esp_accel_wait",
+      "esp_alloc_shared",
+      "esp_copy_from_shared_f32_strided",
+      "esp_copy_to_shared_f32_strided",
+      "esp_free_shared",
+      "esp_prof_begin",
+      "esp_prof_end"
+    ]
+  },
+  {
+    "kernel": "trmm",
+    "variant": "cpu-baseline",
+    "flags": "0x5, RVC, double-float ABI",
+    "undefined": [
+      "esp_prof_begin",
+      "esp_prof_end",
+      "malloc",
+      "memset"
+    ]
+  },
+  {
+    "kernel": "symm",
+    "variant": "esp",
+    "flags": "0x5, RVC, double-float ABI",
+    "undefined": [
+      "esp_accel_start",
+      "esp_accel_wait",
+      "esp_alloc_shared",
+      "esp_copy_from_shared_f32_strided",
+      "esp_copy_to_shared_f32_strided",
+      "esp_free_shared",
+      "esp_prof_begin",
+      "esp_prof_end"
+    ]
+  },
+  {
+    "kernel": "symm",
+    "variant": "cpu-baseline",
+    "flags": "0x5, RVC, double-float ABI",
+    "undefined": [
+      "esp_prof_begin",
+      "esp_prof_end",
+      "malloc",
+      "memset"
+    ]
+  },
+  {
+    "kernel": "syrk",
+    "variant": "esp",
+    "flags": "0x5, RVC, double-float ABI",
+    "undefined": [
+      "esp_accel_start",
+      "esp_accel_wait",
+      "esp_alloc_shared",
+      "esp_copy_from_shared_f32_strided",
+      "esp_copy_to_shared_f32_strided",
+      "esp_free_shared",
+      "esp_prof_begin",
+      "esp_prof_end"
+    ]
+  },
+  {
+    "kernel": "syrk",
+    "variant": "cpu-baseline",
+    "flags": "0x5, RVC, double-float ABI",
+    "undefined": [
+      "esp_prof_begin",
+      "esp_prof_end",
+      "malloc",
+      "memset"
+    ]
+  },
+  {
+    "kernel": "gemver",
+    "variant": "esp",
+    "flags": "0x5, RVC, double-float ABI",
+    "undefined": [
+      "esp_accel_start",
+      "esp_accel_wait",
+      "esp_alloc_shared",
+      "esp_copy_from_shared_f32_strided",
+      "esp_copy_to_shared_f32_strided",
+      "esp_free_shared",
+      "esp_prof_begin",
+      "esp_prof_end"
+    ]
+  },
+  {
+    "kernel": "gemver",
+    "variant": "cpu-baseline",
+    "flags": "0x5, RVC, double-float ABI",
+    "undefined": [
+      "esp_prof_begin",
+      "esp_prof_end",
+      "malloc",
+      "memset"
+    ]
+  },
+  {
+    "kernel": "bicg",
+    "variant": "esp",
+    "flags": "0x5, RVC, double-float ABI",
+    "undefined": [
+      "esp_accel_start",
+      "esp_accel_wait",
+      "esp_alloc_shared",
+      "esp_copy_from_shared_f32_strided",
+      "esp_copy_to_shared_f32_strided",
+      "esp_free_shared",
+      "esp_prof_begin",
+      "esp_prof_end"
+    ]
+  },
+  {
+    "kernel": "bicg",
+    "variant": "cpu-baseline",
+    "flags": "0x5, RVC, double-float ABI",
+    "undefined": [
+      "esp_prof_begin",
+      "esp_prof_end"
+    ]
+  },
+  {
+    "kernel": "atax",
+    "variant": "esp",
+    "flags": "0x5, RVC, double-float ABI",
+    "undefined": [
+      "esp_accel_start",
+      "esp_accel_wait",
+      "esp_alloc_shared",
+      "esp_copy_from_shared_f32_strided",
+      "esp_copy_to_shared_f32_strided",
+      "esp_free_shared",
+      "esp_prof_begin",
+      "esp_prof_end"
+    ]
+  },
+  {
+    "kernel": "atax",
+    "variant": "cpu-baseline",
+    "flags": "0x5, RVC, double-float ABI",
+    "undefined": [
+      "esp_prof_begin",
+      "esp_prof_end",
+      "malloc",
+      "memset"
+    ]
+  },
+  {
+    "kernel": "gesummv",
+    "variant": "esp",
+    "flags": "0x5, RVC, double-float ABI",
+    "undefined": [
+      "esp_accel_start",
+      "esp_accel_wait",
+      "esp_alloc_shared",
+      "esp_copy_from_shared_f32_strided",
+      "esp_copy_to_shared_f32_strided",
+      "esp_free_shared",
+      "esp_prof_begin",
+      "esp_prof_end"
+    ]
+  },
+  {
+    "kernel": "gesummv",
+    "variant": "cpu-baseline",
+    "flags": "0x5, RVC, double-float ABI",
+    "undefined": [
+      "esp_prof_begin",
+      "esp_prof_end",
+      "malloc"
+    ]
+  },
+  {
+    "kernel": "doitgen",
+    "variant": "esp",
+    "flags": "0x5, RVC, double-float ABI",
+    "undefined": [
+      "esp_accel_start",
+      "esp_accel_wait",
+      "esp_alloc_shared",
+      "esp_copy_from_shared_f32_strided",
+      "esp_copy_to_shared_f32_strided",
+      "esp_free_shared",
+      "esp_prof_begin",
+      "esp_prof_end"
+    ]
+  },
+  {
+    "kernel": "doitgen",
+    "variant": "cpu-baseline",
+    "flags": "0x5, RVC, double-float ABI",
+    "undefined": [
+      "esp_prof_begin",
+      "esp_prof_end"
+    ]
+  },
+  {
+    "kernel": "twomm",
+    "variant": "esp",
+    "flags": "0x5, RVC, double-float ABI",
+    "undefined": [
+      "esp_accel_start",
+      "esp_accel_wait",
+      "esp_alloc_shared",
+      "esp_copy_from_shared_f32_strided",
+      "esp_copy_to_shared_f32_strided",
+      "esp_free_shared",
+      "esp_prof_begin",
+      "esp_prof_end"
+    ]
+  },
+  {
+    "kernel": "twomm",
+    "variant": "cpu-baseline",
+    "flags": "0x5, RVC, double-float ABI",
+    "undefined": [
+      "esp_prof_begin",
+      "esp_prof_end",
+      "malloc",
+      "memset"
+    ]
+  },
+  {
+    "kernel": "mvt",
+    "variant": "esp",
+    "flags": "0x5, RVC, double-float ABI",
+    "undefined": [
+      "esp_accel_start",
+      "esp_accel_wait",
+      "esp_alloc_shared",
+      "esp_copy_from_shared_f32_strided",
+      "esp_copy_to_shared_f32_strided",
+      "esp_free_shared",
+      "esp_prof_begin",
+      "esp_prof_end"
+    ]
+  },
+  {
+    "kernel": "mvt",
+    "variant": "cpu-baseline",
+    "flags": "0x5, RVC, double-float ABI",
+    "undefined": [
+      "esp_prof_begin",
+      "esp_prof_end",
+      "malloc"
+    ]
+  }
+]

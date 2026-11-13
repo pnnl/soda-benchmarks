@@ -26,7 +26,24 @@ __all__ = [
 # ---------------------------------------------------------------------------
 
 _DATASETS: dict[str, dict[str, dict[str, int]]] = {
+    "gemmreuse": {
+        "TEST": {"ni": 3, "nj": 7, "nk": 5, "nl": 2},
+        "MINI": {"ni": 7, "nj": 9, "nk": 13, "nl": 5},
+        "SMALL": {"ni": 7, "nj": 65, "nk": 513, "nl": 19},
+        "MEDIUM": {"ni": 31, "nj": 65, "nk": 129, "nl": 33},
+        "LARGE": {"ni": 63, "nj": 129, "nk": 257, "nl": 65},
+        "EXTRALARGE": {"ni": 127, "nj": 257, "nk": 513, "nl": 129},
+    },
     "twomm": {
+        "TEST": {"ni": 4, "nj": 4, "nk": 4, "nl": 4},
+        "MINI": {"ni": 16, "nj": 18, "nk": 22, "nl": 24},
+        "SMALL": {"ni": 40, "nj": 50, "nk": 70, "nl": 80},
+        "MEDIUM": {"ni": 180, "nj": 190, "nk": 210, "nl": 220},
+        "LARGE": {"ni": 800, "nj": 900, "nk": 1100, "nl": 1200},
+        "EXTRALARGE": {"ni": 1600, "nj": 1800, "nk": 2200, "nl": 2400},
+    },
+    # twomm without its elementwise ops (kernels/twomm_mm): twomm's shapes.
+    "twomm_mm": {
         "TEST": {"ni": 4, "nj": 4, "nk": 4, "nl": 4},
         "MINI": {"ni": 16, "nj": 18, "nk": 22, "nl": 24},
         "SMALL": {"ni": 40, "nj": 50, "nk": 70, "nl": 80},

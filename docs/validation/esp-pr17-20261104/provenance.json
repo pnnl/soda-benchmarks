@@ -1,0 +1,33 @@
+{
+  "upstream_commit": "346b48ef63bea5f7e37f79b12ce5449d518f726c",
+  "preserved_board_checkpoint": "e873b2e",
+  "reconciliation_checkpoint": "94692d7",
+  "subview_fix": "eefef35",
+  "whole_input_fix": "2cfb9eb",
+  "artifact_capture_fix": "fc878e2",
+  "image_tag": "agostini01/soda-trixie:v19.03",
+  "image_id": "sha256:192a841f6f5cf6d15103725d4cb4c2ed88b275b4ee334a53f158bc9c3aa33ec4",
+  "dataset_dtype": "float32",
+  "dma_word_stride": 2,
+  "profile": true,
+  "bambu_device": "xc7vx485t-2ffg1761",
+  "bambu_clock_period_ns": 20,
+  "small_gemm_system": "PASS",
+  "new_fpga_runs": false,
+  "lit": "53 passed",
+  "cli_tests": "145 passed, 1 skipped",
+  "compiler_code_commit": "2cfb9eb633a6e2c1bb91dfeb229300f330cef272",
+  "worktree_branch": "local/esp-lcs-kernel-investigation",
+  "mini_gemm_system": "PASS",
+  "mini_gemm_system_runner_exit": 0,
+  "small_gemm_system_max_time_ms": 500,
+  "soc_cache_mode": "L2/LLC disabled, noncoherent DMA",
+  "clock_mhz": {
+    "cpu": 50,
+    "accelerator": 50,
+    "noc": 100,
+    "memory": 100
+  },
+  "new_kernel_full_system_runs": false,
+  "small_gemm_system_runner_exit": 0
+}

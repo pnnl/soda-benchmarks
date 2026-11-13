@@ -1,0 +1,92 @@
+[
+  {
+    "kernel": "gemm",
+    "unchanged_after_mlir_fixes": {
+      "05_hw_acc.ll": true,
+      "05_kernel_riscv.ll": true,
+      "05_cpu_baseline.ll": true,
+      "architecture.xml": true,
+      "argument_order.txt": true
+    }
+  },
+  {
+    "kernel": "syr2k",
+    "unchanged_after_mlir_fixes": {
+      "05_hw_acc.ll": true,
+      "05_kernel_riscv.ll": true,
+      "05_cpu_baseline.ll": true,
+      "architecture.xml": true,
+      "argument_order.txt": true
+    }
+  },
+  {
+    "kernel": "trmm",
+    "unchanged_after_mlir_fixes": {
+      "05_hw_acc.ll": true,
+      "05_kernel_riscv.ll": true,
+      "05_cpu_baseline.ll": true,
+      "architecture.xml": true,
+      "argument_order.txt": true
+    }
+  },
+  {
+    "kernel": "symm",
+    "unchanged_after_mlir_fixes": {
+      "05_hw_acc.ll": true,
+      "05_kernel_riscv.ll": true,
+      "05_cpu_baseline.ll": true,
+      "architecture.xml": true,
+      "argument_order.txt": true
+    }
+  },
+  {
+    "kernel": "syrk",
+    "unchanged_after_mlir_fixes": {
+      "05_hw_acc.ll": true,
+      "05_kernel_riscv.ll": true,
+      "05_cpu_baseline.ll": true,
+      "architecture.xml": true,
+      "argument_order.txt": true
+    }
+  },
+  {
+    "kernel": "bicg",
+    "unchanged_after_mlir_fixes": {
+      "05_hw_acc.ll": true,
+      "05_kernel_riscv.ll": true,
+      "05_cpu_baseline.ll": true,
+      "architecture.xml": true,
+      "argument_order.txt": true
+    }
+  },
+  {
+    "kernel": "gesummv",
+    "unchanged_after_mlir_fixes": {
+      "05_hw_acc.ll": true,
+      "05_kernel_riscv.ll": true,
+      "05_cpu_baseline.ll": true,
+      "architecture.xml": true,
+      "argument_order.txt": true
+    }
+  },
+  {
+    "kernel": "doitgen",
+    "unchanged_after_mlir_fixes": {
+      "05_hw_acc.ll": true,
+      "05_kernel_riscv.ll": true,
+      "05_cpu_baseline.ll": true,
+      "architecture.xml": true,
+      "argument_order.txt": true
+    }
+  },
+  {
+    "kernel": "mvt",
+    "unchanged_after_mlir_fixes": {
+      "05_hw_acc.ll": true,
+      "05_kernel_riscv.ll": true,
+      "05_cpu_baseline.ll": true,
+      "architecture.xml": true,
+      "argument_order.txt": true
+    }
+  }
+]

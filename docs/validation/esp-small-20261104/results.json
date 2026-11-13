@@ -1,0 +1,1472 @@
+{
+  "doitgen": {
+    "status": {
+      "stage": "validation-complete",
+      "generated": "/home/william/bambu-esp-example/experiments/soda-pr17-reconciled/local-results/vc707-small-20261104/generated/experiments/2026_11_05_02_53_37/output/esp/baseline",
+      "fpga": "PASS",
+      "updated": "2026-11-05T01:58:00.088284-05:00",
+      "adapter": "PASS",
+      "system_esp": "PASS",
+      "system_cpu": "BUILT",
+      "bitstream": "/home/william/bambu-esp-example/experiments/soda-pr17-reconciled/local-results/vc707-small-20261104/doitgen/deploy/doitgen.bit"
+    },
+    "offload": {
+      "error_e9": 954,
+      "tolerance_e9": 1000000,
+      "pass": true,
+      "status": "PASS",
+      "regions": {
+        "total": 12171635,
+        "pack": 5467720,
+        "accel": 967144,
+        "unpack": 4223689,
+        "alloc": 1511064,
+        "kernel": 12170999
+      },
+      "hardware_cycles": 966643
+    },
+    "cpu": {},
+    "timing": {
+      "STATS.WNS": "0.884675",
+      "STATS.TNS": "0.000000",
+      "STATS.WHS": "0.049754",
+      "STATS.THS": "0.000000"
+    },
+    "clocks": {
+      "chip_refclk": {
+        "clock": "clk_nobuf",
+        "period_ns": 20.0
+      },
+      "clkm": {
+        "clock": "clk_pll_i",
+        "period_ns": 10.0
+      },
+      "accelerator_sequential_cells": {
+        "clock": "clk_nobuf",
+        "period_ns": 20.0
+      }
+    },
+    "timing_check_counts": {
+      "no_clock": 2,
+      "constant_clock": 0,
+      "pulse_width_clock": 0,
+      "unconstrained_internal_endpoints": 2,
+      "no_input_delay": 3,
+      "no_output_delay": 8,
+      "multiple_clock": 0,
+      "generated_clocks": 0,
+      "loops": 0,
+      "partial_input_delay": 0,
+      "partial_output_delay": 0,
+      "latch_loops": 0
+    },
+    "drc_summary": {
+      "BUFC-1": {
+        "severity": "Warning",
+        "count": 13
+      },
+      "CFGBVS-1": {
+        "severity": "Warning",
+        "count": 1
+      },
+      "CHECK-3": {
+        "severity": "Warning",
+        "count": 2
+      },
+      "DPIP-1": {
+        "severity": "Warning",
+        "count": 57
+      },
+      "DPOP-1": {
+        "severity": "Warning",
+        "count": 15
+      },
+      "DPOP-2": {
+        "severity": "Warning",
+        "count": 19
+      },
+      "DPOR-1": {
+        "severity": "Warning",
+        "count": 102
+      },
+      "PDRC-153": {
+        "severity": "Warning",
+        "count": 2
+      },
+      "REQP-1709": {
+        "severity": "Warning",
+        "count": 1
+      },
+      "REQP-1839": {
+        "severity": "Warning",
+        "count": 20
+      },
+      "REQP-1840": {
+        "severity": "Warning",
+        "count": 20
+      },
+      "RTSTAT-10": {
+        "severity": "Warning",
+        "count": 1
+      },
+      "REQP-165": {
+        "severity": "Advisory",
+        "count": 1
+      }
+    },
+    "soc_utilization": {
+      "lut": 122775,
+      "ff": 123620,
+      "ramb36": 37,
+      "ramb18": 87,
+      "dsp": 29
+    },
+    "accelerator_and_adapter_utilization": {
+      "lut": 5409,
+      "ff": 3700,
+      "ramb36": 1,
+      "ramb18": 12,
+      "dsp": 2
+    },
+    "artifacts": {
+      "doitgen-cpu.exe": "5dc72f977792d368599f27081bdab515d0700d3e57e1c9b34a92d90a583fafb0",
+      "doitgen.bit": "14d371db275d557ae7fb05ff6671254fb5c887cc73c553d57e582bc5b463dbbd",
+      "doitgen.exe": "acb61cbac76ae2b3ddf108fff76727186bd980692e5b78fea19e5bdfce0ea849",
+      "prom.bin": "26b6bb77fdb40e5d62a4600f2d65a54a80f26a28e7348672d50fe6cf44d714bc",
+      "prom.srec": "fe404004adf70ae2de8c3da54d03f607c2fc0a6e4f93e44373daf621a321607d"
+    },
+    "rtl_unchanged": true,
+    "soc_matches_simulation_fixture": true,
+    "vivado_uses_installed_rtl": true,
+    "cpu_baseline_validation": "native+link",
+    "cpu_native": {
+      "pass": true,
+      "error_e9": 954,
+      "tolerance_e9": 1000000
+    },
+    "ready_for_board": true
+  },
+  "threemm": {
+    "status": {
+      "stage": "validation-complete",
+      "generated": "/home/william/bambu-esp-example/experiments/soda-pr17-reconciled/local-results/vc707-small-20261104/generated/experiments/2026_11_05_02_53_38/output/esp/baseline",
+      "fpga": "PASS",
+      "updated": "2026-11-05T01:17:48.491887-05:00",
+      "adapter": "PASS",
+      "system_esp": "PASS",
+      "system_cpu": "BUILT",
+      "bitstream": "/home/william/bambu-esp-example/experiments/soda-pr17-reconciled/local-results/vc707-small-20261104/threemm/deploy/threemm.bit"
+    },
+    "offload": {
+      "error_e9": 3815,
+      "tolerance_e9": 1000000,
+      "pass": true,
+      "status": "PASS",
+      "regions": {
+        "total": 7060688,
+        "pack": 2590265,
+        "accel": 2708926,
+        "unpack": 693419,
+        "alloc": 1066002,
+        "kernel": 7059949
+      },
+      "hardware_cycles": 2708472
+    },
+    "cpu": {},
+    "timing": {
+      "STATS.WNS": "0.400293",
+      "STATS.TNS": "0.000000",
+      "STATS.WHS": "0.050775",
+      "STATS.THS": "0.000000"
+    },
+    "clocks": {
+      "chip_refclk": {
+        "clock": "clk_nobuf",
+        "period_ns": 20.0
+      },
+      "clkm": {
+        "clock": "clk_pll_i",
+        "period_ns": 10.0
+      },
+      "accelerator_sequential_cells": {
+        "clock": "clk_nobuf",
+        "period_ns": 20.0
+      }
+    },
+    "timing_check_counts": {
+      "no_clock": 2,
+      "constant_clock": 0,
+      "pulse_width_clock": 0,
+      "unconstrained_internal_endpoints": 2,
+      "no_input_delay": 3,
+      "no_output_delay": 8,
+      "multiple_clock": 0,
+      "generated_clocks": 0,
+      "loops": 0,
+      "partial_input_delay": 0,
+      "partial_output_delay": 0,
+      "latch_loops": 0
+    },
+    "drc_summary": {
+      "BUFC-1": {
+        "severity": "Warning",
+        "count": 13
+      },
+      "CFGBVS-1": {
+        "severity": "Warning",
+        "count": 1
+      },
+      "CHECK-3": {
+        "severity": "Warning",
+        "count": 2
+      },
+      "DPIP-1": {
+        "severity": "Warning",
+        "count": 65
+      },
+      "DPOP-1": {
+        "severity": "Warning",
+        "count": 19
+      },
+      "DPOP-2": {
+        "severity": "Warning",
+        "count": 23
+      },
+      "DPOR-1": {
+        "severity": "Warning",
+        "count": 102
+      },
+      "PDRC-153": {
+        "severity": "Warning",
+        "count": 2
+      },
+      "REQP-1709": {
+        "severity": "Warning",
+        "count": 1
+      },
+      "REQP-1839": {
+        "severity": "Warning",
+        "count": 20
+      },
+      "REQP-1840": {
+        "severity": "Warning",
+        "count": 20
+      },
+      "RTSTAT-10": {
+        "severity": "Warning",
+        "count": 1
+      },
+      "REQP-165": {
+        "severity": "Advisory",
+        "count": 1
+      }
+    },
+    "soc_utilization": {
+      "lut": 125428,
+      "ff": 125449,
+      "ramb36": 55,
+      "ramb18": 87,
+      "dsp": 33
+    },
+    "accelerator_and_adapter_utilization": {
+      "lut": 7915,
+      "ff": 5529,
+      "ramb36": 19,
+      "ramb18": 12,
+      "dsp": 6
+    },
+    "artifacts": {
+      "prom.bin": "26b6bb77fdb40e5d62a4600f2d65a54a80f26a28e7348672d50fe6cf44d714bc",
+      "prom.srec": "fe404004adf70ae2de8c3da54d03f607c2fc0a6e4f93e44373daf621a321607d",
+      "threemm-cpu.exe": "51b391fb675203d4d57d9443c201fc608ec5c40cca7cd6694678aaec7b81f252",
+      "threemm.bit": "5d826c6e69db9f4b18799cce8afde00a32f91bc57027d1d0c9640941ea0f23c9",
+      "threemm.exe": "c7affb506412541eda18d8735f06c141f357465782e6881e1541ad09b6feb007"
+    },
+    "rtl_unchanged": true,
+    "soc_matches_simulation_fixture": true,
+    "vivado_uses_installed_rtl": true,
+    "cpu_baseline_validation": "native+link",
+    "cpu_native": {
+      "pass": true,
+      "error_e9": 3815,
+      "tolerance_e9": 1000000
+    },
+    "ready_for_board": true
+  },
+  "gemm": {
+    "status": {
+      "stage": "validation-complete",
+      "generated": "/home/william/bambu-esp-example/experiments/soda-pr17-reconciled/local-results/vc707-small-20261104/generated/experiments/2026_11_05_02_53_33/output/esp/baseline",
+      "fpga": "PASS",
+      "updated": "2026-11-05T00:24:22.485416-05:00",
+      "adapter": "PASS",
+      "system_esp": "PASS",
+      "system_cpu": "BUILT",
+      "bitstream": "/home/william/bambu-esp-example/experiments/soda-pr17-reconciled/local-results/vc707-small-20261104/gemm/deploy/gemm.bit"
+    },
+    "offload": {
+      "error_e9": 11444,
+      "tolerance_e9": 1000000,
+      "pass": true,
+      "status": "PASS",
+      "regions": {
+        "total": 5513851,
+        "pack": 2778190,
+        "accel": 578718,
+        "unpack": 1054762,
+        "alloc": 1100069,
+        "kernel": 5513088
+      },
+      "hardware_cycles": 578239
+    },
+    "cpu": {},
+    "timing": {
+      "STATS.WNS": "0.628658",
+      "STATS.TNS": "0.000000",
+      "STATS.WHS": "0.049786",
+      "STATS.THS": "0.000000"
+    },
+    "clocks": {
+      "chip_refclk": {
+        "clock": "clk_nobuf",
+        "period_ns": 20.0
+      },
+      "clkm": {
+        "clock": "clk_pll_i",
+        "period_ns": 10.0
+      },
+      "accelerator_sequential_cells": {
+        "clock": "clk_nobuf",
+        "period_ns": 20.0
+      }
+    },
+    "timing_check_counts": {
+      "no_clock": 2,
+      "constant_clock": 0,
+      "pulse_width_clock": 0,
+      "unconstrained_internal_endpoints": 2,
+      "no_input_delay": 3,
+      "no_output_delay": 8,
+      "multiple_clock": 0,
+      "generated_clocks": 0,
+      "loops": 0,
+      "partial_input_delay": 0,
+      "partial_output_delay": 0,
+      "latch_loops": 0
+    },
+    "drc_summary": {
+      "BUFC-1": {
+        "severity": "Warning",
+        "count": 13
+      },
+      "CFGBVS-1": {
+        "severity": "Warning",
+        "count": 1
+      },
+      "CHECK-3": {
+        "severity": "Warning",
+        "count": 2
+      },
+      "DPIP-1": {
+        "severity": "Warning",
+        "count": 61
+      },
+      "DPOP-1": {
+        "severity": "Warning",
+        "count": 17
+      },
+      "DPOP-2": {
+        "severity": "Warning",
+        "count": 21
+      },
+      "DPOR-1": {
+        "severity": "Warning",
+        "count": 102
+      },
+      "PDRC-153": {
+        "severity": "Warning",
+        "count": 2
+      },
+      "REQP-1709": {
+        "severity": "Warning",
+        "count": 1
+      },
+      "REQP-1839": {
+        "severity": "Warning",
+        "count": 20
+      },
+      "REQP-1840": {
+        "severity": "Warning",
+        "count": 20
+      },
+      "RTSTAT-10": {
+        "severity": "Warning",
+        "count": 1
+      },
+      "REQP-165": {
+        "severity": "Advisory",
+        "count": 1
+      }
+    },
+    "soc_utilization": {
+      "lut": 122989,
+      "ff": 123891,
+      "ramb36": 37,
+      "ramb18": 95,
+      "dsp": 31
+    },
+    "accelerator_and_adapter_utilization": {
+      "lut": 5415,
+      "ff": 3971,
+      "ramb36": 1,
+      "ramb18": 20,
+      "dsp": 4
+    },
+    "artifacts": {
+      "gemm-cpu.exe": "71351ee5c6e96614fddb559c1c81360898aecea055c36ecafd82d126e311daae",
+      "gemm.bit": "0a396f2fddc3ef5fec4be8c687cdab8b59fe7928b662049048c57414942684bf",
+      "gemm.exe": "700264e2d4c1b64f8bbaad07cfd3d8c406bcc876ea52e64481260cdb01a95a33",
+      "prom.bin": "26b6bb77fdb40e5d62a4600f2d65a54a80f26a28e7348672d50fe6cf44d714bc",
+      "prom.srec": "fe404004adf70ae2de8c3da54d03f607c2fc0a6e4f93e44373daf621a321607d"
+    },
+    "rtl_unchanged": true,
+    "soc_matches_simulation_fixture": true,
+    "vivado_uses_installed_rtl": true,
+    "cpu_baseline_validation": "native+link",
+    "cpu_native": {
+      "pass": true,
+      "error_e9": 11444,
+      "tolerance_e9": 1000000
+    },
+    "ready_for_board": true
+  },
+  "syr2k": {
+    "status": {
+      "stage": "validation-complete",
+      "generated": "/home/william/bambu-esp-example/experiments/soda-pr17-reconciled/local-results/vc707-small-20261104/generated/experiments/2026_11_05_02_53_34/output/esp/baseline",
+      "fpga": "PASS",
+      "updated": "2026-11-05T00:58:11.461651-05:00",
+      "adapter": "PASS",
+      "system_esp": "PASS",
+      "system_cpu": "BUILT",
+      "bitstream": "/home/william/bambu-esp-example/experiments/soda-pr17-reconciled/local-results/vc707-small-20261104/syr2k/deploy/syr2k.bit"
+    },
+    "offload": {
+      "error_e9": 7629,
+      "tolerance_e9": 1000000,
+      "pass": true,
+      "status": "PASS",
+      "regions": {
+        "total": 7320573,
+        "pack": 3332518,
+        "accel": 1151535,
+        "unpack": 1612201,
+        "alloc": 1222221,
+        "kernel": 7319814
+      },
+      "hardware_cycles": 1150982
+    },
+    "cpu": {},
+    "timing": {
+      "STATS.WNS": "0.514757",
+      "STATS.TNS": "0.000000",
+      "STATS.WHS": "0.051674",
+      "STATS.THS": "0.000000"
+    },
+    "clocks": {
+      "chip_refclk": {
+        "clock": "clk_nobuf",
+        "period_ns": 20.0
+      },
+      "clkm": {
+        "clock": "clk_pll_i",
+        "period_ns": 10.0
+      },
+      "accelerator_sequential_cells": {
+        "clock": "clk_nobuf",
+        "period_ns": 20.0
+      }
+    },
+    "timing_check_counts": {
+      "no_clock": 2,
+      "constant_clock": 0,
+      "pulse_width_clock": 0,
+      "unconstrained_internal_endpoints": 2,
+      "no_input_delay": 3,
+      "no_output_delay": 8,
+      "multiple_clock": 0,
+      "generated_clocks": 0,
+      "loops": 0,
+      "partial_input_delay": 0,
+      "partial_output_delay": 0,
+      "latch_loops": 0
+    },
+    "drc_summary": {
+      "BUFC-1": {
+        "severity": "Warning",
+        "count": 13
+      },
+      "CFGBVS-1": {
+        "severity": "Warning",
+        "count": 1
+      },
+      "CHECK-3": {
+        "severity": "Warning",
+        "count": 2
+      },
+      "DPIP-1": {
+        "severity": "Warning",
+        "count": 65
+      },
+      "DPOP-1": {
+        "severity": "Warning",
+        "count": 19
+      },
+      "DPOP-2": {
+        "severity": "Warning",
+        "count": 23
+      },
+      "DPOR-1": {
+        "severity": "Warning",
+        "count": 102
+      },
+      "PDRC-153": {
+        "severity": "Warning",
+        "count": 2
+      },
+      "REQP-1709": {
+        "severity": "Warning",
+        "count": 1
+      },
+      "REQP-1839": {
+        "severity": "Warning",
+        "count": 20
+      },
+      "REQP-1840": {
+        "severity": "Warning",
+        "count": 20
+      },
+      "RTSTAT-10": {
+        "severity": "Warning",
+        "count": 1
+      },
+      "REQP-165": {
+        "severity": "Advisory",
+        "count": 1
+      }
+    },
+    "soc_utilization": {
+      "lut": 125569,
+      "ff": 125626,
+      "ramb36": 38,
+      "ramb18": 107,
+      "dsp": 33
+    },
+    "accelerator_and_adapter_utilization": {
+      "lut": 8248,
+      "ff": 5706,
+      "ramb36": 2,
+      "ramb18": 32,
+      "dsp": 6
+    },
+    "artifacts": {
+      "prom.bin": "26b6bb77fdb40e5d62a4600f2d65a54a80f26a28e7348672d50fe6cf44d714bc",
+      "prom.srec": "fe404004adf70ae2de8c3da54d03f607c2fc0a6e4f93e44373daf621a321607d",
+      "syr2k-cpu.exe": "1a9eb160b1292734b34c57c5b85a073afa58d762680e4f948cbdd10328acfe87",
+      "syr2k.bit": "bb5843e75e0b456b1470b9dfeaa1f6dcfa3ad9f0eced5ed8923db42d6a9da1e4",
+      "syr2k.exe": "112638627882720f88b36365bf0612ea517cba64b69e13b46d8b64c8c620286c"
+    },
+    "rtl_unchanged": true,
+    "soc_matches_simulation_fixture": true,
+    "vivado_uses_installed_rtl": true,
+    "cpu_baseline_validation": "native+link",
+    "cpu_native": {
+      "pass": true,
+      "error_e9": 7629,
+      "tolerance_e9": 1000000
+    },
+    "ready_for_board": true
+  },
+  "trmm": {
+    "status": {
+      "stage": "validation-complete",
+      "generated": "/home/william/bambu-esp-example/experiments/soda-pr17-reconciled/local-results/vc707-small-20261104/generated/experiments/2026_11_05_02_53_35/output/esp/baseline",
+      "fpga": "PASS",
+      "updated": "2026-11-05T00:09:04.197072-05:00",
+      "adapter": "PASS",
+      "system_esp": "PASS",
+      "system_cpu": "BUILT",
+      "bitstream": "/home/william/bambu-esp-example/experiments/soda-pr17-reconciled/local-results/vc707-small-20261104/trmm/deploy/trmm.bit"
+    },
+    "offload": {
+      "error_e9": 7629,
+      "tolerance_e9": 1000000,
+      "pass": true,
+      "status": "PASS",
+      "regions": {
+        "total": 4862088,
+        "pack": 1957690,
+        "accel": 794867,
+        "unpack": 1198171,
+        "alloc": 909398,
+        "kernel": 4861474
+      },
+      "hardware_cycles": 794386
+    },
+    "cpu": {},
+    "timing": {
+      "STATS.WNS": "0.585826",
+      "STATS.TNS": "0.000000",
+      "STATS.WHS": "0.051754",
+      "STATS.THS": "0.000000"
+    },
+    "clocks": {
+      "chip_refclk": {
+        "clock": "clk_nobuf",
+        "period_ns": 20.0
+      },
+      "clkm": {
+        "clock": "clk_pll_i",
+        "period_ns": 10.0
+      },
+      "accelerator_sequential_cells": {
+        "clock": "clk_nobuf",
+        "period_ns": 20.0
+      }
+    },
+    "timing_check_counts": {
+      "no_clock": 2,
+      "constant_clock": 0,
+      "pulse_width_clock": 0,
+      "unconstrained_internal_endpoints": 2,
+      "no_input_delay": 3,
+      "no_output_delay": 8,
+      "multiple_clock": 0,
+      "generated_clocks": 0,
+      "loops": 0,
+      "partial_input_delay": 0,
+      "partial_output_delay": 0,
+      "latch_loops": 0
+    },
+    "drc_summary": {
+      "BUFC-1": {
+        "severity": "Warning",
+        "count": 13
+      },
+      "CFGBVS-1": {
+        "severity": "Warning",
+        "count": 1
+      },
+      "CHECK-3": {
+        "severity": "Warning",
+        "count": 2
+      },
+      "DPIP-1": {
+        "severity": "Warning",
+        "count": 61
+      },
+      "DPOP-1": {
+        "severity": "Warning",
+        "count": 17
+      },
+      "DPOP-2": {
+        "severity": "Warning",
+        "count": 21
+      },
+      "DPOR-1": {
+        "severity": "Warning",
+        "count": 102
+      },
+      "PDRC-153": {
+        "severity": "Warning",
+        "count": 2
+      },
+      "REQP-1709": {
+        "severity": "Warning",
+        "count": 1
+      },
+      "REQP-1839": {
+        "severity": "Warning",
+        "count": 20
+      },
+      "REQP-1840": {
+        "severity": "Warning",
+        "count": 20
+      },
+      "RTSTAT-10": {
+        "severity": "Warning",
+        "count": 1
+      },
+      "REQP-165": {
+        "severity": "Advisory",
+        "count": 1
+      }
+    },
+    "soc_utilization": {
+      "lut": 121937,
+      "ff": 123424,
+      "ramb36": 37,
+      "ramb18": 93,
+      "dsp": 31
+    },
+    "accelerator_and_adapter_utilization": {
+      "lut": 4582,
+      "ff": 3504,
+      "ramb36": 1,
+      "ramb18": 18,
+      "dsp": 4
+    },
+    "artifacts": {
+      "prom.bin": "26b6bb77fdb40e5d62a4600f2d65a54a80f26a28e7348672d50fe6cf44d714bc",
+      "prom.srec": "fe404004adf70ae2de8c3da54d03f607c2fc0a6e4f93e44373daf621a321607d",
+      "trmm-cpu.exe": "06e3cadd60e6d0046a93d34625aeefe3b56579afe8fb2c346b34ad7157a3e189",
+      "trmm.bit": "4910ce325d379147424dd8fd2f5f04ebdba403062c2892cb919735c90423051d",
+      "trmm.exe": "d127a106656d81083834ebd0c4ee171214c22ebf258e82d0e0091d0d9cd48700"
+    },
+    "rtl_unchanged": true,
+    "soc_matches_simulation_fixture": true,
+    "vivado_uses_installed_rtl": true,
+    "cpu_baseline_validation": "native+link",
+    "cpu_native": {
+      "pass": true,
+      "error_e9": 7629,
+      "tolerance_e9": 1000000
+    },
+    "ready_for_board": true
+  },
+  "symm": {
+    "status": {
+      "stage": "validation-complete",
+      "generated": "/home/william/bambu-esp-example/experiments/soda-pr17-reconciled/local-results/vc707-small-20261104/generated/experiments/2026_11_05_02_53_35_1/output/esp/baseline",
+      "fpga": "PASS",
+      "updated": "2026-11-05T00:46:11.052207-05:00",
+      "adapter": "PASS",
+      "system_esp": "PASS",
+      "system_cpu": "BUILT",
+      "bitstream": "/home/william/bambu-esp-example/experiments/soda-pr17-reconciled/local-results/vc707-small-20261104/symm/deploy/symm.bit"
+    },
+    "offload": {
+      "error_e9": 30518,
+      "tolerance_e9": 1000000,
+      "pass": true,
+      "status": "PASS",
+      "regions": {
+        "total": 6062974,
+        "pack": 2668295,
+        "accel": 1112363,
+        "unpack": 1207722,
+        "alloc": 1072589,
+        "kernel": 6062308
+      },
+      "hardware_cycles": 1111886
+    },
+    "cpu": {},
+    "timing": {
+      "STATS.WNS": "0.540790",
+      "STATS.TNS": "0.000000",
+      "STATS.WHS": "0.054296",
+      "STATS.THS": "0.000000"
+    },
+    "clocks": {
+      "chip_refclk": {
+        "clock": "clk_nobuf",
+        "period_ns": 20.0
+      },
+      "clkm": {
+        "clock": "clk_pll_i",
+        "period_ns": 10.0
+      },
+      "accelerator_sequential_cells": {
+        "clock": "clk_nobuf",
+        "period_ns": 20.0
+      }
+    },
+    "timing_check_counts": {
+      "no_clock": 2,
+      "constant_clock": 0,
+      "pulse_width_clock": 0,
+      "unconstrained_internal_endpoints": 2,
+      "no_input_delay": 3,
+      "no_output_delay": 8,
+      "multiple_clock": 0,
+      "generated_clocks": 0,
+      "loops": 0,
+      "partial_input_delay": 0,
+      "partial_output_delay": 0,
+      "latch_loops": 0
+    },
+    "drc_summary": {
+      "BUFC-1": {
+        "severity": "Warning",
+        "count": 13
+      },
+      "CFGBVS-1": {
+        "severity": "Warning",
+        "count": 1
+      },
+      "CHECK-3": {
+        "severity": "Warning",
+        "count": 2
+      },
+      "DPIP-1": {
+        "severity": "Warning",
+        "count": 61
+      },
+      "DPOP-1": {
+        "severity": "Warning",
+        "count": 17
+      },
+      "DPOP-2": {
+        "severity": "Warning",
+        "count": 21
+      },
+      "DPOR-1": {
+        "severity": "Warning",
+        "count": 102
+      },
+      "PDRC-153": {
+        "severity": "Warning",
+        "count": 2
+      },
+      "REQP-1709": {
+        "severity": "Warning",
+        "count": 1
+      },
+      "REQP-1839": {
+        "severity": "Warning",
+        "count": 20
+      },
+      "REQP-1840": {
+        "severity": "Warning",
+        "count": 20
+      },
+      "RTSTAT-10": {
+        "severity": "Warning",
+        "count": 1
+      },
+      "REQP-165": {
+        "severity": "Advisory",
+        "count": 1
+      }
+    },
+    "soc_utilization": {
+      "lut": 123955,
+      "ff": 124560,
+      "ramb36": 37,
+      "ramb18": 100,
+      "dsp": 31
+    },
+    "accelerator_and_adapter_utilization": {
+      "lut": 6626,
+      "ff": 4640,
+      "ramb36": 1,
+      "ramb18": 25,
+      "dsp": 4
+    },
+    "artifacts": {
+      "prom.bin": "26b6bb77fdb40e5d62a4600f2d65a54a80f26a28e7348672d50fe6cf44d714bc",
+      "prom.srec": "fe404004adf70ae2de8c3da54d03f607c2fc0a6e4f93e44373daf621a321607d",
+      "symm-cpu.exe": "4d37d426dcbe405b0d35abe7e4931661b28871e49983e64781e7784b97eb9c7a",
+      "symm.bit": "bb30eb81cac56d4b04e03d0de4883df43ef5b0899ffd00254eb6e68f51bf3144",
+      "symm.exe": "569e86cee0cd1a94c5be3b7c1d64904aa1183ffb727635d210a1559db95d7766"
+    },
+    "rtl_unchanged": true,
+    "soc_matches_simulation_fixture": true,
+    "vivado_uses_installed_rtl": true,
+    "cpu_baseline_validation": "native+link",
+    "cpu_native": {
+      "pass": true,
+      "error_e9": 30518,
+      "tolerance_e9": 1000000
+    },
+    "ready_for_board": true
+  },
+  "syrk": {
+    "status": {
+      "stage": "validation-complete",
+      "generated": "/home/william/bambu-esp-example/experiments/soda-pr17-reconciled/local-results/vc707-small-20261104/generated/experiments/2026_11_05_02_53_36/output/esp/baseline",
+      "fpga": "PASS",
+      "updated": "2026-11-05T01:47:01.873655-05:00",
+      "adapter": "PASS",
+      "system_esp": "PASS",
+      "system_cpu": "BUILT",
+      "bitstream": "/home/william/bambu-esp-example/experiments/soda-pr17-reconciled/local-results/vc707-small-20261104/syrk/deploy/syrk.bit"
+    },
+    "offload": {
+      "error_e9": 5722,
+      "tolerance_e9": 1000000,
+      "pass": true,
+      "status": "PASS",
+      "regions": {
+        "total": 5886901,
+        "pack": 2615547,
+        "accel": 598473,
+        "unpack": 1612197,
+        "alloc": 1058662,
+        "kernel": 5886199
+      },
+      "hardware_cycles": 597966
+    },
+    "cpu": {},
+    "timing": {
+      "STATS.WNS": "0.577961",
+      "STATS.TNS": "0.000000",
+      "STATS.WHS": "0.049753",
+      "STATS.THS": "0.000000"
+    },
+    "clocks": {
+      "chip_refclk": {
+        "clock": "clk_nobuf",
+        "period_ns": 20.0
+      },
+      "clkm": {
+        "clock": "clk_pll_i",
+        "period_ns": 10.0
+      },
+      "accelerator_sequential_cells": {
+        "clock": "clk_nobuf",
+        "period_ns": 20.0
+      }
+    },
+    "timing_check_counts": {
+      "no_clock": 2,
+      "constant_clock": 0,
+      "pulse_width_clock": 0,
+      "unconstrained_internal_endpoints": 2,
+      "no_input_delay": 3,
+      "no_output_delay": 8,
+      "multiple_clock": 0,
+      "generated_clocks": 0,
+      "loops": 0,
+      "partial_input_delay": 0,
+      "partial_output_delay": 0,
+      "latch_loops": 0
+    },
+    "drc_summary": {
+      "BUFC-1": {
+        "severity": "Warning",
+        "count": 13
+      },
+      "CFGBVS-1": {
+        "severity": "Warning",
+        "count": 1
+      },
+      "CHECK-3": {
+        "severity": "Warning",
+        "count": 2
+      },
+      "DPIP-1": {
+        "severity": "Warning",
+        "count": 61
+      },
+      "DPOP-1": {
+        "severity": "Warning",
+        "count": 17
+      },
+      "DPOP-2": {
+        "severity": "Warning",
+        "count": 21
+      },
+      "DPOR-1": {
+        "severity": "Warning",
+        "count": 102
+      },
+      "PDRC-153": {
+        "severity": "Warning",
+        "count": 2
+      },
+      "REQP-1709": {
+        "severity": "Warning",
+        "count": 1
+      },
+      "REQP-1839": {
+        "severity": "Warning",
+        "count": 20
+      },
+      "REQP-1840": {
+        "severity": "Warning",
+        "count": 20
+      },
+      "RTSTAT-10": {
+        "severity": "Warning",
+        "count": 1
+      },
+      "REQP-165": {
+        "severity": "Advisory",
+        "count": 1
+      }
+    },
+    "soc_utilization": {
+      "lut": 122895,
+      "ff": 123876,
+      "ramb36": 37,
+      "ramb18": 95,
+      "dsp": 31
+    },
+    "accelerator_and_adapter_utilization": {
+      "lut": 5503,
+      "ff": 3956,
+      "ramb36": 1,
+      "ramb18": 20,
+      "dsp": 4
+    },
+    "artifacts": {
+      "prom.bin": "26b6bb77fdb40e5d62a4600f2d65a54a80f26a28e7348672d50fe6cf44d714bc",
+      "prom.srec": "fe404004adf70ae2de8c3da54d03f607c2fc0a6e4f93e44373daf621a321607d",
+      "syrk-cpu.exe": "1f41463e027eb49f7ce16d9ccbc114f1bf17a9adec58d8665a1b7d5f4479ae93",
+      "syrk.bit": "034f622db5072b6a0ffc3cb45993db679ecfe0611d3d5556e8fbc5eba57966ad",
+      "syrk.exe": "ddbe1defe94bb2afe1cee466aa8bd73c38453b0a90ef5e070e725f4a8351ed1a"
+    },
+    "rtl_unchanged": true,
+    "soc_matches_simulation_fixture": true,
+    "vivado_uses_installed_rtl": true,
+    "cpu_baseline_validation": "native+link",
+    "cpu_native": {
+      "pass": true,
+      "error_e9": 5722,
+      "tolerance_e9": 1000000
+    },
+    "ready_for_board": true
+  },
+  "gesummv": {
+    "status": {
+      "stage": "validation-complete",
+      "generated": "/home/william/bambu-esp-example/experiments/soda-pr17-reconciled/local-results/vc707-small-20261104/generated/experiments/2026_11_05_02_53_36_1/output/esp/baseline",
+      "fpga": "PASS",
+      "updated": "2026-11-05T01:28:11.402798-05:00",
+      "adapter": "PASS",
+      "system_esp": "PASS",
+      "system_cpu": "BUILT",
+      "bitstream": "/home/william/bambu-esp-example/experiments/soda-pr17-reconciled/local-results/vc707-small-20261104/gesummv/deploy/gesummv.bit"
+    },
+    "offload": {
+      "error_e9": 15259,
+      "tolerance_e9": 1000000,
+      "pass": true,
+      "status": "PASS",
+      "regions": {
+        "total": 3575602,
+        "pack": 2435012,
+        "accel": 101271,
+        "unpack": 19799,
+        "alloc": 1017465,
+        "kernel": 3574948
+      },
+      "hardware_cycles": 100748
+    },
+    "cpu": {},
+    "timing": {
+      "STATS.WNS": "0.506084",
+      "STATS.TNS": "0.000000",
+      "STATS.WHS": "0.051435",
+      "STATS.THS": "0.000000"
+    },
+    "clocks": {
+      "chip_refclk": {
+        "clock": "clk_nobuf",
+        "period_ns": 20.0
+      },
+      "clkm": {
+        "clock": "clk_pll_i",
+        "period_ns": 10.0
+      },
+      "accelerator_sequential_cells": {
+        "clock": "clk_nobuf",
+        "period_ns": 20.0
+      }
+    },
+    "timing_check_counts": {
+      "no_clock": 2,
+      "constant_clock": 0,
+      "pulse_width_clock": 0,
+      "unconstrained_internal_endpoints": 2,
+      "no_input_delay": 3,
+      "no_output_delay": 8,
+      "multiple_clock": 0,
+      "generated_clocks": 0,
+      "loops": 0,
+      "partial_input_delay": 0,
+      "partial_output_delay": 0,
+      "latch_loops": 0
+    },
+    "drc_summary": {
+      "BUFC-1": {
+        "severity": "Warning",
+        "count": 13
+      },
+      "CFGBVS-1": {
+        "severity": "Warning",
+        "count": 1
+      },
+      "CHECK-3": {
+        "severity": "Warning",
+        "count": 2
+      },
+      "DPIP-1": {
+        "severity": "Warning",
+        "count": 65
+      },
+      "DPOP-1": {
+        "severity": "Warning",
+        "count": 19
+      },
+      "DPOP-2": {
+        "severity": "Warning",
+        "count": 23
+      },
+      "DPOR-1": {
+        "severity": "Warning",
+        "count": 102
+      },
+      "PDRC-153": {
+        "severity": "Warning",
+        "count": 2
+      },
+      "REQP-1709": {
+        "severity": "Warning",
+        "count": 1
+      },
+      "REQP-1839": {
+        "severity": "Warning",
+        "count": 20
+      },
+      "REQP-1840": {
+        "severity": "Warning",
+        "count": 20
+      },
+      "RTSTAT-10": {
+        "severity": "Warning",
+        "count": 1
+      },
+      "REQP-165": {
+        "severity": "Advisory",
+        "count": 1
+      }
+    },
+    "soc_utilization": {
+      "lut": 123022,
+      "ff": 123713,
+      "ramb36": 38,
+      "ramb18": 103,
+      "dsp": 33
+    },
+    "accelerator_and_adapter_utilization": {
+      "lut": 5524,
+      "ff": 3793,
+      "ramb36": 2,
+      "ramb18": 28,
+      "dsp": 6
+    },
+    "artifacts": {
+      "gesummv-cpu.exe": "ad8ebc401a6163a62f4d9163df075380fb69204dcc7fec467fdbc6107292eca0",
+      "gesummv.bit": "e9dc7c13c427bfecf3bf65a19ba4369c6e1c9f0f436096306f6c1516f2080fab",
+      "gesummv.exe": "ce9ad007a3be84c9b7a04111c416e9b8880abae79f7fe88415ab4a51ea2cbf7b",
+      "prom.bin": "26b6bb77fdb40e5d62a4600f2d65a54a80f26a28e7348672d50fe6cf44d714bc",
+      "prom.srec": "fe404004adf70ae2de8c3da54d03f607c2fc0a6e4f93e44373daf621a321607d"
+    },
+    "rtl_unchanged": true,
+    "soc_matches_simulation_fixture": true,
+    "vivado_uses_installed_rtl": true,
+    "cpu_baseline_validation": "native+link",
+    "cpu_native": {
+      "pass": true,
+      "error_e9": 15259,
+      "tolerance_e9": 1000000
+    },
+    "ready_for_board": true
+  },
+  "atax": {
+    "status": {
+      "stage": "validation-complete",
+      "generated": "/home/william/bambu-esp-example/experiments/soda-pr17-reconciled/local-results/vc707-small-20261104/generated/experiments/2026_11_05_02_53_38_1/output/esp/baseline",
+      "fpga": "PASS",
+      "updated": "2026-11-05T02:15:41.476379-05:00",
+      "adapter": "PASS",
+      "system_esp": "PASS",
+      "system_cpu": "BUILT",
+      "bitstream": "/home/william/bambu-esp-example/experiments/soda-pr17-reconciled/local-results/vc707-small-20261104/atax/deploy/atax.bit"
+    },
+    "offload": {
+      "error_e9": 30518,
+      "tolerance_e9": 1000000,
+      "pass": true,
+      "status": "PASS",
+      "regions": {
+        "total": 7618497,
+        "pack": 2171818,
+        "accel": 4459493,
+        "unpack": 27210,
+        "alloc": 958084,
+        "kernel": 7617983
+      },
+      "hardware_cycles": 4459079
+    },
+    "cpu": {},
+    "timing": {
+      "STATS.WNS": "0.612580",
+      "STATS.TNS": "0.000000",
+      "STATS.WHS": "0.050259",
+      "STATS.THS": "0.000000"
+    },
+    "clocks": {
+      "chip_refclk": {
+        "clock": "clk_nobuf",
+        "period_ns": 20.0
+      },
+      "clkm": {
+        "clock": "clk_pll_i",
+        "period_ns": 10.0
+      },
+      "accelerator_sequential_cells": {
+        "clock": "clk_nobuf",
+        "period_ns": 20.0
+      }
+    },
+    "timing_check_counts": {
+      "no_clock": 2,
+      "constant_clock": 0,
+      "pulse_width_clock": 0,
+      "unconstrained_internal_endpoints": 2,
+      "no_input_delay": 3,
+      "no_output_delay": 8,
+      "multiple_clock": 0,
+      "generated_clocks": 0,
+      "loops": 0,
+      "partial_input_delay": 0,
+      "partial_output_delay": 0,
+      "latch_loops": 0
+    },
+    "drc_summary": {
+      "BUFC-1": {
+        "severity": "Warning",
+        "count": 13
+      },
+      "CFGBVS-1": {
+        "severity": "Warning",
+        "count": 1
+      },
+      "CHECK-3": {
+        "severity": "Warning",
+        "count": 2
+      },
+      "DPIP-1": {
+        "severity": "Warning",
+        "count": 61
+      },
+      "DPOP-1": {
+        "severity": "Warning",
+        "count": 17
+      },
+      "DPOP-2": {
+        "severity": "Warning",
+        "count": 21
+      },
+      "DPOR-1": {
+        "severity": "Warning",
+        "count": 102
+      },
+      "PDRC-153": {
+        "severity": "Warning",
+        "count": 2
+      },
+      "REQP-1709": {
+        "severity": "Warning",
+        "count": 1
+      },
+      "REQP-1839": {
+        "severity": "Warning",
+        "count": 20
+      },
+      "REQP-1840": {
+        "severity": "Warning",
+        "count": 20
+      },
+      "RTSTAT-10": {
+        "severity": "Warning",
+        "count": 1
+      },
+      "REQP-165": {
+        "severity": "Advisory",
+        "count": 1
+      }
+    },
+    "soc_utilization": {
+      "lut": 121419,
+      "ff": 123066,
+      "ramb36": 41,
+      "ramb18": 83,
+      "dsp": 31
+    },
+    "accelerator_and_adapter_utilization": {
+      "lut": 4146,
+      "ff": 3146,
+      "ramb36": 5,
+      "ramb18": 8,
+      "dsp": 4
+    },
+    "artifacts": {
+      "atax-cpu.exe": "0e290e0b4b1adf1ae0a8e9f7842c37e4c8bc0c7d23052fd6151fea250d356309",
+      "atax.bit": "d7f3baa181a81f6e45bb7ce8b1b4dd941b714f2a0c86fafecb06f10da8f78fd3",
+      "atax.exe": "2d142433d39fbaa8dc8481415e71b5d7ac611db33d91f9ec0ac91e0e90f25ec6",
+      "prom.bin": "26b6bb77fdb40e5d62a4600f2d65a54a80f26a28e7348672d50fe6cf44d714bc",
+      "prom.srec": "fe404004adf70ae2de8c3da54d03f607c2fc0a6e4f93e44373daf621a321607d"
+    },
+    "rtl_unchanged": true,
+    "soc_matches_simulation_fixture": true,
+    "vivado_uses_installed_rtl": true,
+    "cpu_baseline_validation": "native+link",
+    "cpu_native": {
+      "pass": true,
+      "error_e9": 30518,
+      "tolerance_e9": 1000000
+    },
+    "ready_for_board": true
+  },
+  "twomm": {
+    "status": {
+      "stage": "validation-complete",
+      "generated": "/home/william/bambu-esp-example/experiments/soda-pr17-reconciled/local-results/vc707-small-20261104/generated/experiments/2026_11_05_02_53_39/output/esp/baseline",
+      "fpga": "PASS",
+      "updated": "2026-11-05T02:29:13.828805-05:00",
+      "adapter": "PASS",
+      "system_esp": "PASS",
+      "system_cpu": "BUILT",
+      "bitstream": "/home/william/bambu-esp-example/experiments/soda-pr17-reconciled/local-results/vc707-small-20261104/twomm/deploy/twomm.bit"
+    },
+    "offload": {
+      "error_e9": 183105,
+      "tolerance_e9": 1000000,
+      "pass": true,
+      "status": "PASS",
+      "regions": {
+        "total": 6478947,
+        "pack": 2453984,
+        "accel": 2194488,
+        "unpack": 799934,
+        "alloc": 1028395,
+        "kernel": 6478169
+      },
+      "hardware_cycles": 2193987
+    },
+    "cpu": {},
+    "timing": {
+      "STATS.WNS": "0.468976",
+      "STATS.TNS": "0.000000",
+      "STATS.WHS": "0.052225",
+      "STATS.THS": "0.000000"
+    },
+    "clocks": {
+      "chip_refclk": {
+        "clock": "clk_nobuf",
+        "period_ns": 20.0
+      },
+      "clkm": {
+        "clock": "clk_pll_i",
+        "period_ns": 10.0
+      },
+      "accelerator_sequential_cells": {
+        "clock": "clk_nobuf",
+        "period_ns": 20.0
+      }
+    },
+    "timing_check_counts": {
+      "no_clock": 2,
+      "constant_clock": 0,
+      "pulse_width_clock": 0,
+      "unconstrained_internal_endpoints": 2,
+      "no_input_delay": 3,
+      "no_output_delay": 8,
+      "multiple_clock": 0,
+      "generated_clocks": 0,
+      "loops": 0,
+      "partial_input_delay": 0,
+      "partial_output_delay": 0,
+      "latch_loops": 0
+    },
+    "drc_summary": {
+      "BUFC-1": {
+        "severity": "Warning",
+        "count": 13
+      },
+      "CFGBVS-1": {
+        "severity": "Warning",
+        "count": 1
+      },
+      "CHECK-3": {
+        "severity": "Warning",
+        "count": 2
+      },
+      "DPIP-1": {
+        "severity": "Warning",
+        "count": 65
+      },
+      "DPOP-1": {
+        "severity": "Warning",
+        "count": 19
+      },
+      "DPOP-2": {
+        "severity": "Warning",
+        "count": 23
+      },
+      "DPOR-1": {
+        "severity": "Warning",
+        "count": 102
+      },
+      "PDRC-153": {
+        "severity": "Warning",
+        "count": 2
+      },
+      "REQP-1709": {
+        "severity": "Warning",
+        "count": 1
+      },
+      "REQP-1839": {
+        "severity": "Warning",
+        "count": 20
+      },
+      "REQP-1840": {
+        "severity": "Warning",
+        "count": 20
+      },
+      "RTSTAT-10": {
+        "severity": "Warning",
+        "count": 1
+      },
+      "REQP-165": {
+        "severity": "Advisory",
+        "count": 1
+      }
+    },
+    "soc_utilization": {
+      "lut": 125073,
+      "ff": 125322,
+      "ramb36": 46,
+      "ramb18": 95,
+      "dsp": 33
+    },
+    "accelerator_and_adapter_utilization": {
+      "lut": 7539,
+      "ff": 5402,
+      "ramb36": 10,
+      "ramb18": 20,
+      "dsp": 6
+    },
+    "artifacts": {
+      "prom.bin": "26b6bb77fdb40e5d62a4600f2d65a54a80f26a28e7348672d50fe6cf44d714bc",
+      "prom.srec": "fe404004adf70ae2de8c3da54d03f607c2fc0a6e4f93e44373daf621a321607d",
+      "twomm-cpu.exe": "26d5755bc55705234d5e8495273cafdcb47ebd66d4c87f87f65fdecb7b9f08d5",
+      "twomm.bit": "4177c3599b1ca73a7fe9b854eb662daa4b6cc0883d768c7f6c932e99b3bd7c5d",
+      "twomm.exe": "31dbdaee91393cda87745fed7c35c60267e89f4c15ab9110f647139c343b27ab"
+    },
+    "rtl_unchanged": true,
+    "soc_matches_simulation_fixture": true,
+    "vivado_uses_installed_rtl": true,
+    "cpu_baseline_validation": "native+link",
+    "cpu_native": {
+      "pass": true,
+      "error_e9": 183105,
+      "tolerance_e9": 1000000
+    },
+    "ready_for_board": true
+  }
+}

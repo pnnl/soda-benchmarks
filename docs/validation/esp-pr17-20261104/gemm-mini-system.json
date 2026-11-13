@@ -1,0 +1,37 @@
+{
+  "dataset": "MINI",
+  "kernel": "gemm",
+  "test": "PASS",
+  "runner_exit": 0,
+  "max_error_e_minus9": 1907,
+  "tolerance_e_minus9": 1000000,
+  "regions": {
+    "total": {
+      "cycles": 1065430,
+      "calls": 1
+    },
+    "pack": {
+      "cycles": 340709,
+      "calls": 1
+    },
+    "accel": {
+      "cycles": 58954,
+      "calls": 1
+    },
+    "unpack": {
+      "cycles": 123571,
+      "calls": 1
+    },
+    "alloc": {
+      "cycles": 540296,
+      "calls": 1
+    },
+    "kernel": {
+      "cycles": 1064851,
+      "calls": 1
+    }
+  },
+  "note": "Regions are nested; kernel includes pack/accel/unpack/alloc. Shares must not be summed.",
+  "full_transcript_sha256": "48e1248c4523a5be72a85189bf3f028aa8c15bb7a7fddcd5bf0abe39644bad2c",
+  "uart_excerpt": "gemm-mini-uart.log"
+}

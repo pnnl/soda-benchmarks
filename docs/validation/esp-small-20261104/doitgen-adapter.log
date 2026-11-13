@@ -1,0 +1,22 @@
+GEMM_BOUNDARY START invocation=1 stall_until=0
+GEMM_HANDSHAKE cycles=16 rst=1 core_req=0 req=0000000a0000ea60 socket_req=0 grant=0 active=1 core_done=0
+GEMM_HANDSHAKE cycles=1000 rst=1 core_req=0 req=0000000a0000ec04 socket_req=0 grant=0 active=1 core_done=0
+LCS_DMA64 RESULT invocation=0 errors=0
+GEMM_BOUNDARY RESULT invocation=1 requests=21600/3000 words=216000/30000 beats=108000/15000 cycles=965774 blocked=21976
+GEMM_BOUNDARY START invocation=2 stall_until=0
+GEMM_HANDSHAKE cycles=16 rst=1 core_req=0 req=0000000a0000eb8c socket_req=0 grant=0 active=1 core_done=0
+GEMM_HANDSHAKE cycles=1000 rst=1 core_req=0 req=0000000a0000ec04 socket_req=0 grant=0 active=1 core_done=0
+LCS_DMA64 RESULT invocation=1 errors=0
+GEMM_BOUNDARY RESULT invocation=2 requests=21600/3000 words=216000/30000 beats=108000/15000 cycles=965775 blocked=22350
+LCS_DMA64 PASS errors=0
+GEMM_BOUNDARY START invocation=1 stall_until=50000
+GEMM_HANDSHAKE cycles=16 rst=1 core_req=0 req=0000000a0000ea60 socket_req=0 grant=0 active=1 core_done=0
+GEMM_HANDSHAKE cycles=1000 rst=1 core_req=0 req=0000000a0000ec04 socket_req=0 grant=0 active=1 core_done=0
+LCS_DMA64 RESULT invocation=0 errors=0
+GEMM_BOUNDARY RESULT invocation=1 requests=21600/3000 words=216000/30000 beats=108000/15000 cycles=999864 blocked=63858
+GEMM_BOUNDARY START invocation=2 stall_until=50000
+GEMM_HANDSHAKE cycles=16 rst=1 core_req=0 req=0000000a0000eb8c socket_req=0 grant=0 active=1 core_done=0
+GEMM_HANDSHAKE cycles=1000 rst=1 core_req=0 req=0000000a0000ec04 socket_req=0 grant=0 active=1 core_done=0
+LCS_DMA64 RESULT invocation=1 errors=0
+GEMM_BOUNDARY RESULT invocation=2 requests=21600/3000 words=216000/30000 beats=108000/15000 cycles=999863 blocked=63741
+LCS_DMA64 PASS errors=0

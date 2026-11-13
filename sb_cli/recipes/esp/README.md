@@ -6,15 +6,20 @@ call to hardware. Every `linalg.batch_matmul` becomes the ESP invocation sequenc
 
 ```
 esp_alloc_shared -> esp_float2fixed_f32 (A) -> esp_float2fixed_f32 (B)
-  -> esp_accel_cfg_regs -> esp_accel_start -> esp_accel_wait
+  -> esp_accel_write_reg x7 -> esp_accel_start -> esp_accel_wait
   -> esp_fixed2float_f32 (C) -> esp_free_shared
 ```
 
-The seven symbols are declared in
+The pass computes the shared-memory layout and the register values; the runtime
+allocates, copies with the stride it is told, and writes the registers it is
+told. The symbols are declared in
 `examples/soda-plugins/include/sodap/ExecutionEngine/ESPRuntime.h` and have two
 implementations: `EspRuntimeMock.cpp` (prints each call; what the `cpu` backend
-links) and `EspRuntime.cpp` (drives the real FFN accelerator; built only inside an
-ESP checkout).
+links) and `EspRuntime.cpp` (the ESP socket protocol; built only inside an ESP
+checkout). With `profile=true` the pass also brackets the pack, accelerator,
+unpack and epilogue phases with `esp_prof_begin`/`esp_prof_end` (`esp_prof.h`).
+See `docs/ESPBackend.md`; the `esp-ir` recipe generates the conversions as IR
+instead of calling the runtime.
 
 ## No `IPs/`
 

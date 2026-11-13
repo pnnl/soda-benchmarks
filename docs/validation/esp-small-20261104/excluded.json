@@ -1,0 +1,5 @@
+{
+  "bicg": "Bambu cross-function virtual dependency failure; compiler fix excluded",
+  "mvt": "Bambu cross-function virtual dependency failure; compiler fix excluded",
+  "gemver": "SMALL native numerical check fails unchanged tolerance: 76/120 outputs, max error 0.09375"
+}

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""PolyBench TRMM Kernel: B := alpha*A^T*B where A is lower triangular."""
+"""PolyBench TRMM: B := alpha*A^T*B, lower triangular A with unit diagonal."""
 
 import argparse
 
@@ -20,7 +20,8 @@ class Trmm(nn.Module):
         self.m = m
         self.n = n
         # Precomputed buffers avoid torch.tril/torch.eye in forward() (not TOSA-legal)
-        self.register_buffer("lower_mask", torch.tril(torch.ones(m, m)))
+        # DIAG='U': discard the stored diagonal before inserting ones.
+        self.register_buffer("lower_mask", torch.tril(torch.ones(m, m), diagonal=-1))
         self.register_buffer("eye", torch.eye(m))
 
     def forward(
