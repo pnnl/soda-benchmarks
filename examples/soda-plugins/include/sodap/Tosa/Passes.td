@@ -125,4 +125,44 @@ def TosaOutlineKernel : Pass<"sodap-tosa-outline-kernel", "::mlir::ModuleOp"> {
   ];
 }
 
+def TosaOutlineOperators : Pass<"sodap-tosa-outline-operators", "::mlir::ModuleOp"> {
+  let summary = "Move each operator into a tile module of its own";
+  let description = [{
+    The per-operator alternative to `sodap-tosa-outline-kernel`. Each
+    `tosa.matmul`, in program order, becomes the only op of
+    `module @matmul_<i> attributes {sodap.tile = i, sodap.tile_dir =
+    "tiles/matmul_<i>"}` holding `@matmul_<i>`, and is replaced by a
+    `dataflow.launch` of it. Everything else (reshapes, transposes,
+    elementwise ops) stays in its function, the host, run by the CPU.
+  }];
+  let dependentDialects = [
+    "::mlir::sodap::dataflow::DataflowDialect",
+    "::mlir::tosa::TosaDialect"
+  ];
+}
+
+def JoinMultipleTiles : Pass<"sodap-join-multiple-tiles", "::mlir::ModuleOp"> {
+  let summary = "One tile per operator, its shapes as arguments";
+  let description = [{
+    After `sodap-tosa-outline-operators`: the tile modules with the same
+    `sodap.operator` become one tile, `module @forward_kernel`, whose function
+    takes every dimension as an `index` argument and its tensors with dynamic
+    shapes. Each `dataflow.launch` of the old tiles launches it, with its
+    dimensions as constants. One accelerator, several invocations.
+
+    Each argument and result carries `sodap.descriptor_field`, its field in
+    the descriptor the accelerator reads at every launch
+    (`ReusableGemmABI.h`), and the module `sodap.invocations`, the dimensions
+    of every launch, for the tile sizes' cost model.
+
+    Only `matmul` today: `(A: MxK, B: KxN, M, K, N) -> C: MxN`.
+  }];
+  let dependentDialects = [
+    "::mlir::arith::ArithDialect",
+    "::mlir::sodap::dataflow::DataflowDialect",
+    "::mlir::tensor::TensorDialect",
+    "::mlir::tosa::TosaDialect"
+  ];
+}
+
 #endif // SODAP_TOSA_PASSES

@@ -35,6 +35,7 @@ namespace mlir::sodap {
 #define GEN_PASS_DEF_TOSARAISETRANSPOSES
 #define GEN_PASS_DEF_TOSAFOLDCONSTANTTRANSPOSES
 #define GEN_PASS_DEF_TOSAOUTLINEKERNEL
+#define GEN_PASS_DEF_TOSAOUTLINEOPERATORS
 #include "sodap/Tosa/Passes.h.inc"
 
 namespace {
@@ -487,6 +488,86 @@ struct TosaOutlineKernel : impl::TosaOutlineKernelBase<TosaOutlineKernel> {
     tile->setAttr("sodap.tile", builder.getI64IntegerAttr(0));
     tile->setAttr("sodap.tile_dir", builder.getStringAttr("tiles/" + name));
     kernel->moveBefore(tile.getBody(), tile.getBody()->end());
+  }
+};
+
+/// `type` without a leading dimension of 1.
+static Type squeezed(Type type) {
+  auto t = cast<RankedTensorType>(type);
+  if (t.getRank() < 2 || t.getDimSize(0) != 1)
+    return type;
+  return RankedTensorType::get(t.getShape().drop_front(), t.getElementType());
+}
+
+/// `v` as `type`, through a tosa.reshape if they differ.
+static Value reshape(OpBuilder &b, Location loc, Value v, Type type) {
+  if (v.getType() == type)
+    return v;
+  auto t = cast<RankedTensorType>(type);
+  return b.create<tosa::ReshapeOp>(loc, t, v,
+                                   b.getDenseI64ArrayAttr(t.getShape()));
+}
+
+/// One tile per operator: each tosa.matmul becomes a launch of a tile. Ops
+/// with the same signature launch the same tile: one accelerator, several
+/// invocations.
+struct TosaOutlineOperators
+    : impl::TosaOutlineOperatorsBase<TosaOutlineOperators> {
+  void runOnOperation() final {
+    ModuleOp module = getOperation();
+    MLIRContext *ctx = module.getContext();
+    SmallVector<tosa::MatMulOp> ops;
+    module.walk([&](tosa::MatMulOp op) { ops.push_back(op); });
+    if (ops.empty()) {
+      module.emitError("no operator to put on a tile");
+      return signalPassFailure();
+    }
+    OpBuilder builder(ctx);
+    DenseMap<FunctionType, std::string> tiles;
+    for (tosa::MatMulOp op : ops) {
+      Location loc = op.getLoc();
+      // The tile's interface drops tosa.matmul's batch dimension of 1, as
+      // torch-mlir's reshapes do: in the tile they fold into the matmul, on
+      // the host they meet the model's reshapes and cancel (canonicalize).
+      SmallVector<Type> inTypes = llvm::map_to_vector(
+          op->getOperandTypes(), [](Type t) { return squeezed(t); });
+      Type outType = squeezed(op.getType());
+      auto signature = FunctionType::get(ctx, inTypes, outType);
+      auto [it, isNew] = tiles.try_emplace(
+          signature, ("matmul_" + Twine(tiles.size())).str());
+      std::string name = it->second;
+      if (isNew) {
+        builder.setInsertionPoint(op->getParentOfType<func::FuncOp>());
+        auto tile = builder.create<ModuleOp>(loc, name);
+        tile->setAttr("sodap.tile", builder.getI64IntegerAttr(tiles.size() - 1));
+        tile->setAttr("sodap.tile_dir", builder.getStringAttr("tiles/" + name));
+        tile->setAttr("sodap.operator", builder.getStringAttr("matmul"));
+        builder.setInsertionPointToStart(tile.getBody());
+        auto fn = builder.create<func::FuncOp>(loc, name, signature);
+        Block *body = fn.addEntryBlock();
+        builder.setInsertionPointToStart(body);
+        SmallVector<Value> operands;
+        for (auto [arg, type] :
+             llvm::zip_equal(body->getArguments(), op->getOperandTypes()))
+          operands.push_back(reshape(builder, loc, arg, type));
+        Operation *clone = builder.clone(*op);
+        clone->setOperands(operands);
+        builder.create<func::ReturnOp>(
+            loc, reshape(builder, loc, clone->getResult(0), outType));
+      }
+
+      builder.setInsertionPoint(op);
+      SmallVector<Value> inputs;
+      for (auto [v, type] : llvm::zip_equal(op->getOperands(), inTypes))
+        inputs.push_back(reshape(builder, loc, v, type));
+      auto launch = builder.create<dataflow::LaunchOp>(
+          loc, TypeRange{outType},
+          SymbolRefAttr::get(ctx, name, {FlatSymbolRefAttr::get(ctx, name)}),
+          inputs, ValueRange());
+      op.replaceAllUsesWith(
+          reshape(builder, loc, launch.getResult(0), op.getType()));
+      op.erase();
+    }
   }
 };
 } // namespace

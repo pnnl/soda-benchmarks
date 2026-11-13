@@ -1,4 +1,5 @@
 add_mlir_library(MLIRSODAPTosa
+        JoinMultipleTiles.cpp
         TosaTransposes.cpp
 
         ADDITIONAL_HEADER_DIRS
@@ -11,6 +12,7 @@ add_mlir_library(MLIRSODAPTosa
         MLIRIR
         MLIRPass
         MLIRFuncDialect
+        MLIRTensorDialect
         MLIRTosaDialect
         MLIRTosaTransforms
         MLIRSODAPDataflow

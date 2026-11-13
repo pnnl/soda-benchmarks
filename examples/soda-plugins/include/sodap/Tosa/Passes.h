@@ -9,6 +9,8 @@
 #ifndef SODAP_TOSA_PASSES_H
 #define SODAP_TOSA_PASSES_H
 
+#include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/Dialect/Tensor/IR/Tensor.h"
 #include "mlir/Dialect/Tosa/IR/TosaOps.h"
 #include "sodap/Dialect/Dataflow/Dataflow.h"
 #include "mlir/IR/BuiltinOps.h"
