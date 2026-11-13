@@ -99,9 +99,10 @@ struct LoadStore
           return task->isAncestor(use.getOwner());
         };
         auto type = cast<MemRefType>(source.getType());
-        if (!type.hasStaticShape() || !type.getLayout().isIdentity()) {
-          task.emitOpError("expected memory with a static shape and the "
-                           "identity layout")
+        // A dynamic shape: a tile from sodap-join-multiple-tiles, whose
+        // dimensions sodap-dataflow-bind-dims reads from its arguments.
+        if (!type.getLayout().isIdentity()) {
+          task.emitOpError("expected memory with the identity layout")
                   .attachNote(source.getLoc())
               << "memory";
           return signalPassFailure();
@@ -113,7 +114,13 @@ struct LoadStore
                 << "write";
             return signalPassFailure();
           }
-        Value buffer = builder.create<memref::AllocOp>(source.getLoc(), type);
+        SmallVector<Value> sizes;
+        for (unsigned d = 0; d < type.getRank(); ++d)
+          if (type.isDynamicDim(d))
+            sizes.push_back(
+                builder.create<memref::DimOp>(source.getLoc(), source, d));
+        Value buffer =
+            builder.create<memref::AllocOp>(source.getLoc(), type, sizes);
         source.replaceUsesWithIf(buffer, inTask);
         loads.push_back({source, buffer});
       }

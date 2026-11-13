@@ -16,9 +16,16 @@
 // each of length 4. A copy of a whole argument is a tile of it at 0; a
 // scalar, memref<f32>, is one request of length 1.
 //
+// A tile from sodap-join-multiple-tiles (arguments with
+// sodap.descriptor_field) has no fixed layout: the load task first reads the
+// descriptor (ReusableGemmABI.h) at address 0 and forwards it to the other
+// tasks on a stream each. The index arguments become its fields, and a tile
+// of a matrix starts at its field's address, rows its row-stride field apart.
+//
 //===----------------------------------------------------------------------===//
 
 #include "sodap/Dialect/Dataflow/Transforms/Passes.h"
+#include "sodap/ExecutionEngine/ReusableGemmABI.h"
 
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
@@ -29,6 +36,7 @@
 #include "mlir/Dialect/Utils/StaticValueUtils.h"
 #include "mlir/IR/Builders.h"
 #include "llvm/ADT/BitVector.h"
+#include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/SmallPtrSet.h"
 
@@ -63,6 +71,8 @@ struct Transfer {
   memref::SubViewOp tile; // Null for a copy of the whole argument.
   int64_t base;
   bool read;
+  /// With a descriptor: the fields of the argument's address and row stride.
+  int64_t baseField = -1, ldField = -1;
 };
 
 } // namespace
@@ -73,15 +83,35 @@ static LogicalResult collectTransfers(BlockArgument arg, int64_t base,
                                       SmallVectorImpl<Transfer> &transfers) {
   auto type = cast<MemRefType>(arg.getType());
   Location loc = arg.getLoc();
-  if (!type.hasStaticShape() || !type.getLayout().isIdentity() ||
+  auto func = cast<func::FuncOp>(arg.getOwner()->getParentOp());
+  auto field = func.getArgAttrOfType<IntegerAttr>(arg.getArgNumber(),
+                                                  "sodap.descriptor_field");
+  auto ld = func.getArgAttrOfType<IntegerAttr>(arg.getArgNumber(),
+                                               "sodap.descriptor_ld");
+  if (field && (!ld || type.getRank() != 2))
+    return emitError(loc) << "argument #" << arg.getArgNumber()
+                          << ": a descriptor field needs a matrix with "
+                             "sodap.descriptor_ld";
+  if ((!field && !type.hasStaticShape()) || !type.getLayout().isIdentity() ||
       type.getElementTypeBitWidth() != 32)
     return emitError(loc) << "argument #" << arg.getArgNumber()
                           << " is not a static 32-bit memref with the "
                              "identity layout: "
                           << type;
 
+  size_t first = transfers.size();
+  auto described = llvm::make_scope_exit([&] {
+    if (field)
+      for (Transfer &t : llvm::drop_begin(transfers, first)) {
+        t.baseField = field.getInt();
+        t.ldField = ld.getInt();
+      }
+  });
   for (Operation *user : arg.getUsers()) {
     if (auto copy = dyn_cast<memref::CopyOp>(user)) {
+      if (field)
+        return copy.emitError("a copy of a whole matrix with a descriptor "
+                              "field: expected tiles");
       transfers.push_back({copy, {}, base, copy.getSource() == arg});
       continue;
     }
@@ -107,7 +137,8 @@ static LogicalResult collectTransfers(BlockArgument arg, int64_t base,
 /// Emits `transfer` in place of its copy: for each row of the tile along the
 /// innermost dimension, the request, then the row's elements.
 static void lowerTransfer(OpBuilder &b, Transfer &transfer,
-                          const DMAStreams &dma, unsigned wordStride) {
+                          const DMAStreams &dma, unsigned wordStride,
+                          ArrayRef<Value> fields = {}) {
   memref::SubViewOp tile = transfer.tile;
   Location loc = transfer.copy.getLoc();
   Value buffer = transfer.read ? transfer.copy.getTarget()
@@ -120,7 +151,9 @@ static void lowerTransfer(OpBuilder &b, Transfer &transfer,
   SmallVector<OpFoldResult> offsets(argType.getRank(), b.getIndexAttr(0));
   if (tile)
     offsets = tile.getMixedOffsets();
-  SmallVector<int64_t> strides = computeSuffixProduct(argType.getShape());
+  SmallVector<int64_t> strides;
+  if (transfer.baseField < 0)
+    strides = computeSuffixProduct(argType.getShape());
   Value ctrl = transfer.read ? dma.readCtrl : dma.writeCtrl;
   Value data = transfer.read ? dma.readData : dma.writeData;
   unsigned rank = sizes.size();
@@ -142,14 +175,27 @@ static void lowerTransfer(OpBuilder &b, Transfer &transfer,
   SmallVector<Value> operands =
       getValueOrCreateConstantIndexOp(b, loc, offsets);
   llvm::append_range(operands, ivs);
-  AffineExpr address = b.getAffineConstantExpr(transfer.base);
-  for (unsigned d = 0; d < rank; ++d)
-    address = address + b.getAffineDimExpr(d) * (strides[d] * wordStride);
-  for (unsigned d = 0; d + 1 < rank; ++d)
-    address =
-        address + b.getAffineDimExpr(rank + d) * (strides[d] * wordStride);
-  Value addr = b.create<affine::AffineApplyOp>(
-      loc, AffineMap::get(operands.size(), 0, address), operands);
+  Value addr;
+  if (transfer.baseField >= 0) {
+    // From the descriptor: base + (row offset + iv) * ld + col offset * 2.
+    Value row = b.create<arith::AddIOp>(loc, operands[0], ivs[0]);
+    Value col = b.create<arith::MulIOp>(
+        loc, operands[1], b.create<arith::ConstantIndexOp>(loc, wordStride));
+    addr = b.create<arith::AddIOp>(
+        loc, fields[transfer.baseField],
+        b.create<arith::AddIOp>(
+            loc, b.create<arith::MulIOp>(loc, row, fields[transfer.ldField]),
+            col));
+  } else {
+    AffineExpr address = b.getAffineConstantExpr(transfer.base);
+    for (unsigned d = 0; d < rank; ++d)
+      address = address + b.getAffineDimExpr(d) * (strides[d] * wordStride);
+    for (unsigned d = 0; d + 1 < rank; ++d)
+      address =
+          address + b.getAffineDimExpr(rank + d) * (strides[d] * wordStride);
+    addr = b.create<affine::AffineApplyOp>(
+        loc, AffineMap::get(operands.size(), 0, address), operands);
+  }
 
   // A scalar is a row of one element, with no index.
   int64_t length = rank ? sizes.back() : 1;
@@ -184,6 +230,68 @@ static void lowerTransfer(OpBuilder &b, Transfer &transfer,
   }
 }
 
+/// Each task of `dispatch` gets the descriptor at its start: the load task
+/// reads it from the DMA at address 0 (one 64-bit slot per field) and writes
+/// it to a stream per other task, which read it from there. Returns each
+/// task's fields, as index values.
+static FailureOr<DenseMap<Operation *, SmallVector<Value>>>
+readDescriptor(OpBuilder &b, DispatchOp dispatch, const DMAStreams &dma) {
+  MLIRContext *ctx = b.getContext();
+  Location loc = dispatch.getLoc();
+  Block &body = dispatch.getBody().front();
+  SmallVector<TaskOp> tasks = llvm::to_vector(body.getOps<TaskOp>());
+  auto load = llvm::find_if(tasks, [](TaskOp t) { return t->hasAttr("load"); });
+  if (load == tasks.end())
+    return dispatch.emitOpError("expected a load task to read the descriptor");
+  Type i32 = b.getI32Type();
+  b.setInsertionPointToStart(&body);
+  DenseMap<Operation *, Value> streams;
+  for (TaskOp task : tasks)
+    if (task != *load)
+      streams[task] = b.create<StreamOp>(
+          loc, StreamType::get(ctx, i32, GEMM_FIELD_COUNT));
+
+  DenseMap<Operation *, SmallVector<Value>> fields;
+  for (TaskOp task : tasks) {
+    b.setInsertionPointToStart(&task.getBody().front());
+    Value local = b.create<memref::AllocaOp>(
+        loc, MemRefType::get({GEMM_FIELD_COUNT}, i32));
+    Value c0 = b.create<arith::ConstantIndexOp>(loc, 0);
+    Value c1 = b.create<arith::ConstantIndexOp>(loc, 1);
+    Value count = b.create<arith::ConstantIndexOp>(loc, GEMM_FIELD_COUNT);
+    if (task == *load)
+      b.create<StreamWriteOp>(
+          loc, dma.readCtrl,
+          b.create<arith::ConstantIntOp>(
+              loc, int64_t(GEMM_FIELD_COUNT * GEMM_WORD_STRIDE) << 32, 64));
+    auto loop = b.create<scf::ForOp>(loc, c0, count, c1);
+    {
+      OpBuilder::InsertionGuard guard(b);
+      b.setInsertionPointToStart(loop.getBody());
+      Value value;
+      if (task == *load) {
+        value = b.create<StreamReadOp>(loc, i32, dma.readData).getResult();
+        b.create<StreamReadOp>(loc, i32, dma.readData); // The padding lane.
+        for (TaskOp other : tasks)
+          if (other != *load)
+            b.create<StreamWriteOp>(loc, streams[other], value);
+      } else {
+        value = b.create<StreamReadOp>(loc, i32, streams[task]).getResult();
+      }
+      b.create<memref::StoreOp>(loc, value, local, loop.getInductionVar());
+    }
+    // ponytail: no magic/version check; add William's guard (no work on an
+    // invalid descriptor) once the runtime can send one.
+    for (int64_t f = 0; f < GEMM_FIELD_COUNT; ++f) {
+      Value word = b.create<memref::LoadOp>(
+          loc, local, ValueRange{b.create<arith::ConstantIndexOp>(loc, f)});
+      fields[task].push_back(
+          b.create<arith::IndexCastUIOp>(loc, b.getIndexType(), word));
+    }
+  }
+  return fields;
+}
+
 namespace {
 
 struct CopyToDMA : public dataflow::impl::CopyToDMABase<CopyToDMA> {
@@ -213,7 +321,24 @@ struct CopyToDMA : public dataflow::impl::CopyToDMABase<CopyToDMA> {
       if (failed(collectTransfers(arg, base, transfers)))
         return signalPassFailure();
       regions.set(arg.getArgNumber());
-      base += type.getNumElements() * wordStride;
+      if (type.hasStaticShape())
+        base += type.getNumElements() * wordStride;
+    }
+    // The index arguments read from the descriptor.
+    SmallVector<std::pair<BlockArgument, int64_t>> scalars;
+    for (BlockArgument arg : top.getArguments())
+      if (auto field = top.getArgAttrOfType<IntegerAttr>(
+              arg.getArgNumber(), "sodap.descriptor_field")) {
+        if (isa<IndexType>(arg.getType())) {
+          scalars.push_back({arg, field.getInt()});
+          regions.set(arg.getArgNumber());
+        }
+      }
+    bool descriptor = llvm::any_of(
+        transfers, [](const Transfer &t) { return t.baseField >= 0; });
+    if (descriptor && wordStride != GEMM_WORD_STRIDE) {
+      module.emitError("a descriptor needs dma-word-stride=2");
+      return signalPassFailure();
     }
 
     // A copy between two DMA regions needs local staging. Reject it before
@@ -243,6 +368,29 @@ struct CopyToDMA : public dataflow::impl::CopyToDMABase<CopyToDMA> {
                    top.getArgument(first + 2), top.getArgument(first + 3)};
 
     OpBuilder b(ctx);
+    DenseMap<Operation *, SmallVector<Value>> fields;
+    if (descriptor) {
+      auto dispatches = llvm::to_vector(top.front().getOps<DispatchOp>());
+      if (dispatches.size() != 1) {
+        top.emitError("a descriptor needs one dataflow.dispatch");
+        return signalPassFailure();
+      }
+      auto read = readDescriptor(b, dispatches.front(), dma);
+      if (failed(read))
+        return signalPassFailure();
+      fields = std::move(*read);
+      Block &body = dispatches.front().getBody().front();
+      for (auto [arg, field] : scalars)
+        for (OpOperand &use : llvm::make_early_inc_range(arg.getUses())) {
+          Operation *task = body.findAncestorOpInBlock(*use.getOwner());
+          if (!task || !fields.count(task)) {
+            use.getOwner()->emitError("a use of a descriptor field outside "
+                                      "the tasks");
+            return signalPassFailure();
+          }
+          use.set(fields[task][field]);
+        }
+    }
     llvm::SmallPtrSet<Operation *, 4> receivers;
     llvm::SmallPtrSet<Operation *, 4> writers;
     for (Transfer &transfer : transfers) {
@@ -252,7 +400,10 @@ struct CopyToDMA : public dataflow::impl::CopyToDMABase<CopyToDMA> {
       if (!transfer.read)
         if (auto task = transfer.copy->getParentOfType<TaskOp>())
           writers.insert(task);
-      lowerTransfer(b, transfer, dma, wordStride);
+      ArrayRef<Value> taskFields;
+      if (transfer.baseField >= 0)
+        taskFields = fields[transfer.copy->getParentOfType<TaskOp>()];
+      lowerTransfer(b, transfer, dma, wordStride, taskFields);
       transfer.copy.erase();
     }
     // A stalled tile publication must complete before the receiver admits

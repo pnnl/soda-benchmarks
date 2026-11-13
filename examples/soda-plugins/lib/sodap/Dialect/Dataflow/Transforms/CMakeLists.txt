@@ -1,4 +1,5 @@
 add_mlir_dialect_library(MLIRSODAPDataflowTransforms
+        BindDims.cpp
         CopyToDMA.cpp
         LoadStore.cpp
         MergeTasks.cpp

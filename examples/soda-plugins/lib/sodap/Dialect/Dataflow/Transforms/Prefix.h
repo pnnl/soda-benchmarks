@@ -55,6 +55,19 @@ inline std::optional<std::array<int64_t, 3>> boundsOf(scf::ForOp loop) {
   return std::array<int64_t, 3>{*lb, *ub, *step};
 }
 
+/// The step, if constant: a tile's size. The bounds may be values (a tile
+/// from sodap-join-multiple-tiles has its ranges as arguments).
+inline std::optional<int64_t> stepOf(scf::ForOp loop) {
+  return getConstantIntValue(loop.getStep());
+}
+
+/// Lower bound, upper bound and step, constants or values.
+inline std::array<OpFoldResult, 3> foldedBoundsOf(scf::ForOp loop) {
+  return {getAsOpFoldResult(loop.getLowerBound()),
+          getAsOpFoldResult(loop.getUpperBound()),
+          getAsOpFoldResult(loop.getStep())};
+}
+
 /// The loops of `task`, from the outermost, whose induction variable is the
 /// offset of `access` along a dim of `buffer`, with the step as size.
 inline Prefix prefixOf(const Access &access, Value buffer, TaskOp task) {
@@ -99,12 +112,12 @@ inline Prefix prefixOf(const Access &access, Value buffer, TaskOp task) {
       loops.push_back(loop);
   Prefix prefix;
   for (scf::ForOp loop : llvm::reverse(loops)) {
-    auto bounds = boundsOf(loop);
+    std::optional<int64_t> step = stepOf(loop);
     auto *it = llvm::find(ivs, loop.getInductionVar());
-    if (!bounds || it == ivs.end())
+    if (!step || it == ivs.end())
       break;
     unsigned d = it - ivs.begin();
-    if (fixed[d] || sizes[d] != (*bounds)[2])
+    if (fixed[d] || sizes[d] != *step)
       break;
     prefix.push_back({loop, d});
   }
@@ -131,7 +144,7 @@ inline void sharePrefix(Prefix &writes, Prefix &reads) {
   unsigned n = 0;
   while (n < writes.size() && n < reads.size() &&
          writes[n].dim == reads[n].dim &&
-         boundsOf(writes[n].loop) == boundsOf(reads[n].loop))
+         foldedBoundsOf(writes[n].loop) == foldedBoundsOf(reads[n].loop))
     ++n;
   writes.resize(n);
   reads.resize(n);
@@ -147,19 +160,26 @@ inline memref::CopyOp splitCopy(OpBuilder &builder, memref::CopyOp copy,
   auto type = cast<MemRefType>(copy.getSource().getType());
   SmallVector<OpFoldResult> offsets(type.getRank(), builder.getIndexAttr(0));
   SmallVector<OpFoldResult> strides(type.getRank(), builder.getIndexAttr(1));
-  SmallVector<OpFoldResult> sizes;
-  for (int64_t size : type.getShape())
-    sizes.push_back(builder.getIndexAttr(size));
   builder.setInsertionPoint(copy);
+  SmallVector<OpFoldResult> sizes;
+  for (auto [d, size] : llvm::enumerate(type.getShape()))
+    sizes.push_back(ShapedType::isDynamic(size)
+                        ? OpFoldResult(builder.createOrFold<memref::DimOp>(
+                              loc, copy.getSource(), d))
+                        : builder.getIndexAttr(size));
+  // A constant bound anew, a value (an argument) as it is.
+  auto bound = [&](OpFoldResult ofr) -> Value {
+    if (std::optional<int64_t> c = getConstantIntValue(ofr))
+      return builder.create<arith::ConstantIndexOp>(loc, *c);
+    return cast<Value>(ofr);
+  };
   for (Step step : steps) {
-    auto [lb, ub, stride] = *boundsOf(step.loop);
-    auto loop = builder.create<scf::ForOp>(
-        loc, builder.create<arith::ConstantIndexOp>(loc, lb),
-        builder.create<arith::ConstantIndexOp>(loc, ub),
-        builder.create<arith::ConstantIndexOp>(loc, stride));
+    auto [lb, ub, stride] = foldedBoundsOf(step.loop);
+    auto loop = builder.create<scf::ForOp>(loc, bound(lb), bound(ub),
+                                           bound(stride));
     builder.setInsertionPoint(loop.getBody()->getTerminator());
     offsets[step.dim] = loop.getInductionVar();
-    sizes[step.dim] = builder.getIndexAttr(stride);
+    sizes[step.dim] = builder.getIndexAttr(*getConstantIntValue(stride));
   }
   Value source = builder.create<memref::SubViewOp>(loc, copy.getSource(),
                                                    offsets, sizes, strides);

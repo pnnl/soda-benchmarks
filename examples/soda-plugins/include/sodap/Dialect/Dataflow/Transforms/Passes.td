@@ -419,6 +419,18 @@ def TilesToLLVM :
   }];
 }
 
+def BindDims : Pass<"sodap-dataflow-bind-dims", "::mlir::func::FuncOp"> {
+  let summary = "Read a tensor's or memref's dimensions from index arguments";
+  let description = [{
+    A tile from `sodap-join-multiple-tiles` takes its shapes as `index`
+    arguments: an argument with `sodap.dims = array<i64: i, j>` has its
+    dimension 0 in argument #i and its dimension 1 in argument #j. Every
+    `tensor.dim` or `memref.dim` of such an argument, with a constant index,
+    becomes that argument, so the shapes reach the accelerator only through
+    them (and the descriptor).
+  }];
+}
+
 def ReportLCSCost : Pass<"sodap-dataflow-report-cost", "::mlir::ModuleOp"> {
   let summary = "Report static DMA work and allocated storage after LCS scheduling";
   let options = [

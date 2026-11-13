@@ -150,8 +150,8 @@ struct Scheduler {
       for (auto [d, offset] : llvm::enumerate(written->offsets)) {
         auto iv = dyn_cast_if_present<Value>(offset);
         scf::ForOp loop = iv ? scf::getForInductionVarOwner(iv) : nullptr;
-        auto bounds = loop ? boundsOf(loop) : std::nullopt;
-        if (bounds && (*bounds)[2] == written->sizes[d])
+        std::optional<int64_t> step = loop ? stepOf(loop) : std::nullopt;
+        if (step && *step == written->sizes[d])
           pins[iv] = {tile->offsets[d], tile->sizes[d]};
       }
     }
@@ -177,7 +177,7 @@ struct Scheduler {
         OpBuilder::InsertionGuard guard(builder);
         if (auto pin = pins.find(loop.getInductionVar()); pin != pins.end()) {
           auto [offset, size] = pin->second;
-          int64_t stride = (*boundsOf(loop))[2];
+          int64_t stride = *stepOf(loop);
           lb = valueOf(offset, loc);
           if (size == stride) {
             // One iteration: the tile read.

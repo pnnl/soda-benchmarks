@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 #include "sodap/Dialect/Dataflow/Transforms/Passes.h"
 #include "Prefix.h"
+#include "sodap/Dialect/Dataflow/Dataflow.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/Linalg/IR/Linalg.h"
 #include "llvm/Support/JSON.h"
@@ -29,13 +30,30 @@ struct ReportLCSCost : mlir::sodap::dataflow::impl::ReportLCSCostBase<ReportLCSC
     if (b < 0 || a > std::numeric_limits<int64_t>::max()-b) invalid = true;
     else a += b;
   }
+  /// The index arguments' values in the invocation analysed
+  /// (sodap.invocations of a sodap-join-multiple-tiles tile), if any.
+  SmallVector<int64_t> inv;
+  std::optional<int64_t> valueOf(Value v) {
+    if (std::optional<int64_t> c = getConstantIntValue(v))
+      return c;
+    auto arg = dyn_cast<BlockArgument>(v);
+    auto func = arg ? dyn_cast<func::FuncOp>(arg.getOwner()->getParentOp()) : nullptr;
+    if (!func || !arg.getType().isIndex())
+      return std::nullopt;
+    size_t position = llvm::count_if(func.getArguments().take_front(arg.getArgNumber()),
+                                     [](BlockArgument a) { return a.getType().isIndex(); });
+    if (position >= inv.size())
+      return std::nullopt;
+    return inv[position];
+  }
   int64_t repetitions(Operation *op) {
     int64_t n = 1;
     for (Operation *p=op->getParentOp(); p && !isa<func::FuncOp>(p); p=p->getParentOp()) {
       if (auto loop=dyn_cast<scf::ForOp>(p)) {
-        auto b=boundsOf(loop);
-        if (!b || (*b)[0]<0 || (*b)[1]<(*b)[0] || (*b)[2]<=0) { invalid=true; return 0; }
-        n=multiply(n,llvm::divideCeil((*b)[1]-(*b)[0],(*b)[2]));
+        auto lb=valueOf(loop.getLowerBound()), ub=valueOf(loop.getUpperBound()),
+             step=valueOf(loop.getStep());
+        if (!lb || !ub || !step || *lb<0 || *ub<*lb || *step<=0) { invalid=true; return 0; }
+        n=multiply(n,llvm::divideCeil(*ub-*lb,*step));
       } else if (!isa<TaskOp,DispatchOp>(p)) {
         op->emitError("cost analysis requires static scf.for/task nesting");
         invalid=true;
@@ -65,9 +83,20 @@ struct ReportLCSCost : mlir::sodap::dataflow::impl::ReportLCSCostBase<ReportLCSC
     }
     int64_t bytes=0,requests=0,words=0,iterations=0;
     llvm::json::Array copies,compute;
+    // A tile with invocations: the work summed over them, the storage once.
+    SmallVector<SmallVector<int64_t>> invocations{{}};
+    if (auto list = getOperation()->getAttrOfType<ArrayAttr>("sodap.invocations")) {
+      invocations.clear();
+      for (Attribute each : list)
+        invocations.push_back(llvm::to_vector(cast<DenseI64ArrayAttr>(each).asArrayRef()));
+    }
+    for (auto [i, each] : llvm::enumerate(invocations)) {
+    inv = each;
+    bool first = i == 0;
     getOperation().walk([&](Operation *op) {
       if (!op->getParentOfType<DispatchOp>()) return;
       if (isa<memref::AllocOp,memref::AllocaOp>(op)) {
+        if (!first) return;
         auto t=cast<MemRefType>(op->getResult(0).getType());
         if (!t.getElementType().isIntOrFloat()) { invalid=true; return; }
         add(bytes,multiply(elements(t),llvm::divideCeil(t.getElementTypeBitWidth(),8)));
@@ -89,6 +118,7 @@ struct ReportLCSCost : mlir::sodap::dataflow::impl::ReportLCSCostBase<ReportLCSC
                                             {"iterations",n},{"reduction",linalg.getNumReductionLoops()>0}});
       }
     });
+    }
     int64_t cycles=multiply(requests,requestCycles);
     add(cycles,multiply(words,wordCycles));
     if (invalid) {
@@ -100,7 +130,8 @@ struct ReportLCSCost : mlir::sodap::dataflow::impl::ReportLCSCostBase<ReportLCSC
         {"copies",std::move(copies)},{"compute",std::move(compute)},
         {"scope","Static scheduled work and logical allocation; not measured latency or FPGA resource use"}};
     std::error_code ec;
-    llvm::raw_fd_ostream os(file,ec);
+    // Nested in a tile module: its own report and budget, in its directory.
+    llvm::raw_fd_ostream os(getTileFilePath(getOperation(),file),ec);
     if (ec) { getOperation().emitError("cannot write cost report: ")<<ec.message(); return signalPassFailure(); }
     os<<llvm::formatv("{0:2}\n",llvm::json::Value(std::move(result)));
     if (budget && bytes>budget) {

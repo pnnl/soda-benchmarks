@@ -30,7 +30,7 @@ struct Tile {
 };
 
 /// The tile `view` is of the buffer it views, through rank-preserving,
-/// unit-stride subviews with static sizes. The offsets go through `map`; where
+/// unit-stride subviews with static sizes (the buffer's may be dynamic). The offsets go through `map`; where
 /// two subviews offset a dim, they are added with `builder`, or left null
 /// without one.
 inline std::optional<Tile> tileOf(Value view, IRMapping &map,
@@ -38,8 +38,6 @@ inline std::optional<Tile> tileOf(Value view, IRMapping &map,
   SmallVector<Operation *> chain;
   Value buffer = rootOf(view, &chain);
   auto type = cast<MemRefType>(buffer.getType());
-  if (!type.hasStaticShape())
-    return std::nullopt;
   unsigned rank = type.getRank();
   Builder attrs(view.getContext());
   Tile tile{buffer, SmallVector<OpFoldResult>(rank, attrs.getIndexAttr(0)),
@@ -80,6 +78,8 @@ inline std::optional<Tile> tileOf(Value view, IRMapping &map,
       }
     }
   }
+  if (llvm::any_of(tile.sizes, ShapedType::isDynamic))
+    return std::nullopt;
   return tile;
 }
 
