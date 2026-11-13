@@ -14,6 +14,7 @@
 #include "mlir/IR/PatternMatch.h"
 
 #include "sodap/Dialect/Dataflow/Dataflow.h"
+#include "sodap/ExecutionEngine/ReusableGemmABI.h"
 #include "sodap/SODAPPasses.h"
 
 /// ESP runtime wrapper function names — mirror the C invocation steps.
@@ -687,6 +688,124 @@ static void forwardOutParams(dataflow::LaunchOp launch) {
   }
 }
 
+/// The launches of a tile from sodap-join-multiple-tiles, matmul's for now:
+/// William's reusable-GEMM calls (ReusableGemmABI.h). One arena for the
+/// whole host, its header then each buffer a launch uses; the host's
+/// arguments a launch reads are copied in before the first launch, those it
+/// writes copied out after the last; a buffer between two launches stays in
+/// the arena. Each launch passes its shapes, addresses and row strides.
+static LogicalResult lowerInvocations(ModuleOp module,
+                                      MutableArrayRef<dataflow::LaunchOp> launches) {
+  SetVector<Value> buffers, read, written;
+  for (dataflow::LaunchOp launch : launches) {
+    // A matmul: (A, B, M, K, N) outs(C).
+    if (launch.getInputs().size() != 5 || launch.getOuts().size() != 1)
+      return launch.emitOpError("expected a matmul launch: (A, B, M, K, N) "
+                                "outs(C)");
+    SmallVector<Value> matrices{launch.getInputs()[0], launch.getInputs()[1],
+                                launch.getOuts()[0]};
+    for (auto [i, m] : llvm::enumerate(matrices)) {
+      auto type = dyn_cast<MemRefType>(m.getType());
+      if (!type || type.getRank() != 2 || !type.hasStaticShape() ||
+          !type.getElementType().isF32() || !type.getLayout().isIdentity())
+        return launch.emitOpError("expected static f32 matrices, got ")
+               << m.getType();
+      buffers.insert(m);
+      if (isa<BlockArgument>(m))
+        (i < 2 ? read : written).insert(m);
+    }
+  }
+  // ponytail: an intermediate the CPU also touches would need a copy out and
+  // back in; none in matmul chains.
+  for (Value buffer : buffers)
+    if (auto alloc = buffer.getDefiningOp<memref::AllocOp>())
+      for (Operation *user : alloc->getUsers())
+        if (!isa<dataflow::LaunchOp, memref::DeallocOp>(user))
+          return user->emitOpError("expected a buffer between launches to be "
+                                   "used only by launches");
+
+  DenseMap<Value, int64_t> offset;
+  int64_t bytes = GEMM_HEADER_BYTES;
+  for (Value buffer : buffers) {
+    offset[buffer] = bytes;
+    bytes += cast<MemRefType>(buffer.getType()).getNumElements() *
+             GEMM_SLOT_BYTES;
+  }
+  if (bytes > (int64_t(1) << 30))
+    return module.emitError("GEMM arena exceeds the one-GiB interface limit");
+
+  OpBuilder b(module.getContext());
+  Location loc = launches.front()->getLoc();
+  Type i64 = b.getI64Type(), f32 = b.getF32Type();
+  auto unranked = UnrankedMemRefType::get(f32, 0);
+  auto declare = [&](StringRef name, TypeRange inputs, TypeRange results) {
+    if (module.lookupSymbol(name))
+      return;
+    OpBuilder::InsertionGuard guard(b);
+    b.setInsertionPointToStart(module.getBody());
+    b.create<func::FuncOp>(loc, name, b.getFunctionType(inputs, results))
+        .setPrivate();
+  };
+  declare("esp_gemm_open", {i64, i64}, {i64});
+  declare("esp_gemm_close", {i64}, {});
+  declare("esp_gemm_copy_in", {i64, i64, unranked}, {});
+  declare("esp_gemm_copy_out", {i64, i64, unranked}, {});
+  SmallVector<Type> invokeTypes(10, i64);
+  invokeTypes.append({f32, f32});
+  declare("esp_gemm_invoke", invokeTypes, {});
+  auto constant = [&](int64_t n) -> Value {
+    return b.create<arith::ConstantIntOp>(loc, n, 64);
+  };
+  auto i64Of = [&](Value index) -> Value {
+    return b.create<arith::IndexCastOp>(loc, i64, index);
+  };
+  auto copy = [&](StringRef name, Value context, Value buffer) {
+    b.create<func::CallOp>(
+        loc, name, TypeRange{},
+        ValueRange{context, constant(offset[buffer]),
+                   b.create<memref::CastOp>(loc, unranked, buffer)});
+  };
+
+  b.setInsertionPoint(launches.front().getOperation());
+  Value context = b.create<func::CallOp>(
+                       loc, "esp_gemm_open", TypeRange{i64},
+                       ValueRange{constant(bytes), constant(0)})
+                      .getResult(0);
+  for (Value arg : read)
+    copy("esp_gemm_copy_in", context, arg);
+  Value one = b.create<arith::ConstantFloatOp>(loc, APFloat(1.0f),
+                                               cast<FloatType>(f32));
+  Value zero = b.create<arith::ConstantFloatOp>(loc, APFloat(0.0f),
+                                                cast<FloatType>(f32));
+  for (dataflow::LaunchOp launch : launches) {
+    b.setInsertionPoint(launch);
+    ValueRange in = launch.getInputs();
+    Value a = in[0], rhs = in[1], c = launch.getOuts()[0];
+    auto ld = [&](Value m) {
+      return constant(cast<MemRefType>(m.getType()).getDimSize(1) *
+                      GEMM_SLOT_BYTES);
+    };
+    b.create<func::CallOp>(
+        launch.getLoc(), "esp_gemm_invoke", TypeRange{},
+        ValueRange{context, constant(offset[a]), constant(offset[rhs]),
+                   constant(offset[c]), i64Of(in[2]), i64Of(in[4]),
+                   i64Of(in[3]), ld(a), ld(rhs), ld(c), one, zero});
+  }
+  b.setInsertionPointAfter(launches.back().getOperation());
+  for (Value arg : written)
+    copy("esp_gemm_copy_out", context, arg);
+  b.create<func::CallOp>(loc, "esp_gemm_close", TypeRange{}, context);
+  for (dataflow::LaunchOp launch : launches)
+    launch.erase();
+  for (Value buffer : buffers)
+    if (auto alloc = buffer.getDefiningOp<memref::AllocOp>()) {
+      for (Operation *user : llvm::make_early_inc_range(alloc->getUsers()))
+        user->erase();
+      alloc.erase();
+    }
+  return success();
+}
+
 class LaunchesToESP : public impl::LaunchesToESPBase<LaunchesToESP> {
 public:
   using impl::LaunchesToESPBase<LaunchesToESP>::LaunchesToESPBase;
@@ -710,6 +829,21 @@ public:
       return signalPassFailure();
     }
     func::FuncOp host = launches.front()->getParentOfType<func::FuncOp>();
+    if (tiles.front()->hasAttr("sodap.operator")) {
+      for (dataflow::LaunchOp launch : launches) {
+        if (launch->getParentOfType<func::FuncOp>() != host ||
+            launch->getBlock() != launches.front()->getBlock()) {
+          launch.emitOpError("expected every launch in one block");
+          return signalPassFailure();
+        }
+        forwardOutParams(launch);
+      }
+      if (failed(lowerInvocations(module, launches)))
+        return signalPassFailure();
+      tiles.front().erase();
+      host.setSymName(this->host);
+      return;
+    }
     for (dataflow::LaunchOp launch : launches) {
       if (launch->getParentOfType<func::FuncOp>() != host ||
           launch->getBlock() != launches.front()->getBlock()) {
